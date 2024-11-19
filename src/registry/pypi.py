@@ -20,6 +20,13 @@ def recv_pkg_info(pkgs, url=REGISTRY_URL):
         except:
             print("[ERR] Connection error.")
             exit(2)
+        if res.status_code == 404:
+            # Package not found
+            x.exists = False
+            continue
+        if res.status_code != 200:
+            print(f"[ERR] Connection error, status code: {res.status_code}")
+            exit(2)
         try:
             j = json.loads(res.text)
         except:
