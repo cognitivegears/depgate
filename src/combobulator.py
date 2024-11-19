@@ -137,7 +137,7 @@ def main():
 
     # the most important part of any program starts here
 
-    print("""
+    print(r"""
   ____  _____ ____  _____ _   _ ____  _____ _   _  ______   __
  |  _ \| ____|  _ \| ____| \ | |  _ \| ____| \ | |/ ___\ \ / /
  | | | |  _| | |_) |  _| |  \| | | | |  _| |  \| | |    \ V / 
