@@ -1,5 +1,8 @@
 import json
 import requests
+import requirements
+import sys
+import os
 from datetime import datetime as dt
 
 # classic api - https://pypi.org/pypi/<package-name>/json
@@ -47,4 +50,14 @@ def recv_pkg_info(pkgs, url=REGISTRY_URL):
             x.exists = False
     return names
 
-# TODO add a source scan for pypi alternatives
+def scan_source(dir):
+    try:
+        print("[PROC] PyPI scanner engaged.")
+        path = os.path.join(dir, "requirements.txt")
+        with open(path, "r") as file:
+            body = file.read()
+        reqs = requirements.parse(body)
+        return [x.name for x in reqs]
+    except (FileNotFoundError, IOError) as e:
+        print(f"[ERR] Couldn't import from given path '{path}', error: {e}")
+        sys.exit(1)

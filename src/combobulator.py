@@ -95,7 +95,8 @@ def scan_source(pkgtype, dir):
         return npm.scan_source(dir)
     elif pkgtype == "maven":
         return maven.scan_source(dir)
-    #TODO: add pypi scanner
+    elif pkgtype == "pypi":
+        return pypi.scan_source(dir)
     else:
         print("[ERROR]  Selected package type doesn't support import scan.")
         sys.exit(1)
