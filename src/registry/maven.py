@@ -1,5 +1,6 @@
 import json
 import requests
+import os
 import xml.etree.ElementTree as ET
 
 # classic api - https://search.maven.org/classic/#api
@@ -35,7 +36,7 @@ def recv_pkg_info(pkgs, url=REGISTRY_URL):
 
 def scan_source(dir):
     try:
-        path = dir + "./pom.xml"
+        path = os.path.join(dir, "pom.xml")
         tree = ET.parse(path)
         pom = tree.getroot()
         ns = ".//{http://maven.apache.org/POM/4.0.0}"

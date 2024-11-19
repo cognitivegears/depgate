@@ -1,6 +1,7 @@
 import json
 import requests
 import sys
+import os
 from datetime import datetime as dt
 
 # checking against npms.io API
@@ -50,7 +51,7 @@ def recv_pkg_info(pkgs, url=REGISTRY_URL):
 
 def scan_source(dir):
     try:
-        path = dir + "./package.json"
+        path = os.path.join(dir,"package.json")
         file = open(path, "r")
         body = file.read()
         filex = json.loads(body)
