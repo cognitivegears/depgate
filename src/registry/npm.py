@@ -47,19 +47,30 @@ def recv_pkg_info(pkgs, url=Constants.REGISTRY_URL_NPM):
             i.exists = False
             
 
-def scan_source(dir):
+def scan_source(dir, recursive=False):
     try:
-        path = os.path.join(dir, Constants.PACKAGE_JSON_FILE)
-        file = open(path, "r")
-        body = file.read()
-        filex = json.loads(body)
-    except:
-        logging.error("Couldn't import from given path.")
-        sys.exit(ExitCodes.FILE_ERROR.value)
+        logging.info("npm scanner engaged.")
+        pkg_files = []
+        if recursive:
+            for root, dirs, files in os.walk(dir):
+                if Constants.PACKAGE_JSON_FILE in files:
+                    pkg_files.append(os.path.join(root, Constants.PACKAGE_JSON_FILE))
+        else:
+            path = os.path.join(dir, Constants.PACKAGE_JSON_FILE)
+            if os.path.isfile(path):
+                pkg_files.append(path)
+            else:
+                raise FileNotFoundError("package.json not found.")
 
-    lister = list(filex['dependencies'].keys())
-    if 'devDependencies' in filex:
-        lister.append(list(filex['devDependencies'].keys()))
-        # OPTIONAL - de-comment if you would like to add peer deps.
-        #lister.append(filex['peerDependencies'].keys())
-    return lister
+        lister = []
+        for path in pkg_files:
+            with open(path, "r") as file:
+                body = file.read()
+            filex = json.loads(body)
+            lister.extend(list(filex.get('dependencies', {}).keys()))
+            if 'devDependencies' in filex:
+                lister.extend(list(filex['devDependencies'].keys()))
+        return lister
+    except (FileNotFoundError, IOError, json.JSONDecodeError) as e:
+        logging.error("Couldn't import from given path, error: %s", e)
+        sys.exit(ExitCodes.FILE_ERROR.value)

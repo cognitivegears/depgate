@@ -79,6 +79,10 @@ def parse_args():
                         help="Log output file",
                         action="store",
                         type=str)
+    parser.add_argument("-r", "--recursive",
+                        dest="RECURSIVE",
+                        help="Recursively scan directories when scanning from source.",
+                        action="store_true")
     return parser.parse_args()
 
 
@@ -105,13 +109,13 @@ def load_pkgs_file(pkgs):
         logging.error("Cannot process input list/file")
         raise TypeError
 
-def scan_source(pkgtype, dir):
+def scan_source(pkgtype, dir, recursive=False):
     if pkgtype == PackageManagers.NPM.value:
-        return npm.scan_source(dir)
+        return npm.scan_source(dir, recursive)
     elif pkgtype == PackageManagers.MAVEN.value:
-        return maven.scan_source(dir)
+        return maven.scan_source(dir, recursive)
     elif pkgtype == PackageManagers.PYPI.value:
-        return pypi.scan_source(dir)
+        return pypi.scan_source(dir, recursive)
     else:
         logging.error("Selected package type doesn't support import scan.")
         sys.exit(ExitCodes.FILE_ERROR.value)
@@ -190,11 +194,15 @@ def main():
     logging.info("Arguments parsed.")
     GITHUB_TOKEN = args.GITHUB_TOKEN
 
+    # Check if recursive option is used without directory
+    if args.RECURSIVE and not args.FROM_SRC:
+        logging.warning("Recursive option is only applicable to source scans.")
+
     #IMPORT
     if args.LIST_FROM_FILE:
         pkglist = load_pkgs_file(args.LIST_FROM_FILE[0])
     elif args.FROM_SRC:
-        pkglist = scan_source(args.package_type, args.FROM_SRC[0])
+        pkglist = scan_source(args.package_type, args.FROM_SRC[0], recursive=args.RECURSIVE)
     elif args.SINGLE:
         pkglist = []
         pkglist.append(args.SINGLE[0])

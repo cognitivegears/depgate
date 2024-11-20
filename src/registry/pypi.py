@@ -48,14 +48,28 @@ def recv_pkg_info(pkgs, url=Constants.REGISTRY_URL_PYPI):
             x.exists = False
     return names
 
-def scan_source(dir):
+def scan_source(dir, recursive=False):
     try:
         logging.info("PyPI scanner engaged.")
-        path = os.path.join(dir, Constants.REQUIREMENTS_FILE)
-        with open(path, "r") as file:
-            body = file.read()
-        reqs = requirements.parse(body)
-        return [x.name for x in reqs]
+        req_files = []
+        if recursive:
+            for root, dirs, files in os.walk(dir):
+                if Constants.REQUIREMENTS_FILE in files:
+                    req_files.append(os.path.join(root, Constants.REQUIREMENTS_FILE))
+        else:
+            path = os.path.join(dir, Constants.REQUIREMENTS_FILE)
+            if os.path.isfile(path):
+                req_files.append(path)
+            else:
+                raise FileNotFoundError("requirements.txt not found.")
+
+        all_requirements = []
+        for path in req_files:
+            with open(path, "r") as file:
+                body = file.read()
+            reqs = requirements.parse(body)
+            all_requirements.extend([x.name for x in reqs])
+        return all_requirements
     except (FileNotFoundError, IOError) as e:
         logging.error("Couldn't import from given path '%s', error: %s", path, e)
         sys.exit(ExitCodes.FILE_ERROR.value)
