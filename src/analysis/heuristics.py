@@ -20,7 +20,7 @@ def test_exists(x):
     if x.exists == True:
         logging.info("%sPackage: %s is present on public provider.", STG, x)
     elif x.exists == False:
-        logging.info("%sPackage: %s is NOT present on public provider.", STG, x)
+        logging.warning("%sPackage: %s is NOT present on public provider.", STG, x)
     else:
         logging.info("%sPackage: %s test skipped.", STG, x)
 
