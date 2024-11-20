@@ -30,8 +30,8 @@ Make sure to install required dependencies by running:
 ## Arguments (--help)
 ```
   -h, --help            show this help message and exit
-  -t {npm,maven}, --type {npm,maven}
-                        Package Manager Type, i.e: npm, maven
+  -t {npm,maven,pypi}, --type {npm,maven,pypi}
+                        Package Manager Type, i.e: npm, maven, pypi
   -l LIST_FROM_FILE, --load_list LIST_FROM_FILE
                         Load list of dependencies from a file
   -d FROM_SRC, --directory FROM_SRC
@@ -41,10 +41,14 @@ Make sure to install required dependencies by running:
   -a {compare,comp,heuristics,heur}, --analysis {compare,comp,heuristics,heur}
                         Required analysis level - compare (comp), heuristics
                         (heur) (default: compare)
+  -r, --recursive       Recursively analyze dependencies
+  --loglevel LOG_LEVEL  Set the logging level (default: INFO)
+  --logfile LOG_FILE    Set the logging file
+  --error-on-warning    Exit with error code if warnings are found
 
 Apiiro <Heart> Community
 ```
-Supported package types (-t, --t): npm, maven
+Supported package types (-t, --t): npm, maven, pypi
 
 Supported source dependency assessment:
 - From file containing the dependency identifiers line-by-line. (-l, --load_list)
