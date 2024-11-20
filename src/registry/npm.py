@@ -1,3 +1,7 @@
+"""
+  NPM registry module. This module is responsible for checking
+  the existence of the packages in the NPM registry and scanning'
+  the source code for dependencies."""
 import json
 import sys
 import os
@@ -7,9 +11,17 @@ import requests
 from constants import ExitCodes, Constants
 
 def get_keys(data):
+    """Get all keys from a nested dictionary.
+
+    Args:
+        data (dict): Dictionary to extract keys from.
+
+    Returns:
+        list: List of all keys in the dictionary.
+    """
     result = []
     for key in data.keys():
-        if type(data[key]) != dict:
+        if not isinstance(data[key], dict):
             result.append(key)
         else:
             result += get_keys(data[key])
@@ -17,6 +29,12 @@ def get_keys(data):
 
 
 def recv_pkg_info(pkgs, url=Constants.REGISTRY_URL_NPM):
+    """Check the existence of the packages in the NPM registry.
+
+    Args:
+        pkgs (list): List of packages to check.
+        url (str, optional): NPM Url. Defaults to Constants.REGISTRY_URL_NPM.
+    """
     logging.info("npm checker engaged.")
     pkg_list = []
     for x in pkgs:
@@ -32,8 +50,8 @@ def recv_pkg_info(pkgs, url=Constants.REGISTRY_URL_NPM):
             sys.exit(ExitCodes.CONNECTION_ERROR.value)
         x = {}
         x = json.loads(res.text)
-    except:
-        logging.error("Connection error.")
+    except requests.RequestException as e:
+        logging.error("Connection error: %s", e)
         sys.exit(ExitCodes.CONNECTION_ERROR.value)
     for i in pkgs:
         if i.pkg_name in x:
@@ -48,6 +66,15 @@ def recv_pkg_info(pkgs, url=Constants.REGISTRY_URL_NPM):
 
 
 def scan_source(dir_name, recursive=False):
+    """Scan the source code for dependencies.
+
+    Args:
+        dir_name (str): Directory to scan.
+        recursive (bool, optional): _description_. Defaults to False.
+
+    Returns:
+        list: List of dependencies found in the source code.
+    """
     try:
         logging.info("npm scanner engaged.")
         pkg_files = []
@@ -60,7 +87,8 @@ def scan_source(dir_name, recursive=False):
             if os.path.isfile(path):
                 pkg_files.append(path)
             else:
-                raise FileNotFoundError("package.json not found.")
+                logging.error("package.json not found, unable to continue.")
+                sys.exit(ExitCodes.FILE_ERROR.value)
 
         lister = []
         for path in pkg_files:

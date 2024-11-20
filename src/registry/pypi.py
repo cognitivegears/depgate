@@ -1,3 +1,4 @@
+"""PyPI registry module."""
 import json
 import sys
 import os
@@ -8,6 +9,12 @@ import requirements
 from constants import ExitCodes, Constants
 
 def recv_pkg_info(pkgs, url=Constants.REGISTRY_URL_PYPI):
+    """Check the existence of the packages in the PyPI registry.
+
+    Args:
+        pkgs (list): List of packages to check.
+        url (str, optional): Url for PyPi. Defaults to Constants.REGISTRY_URL_PYPI.
+    """
     logging.info("PyPI registry engaged.")
     payload = {}
     for x in pkgs:
@@ -17,8 +24,8 @@ def recv_pkg_info(pkgs, url=Constants.REGISTRY_URL_PYPI):
                    'Content-Type': 'application/json'}
         try:
             res = requests.get(fullurl, params=payload, headers=headers)
-        except:
-            logging.error("Connection error.")
+        except requests.RequestException as e:
+            logging.error("Connection error: %s", e)
             exit(ExitCodes.CONNECTION_ERROR.value)
         if res.status_code == 404:
             # Package not found
@@ -29,9 +36,10 @@ def recv_pkg_info(pkgs, url=Constants.REGISTRY_URL_PYPI):
             exit(ExitCodes.CONNECTION_ERROR.value)
         try:
             j = json.loads(res.text)
-        except:
+        except json.JSONDecodeError:
+            logging.warning("Couldn't decode JSON, assuming package missing.")
             x.exists = False
-            return
+            continue
         if j['info']:
             x.exists = True
             latest = j['info']['version']
@@ -46,6 +54,18 @@ def recv_pkg_info(pkgs, url=Constants.REGISTRY_URL_PYPI):
             x.exists = False
 
 def scan_source(dir_name, recursive=False):
+    """Scan the source directory for requirements.txt files.
+
+    Args:
+        dir_name (str): Directory to scan.
+        recursive (bool, optional): Whether to recurse into subdirectories. Defaults to False.
+
+    Raises:
+        FileNotFoundError: _description_
+
+    Returns:
+        _type_: _description_
+    """
     try:
         logging.info("PyPI scanner engaged.")
         req_files = []
@@ -58,11 +78,12 @@ def scan_source(dir_name, recursive=False):
             if os.path.isfile(path):
                 req_files.append(path)
             else:
-                raise FileNotFoundError("requirements.txt not found.")
+                logging.error("requirements.txt not found, unable to continue.")
+                sys.exit(ExitCodes.FILE_ERROR.value)
 
         all_requirements = []
         for path in req_files:
-            with open(path, "r") as file:
+            with open(path, "r", encoding="utf-8") as file:
                 body = file.read()
             reqs = requirements.parse(body)
             all_requirements.extend([x.name for x in reqs])

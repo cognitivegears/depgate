@@ -44,3 +44,4 @@ class Constants:
     PACKAGE_JSON_FILE = "package.json"
     POM_XML_FILE = "pom.xml"
     LOG_FORMAT = "[%(levelname)s] %(message)s"  # Added LOG_FORMAT constant
+    ANALYSIS = "[ANALYSIS]"

@@ -1,3 +1,4 @@
+"""Maven registry interaction module."""
 import json
 import os
 import sys
@@ -7,6 +8,12 @@ import requests
 from constants import ExitCodes, Constants
 
 def recv_pkg_info(pkgs, url=Constants.REGISTRY_URL_MAVEN):
+    """Check the existence of the packages in the Maven registry.
+
+    Args:
+        pkgs (list): List of packages to check.
+        url (str, optional): Maven Url. Defaults to Constants.REGISTRY_URL_MAVEN.
+    """
     logging.info("Maven checker engaged.")
     payload = {"wt": "json", "rows": 20}
     #TODO move everything off names and modify instances instead
@@ -21,7 +28,7 @@ def recv_pkg_info(pkgs, url=Constants.REGISTRY_URL_MAVEN):
         except requests.RequestException as e:
             logging.error("Connection error: %s", e)
             sys.exit(ExitCodes.CONNECTION_ERROR.value)
-        #print(res)
+
         j = json.loads(res.text)
         if j['response']['numFound'] == 1: #safety, can't have multiples
             x.exists = True
@@ -31,6 +38,15 @@ def recv_pkg_info(pkgs, url=Constants.REGISTRY_URL_MAVEN):
             x.exists = False
 
 def scan_source(dir_name, recursive=False):
+    """Scan the source directory for pom.xml files.
+
+    Args:
+        dir_name (str): Directory to scan.
+        recursive (bool, optional): Whether to scan recursively. Defaults to False.
+
+    Returns:
+        _type_: _description_
+    """
     try:
         logging.info("Maven scanner engaged.")
         pom_files = []
@@ -43,7 +59,8 @@ def scan_source(dir_name, recursive=False):
             if os.path.isfile(path):
                 pom_files.append(path)
             else:
-                raise FileNotFoundError("pom.xml not found.")
+                logging.error("pom.xml not found. Unable to scan.")
+                sys.exit(ExitCodes.FILE_ERROR.value)
 
         lister = []
         for path in pom_files:
