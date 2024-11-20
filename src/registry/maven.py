@@ -3,9 +3,10 @@ import requests
 import os
 import xml.etree.ElementTree as ET
 from constants import ExitCodes, Constants
+import logging  # Added import
 
 def recv_pkg_info(pkgs, url=Constants.REGISTRY_URL_MAVEN):
-    print("[PROC] Maven checker engaged.")
+    logging.info("Maven checker engaged.")
     payload = {"wt": "json", "rows": 20}
     names = []
     keyvals = {}
@@ -19,7 +20,7 @@ def recv_pkg_info(pkgs, url=Constants.REGISTRY_URL_MAVEN):
         try:
             res = requests.get(url, params=payload, headers=headers)
         except:
-            print("[ERR] Connection error.")
+            logging.error("Connection error.")
             exit(ExitCodes.CONNECTION_ERROR.value)
         #print(res)
         j = json.loads(res.text)
@@ -47,5 +48,5 @@ def scan_source(dir):
             #print(lister)
         return lister
     except:
-        print("[ERR] Couldn't import from given path.")
+        logging.error("Couldn't import from given path.")
         exit(ExitCodes.FILE_ERROR.value)

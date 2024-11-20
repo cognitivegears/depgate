@@ -1,3 +1,4 @@
+import logging  # Added import
 
 class MetaPackage:
     instances = []

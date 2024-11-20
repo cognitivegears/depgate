@@ -4,6 +4,7 @@ import sys
 import os
 from datetime import datetime as dt
 from constants import ExitCodes, Constants
+import logging  # Added import
 
 def get_keys(data):
     result = []
@@ -16,23 +17,23 @@ def get_keys(data):
 
 
 def recv_pkg_info(pkgs, url=Constants.REGISTRY_URL_NPM):
-    print("[PROC] npm checker engaged.")
+    logging.info("npm checker engaged.")
     pkg_list = []
     for x in pkgs:
         pkg_list.append(x.pkg_name)
     payload =  '['+','.join(f'"{w}"' for w in pkg_list)+']' #list->payload conv
     headers = { 'Accept': 'application/json',
                 'Content-Type': 'application/json'}
-    print("[PROC] Connecting to registry at " + url +   "  ...")
+    logging.info("Connecting to registry at %s ...", url)
     try:
         res = requests.post(url, data=payload, headers=headers)
         if res.status_code != 200:
-            print(f"[ERR] Unexpected status code ({res.status_code})")
+            logging.error("Unexpected status code (%s)", res.status_code)
             sys.exit(ExitCodes.CONNECTION_ERROR.value)
         x = {}
         x = json.loads(res.text)
     except:
-        print("[ERR] Connection error.")
+        logging.error("Connection error.")
         sys.exit(ExitCodes.CONNECTION_ERROR.value)
     for i in pkgs:
         if i.pkg_name in x:
@@ -53,7 +54,7 @@ def scan_source(dir):
         body = file.read()
         filex = json.loads(body)
     except:
-        print("[ERR] Couldn't import from given path.")
+        logging.error("Couldn't import from given path.")
         sys.exit(ExitCodes.FILE_ERROR.value)
 
     lister = list(filex['dependencies'].keys())

@@ -12,8 +12,9 @@ from analysis import heuristics as heur
 # export
 import csv
 import sys
+import logging  # Added import
 
-from constants import ExitCodes, PackageManagers, Constants
+from constants import ExitCodes, PackageManagers, Constants  # Import Constants including LOG_FORMAT
 
 SUPPORTED_PACKAGES = Constants.SUPPORTED_PACKAGES
 
@@ -65,6 +66,19 @@ def parse_args():
         help="Required analysis level - compare (comp), heuristics (heur) (default: compare)",
                     action="store", default="compare", type=str,
                     choices = Constants.LEVELS)
+    # Added new arguments for logging
+    parser.add_argument("--loglevel",
+                        dest="LOG_LEVEL",
+                        help="Set the logging level",
+                        action="store",
+                        type=str,
+                        choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
+                        default='INFO')
+    parser.add_argument("--logfile",
+                        dest="LOG_FILE",
+                        help="Log output file",
+                        action="store",
+                        type=str)
     return parser.parse_args()
 
 
@@ -88,7 +102,7 @@ def load_pkgs_file(pkgs):
             lister.append(i.strip())
         return lister
     except:
-        print("[ERR]  Cannot process input list/file")
+        logging.error("Cannot process input list/file")
         raise TypeError
 
 def scan_source(pkgtype, dir):
@@ -99,7 +113,7 @@ def scan_source(pkgtype, dir):
     elif pkgtype == PackageManagers.PYPI.value:
         return pypi.scan_source(dir)
     else:
-        print("[ERROR]  Selected package type doesn't support import scan.")
+        logging.error("Selected package type doesn't support import scan.")
         sys.exit(ExitCodes.FILE_ERROR.value)
 
 def check_against(check_type, check_list):
@@ -123,9 +137,9 @@ def export_csv(instances, path):
         with open(path, 'w', newline='') as file:
             export = csv.writer(file)
             export.writerows(rows)
-        print("[EXPORT]  CSV file has been successfuly exported at: " + path)
+        logging.info("CSV file has been successfully exported at: %s", path)
     except:
-        print("[ERROR]  CSV file couldn't be written to disk.")
+        logging.error("CSV file couldn't be written to disk.")
         sys.exit(1)
         
         
@@ -137,7 +151,25 @@ def main():
 
     # the most important part of any program starts here
 
-    print(r"""
+    args = parse_args()
+
+    # Configure logging
+    log_level = getattr(logging, args.LOG_LEVEL.upper(), logging.INFO)
+    if '-h' in sys.argv or '--help' in sys.argv:
+        # Ensure help output is always at INFO level
+        logging.basicConfig(level=logging.INFO, format=Constants.LOG_FORMAT)
+    else:
+        if args.LOG_FILE:
+            logging.basicConfig(filename=args.LOG_FILE, level=log_level,
+                                format=Constants.LOG_FORMAT)  # Used LOG_FORMAT constant
+        else:
+            logging.basicConfig(level=log_level, format=Constants.LOG_FORMAT)  # Used LOG_FORMAT constant
+
+    logging.info("Arguments parsed.")
+    GITHUB_TOKEN = args.GITHUB_TOKEN
+
+    # Logging the ASCII art banner
+    logging.info(r"""
   ____  _____ ____  _____ _   _ ____  _____ _   _  ______   __
  |  _ \| ____|  _ \| ____| \ | |  _ \| ____| \ | |/ ___\ \ / /
  | | | |  _| | |_) |  _| |  \| | | | |  _| |  \| | |    \ V / 
@@ -155,7 +187,7 @@ def main():
 
     # SCAN & FLAG ARGS
     args = parse_args()
-    print("[PROC] Arguments parsed.")
+    logging.info("Arguments parsed.")
     GITHUB_TOKEN = args.GITHUB_TOKEN
 
     #IMPORT
@@ -166,7 +198,7 @@ def main():
     elif args.SINGLE:
         pkglist = []
         pkglist.append(args.SINGLE[0])
-    print("[PROC] Package list imported....  " + str(pkglist))
+    logging.info("Package list imported: %s", str(pkglist))
     
     if args.package_type == PackageManagers.NPM.value:
         for x in pkglist:

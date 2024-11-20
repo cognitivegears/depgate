@@ -19,3 +19,4 @@ class Constants:
     REQUIREMENTS_FILE = "requirements.txt"
     PACKAGE_JSON_FILE = "package.json"
     POM_XML_FILE = "pom.xml"
+    LOG_FORMAT = '[%(levelname)s] %(message)s'  # Added LOG_FORMAT constant

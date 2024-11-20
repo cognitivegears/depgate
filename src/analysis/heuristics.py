@@ -1,4 +1,5 @@
 import time
+import logging  # Added import
 
 STG = "[ANALYSIS] "
 
@@ -17,11 +18,11 @@ def combobulate_heur(pkgs):
 
 def test_exists(x):
     if x.exists == True:
-        print(STG +"Package: ", x, "  is present on public provider.")
+        logging.info("%sPackage: %s is present on public provider.", STG, x)
     elif x.exists == False:
-        print(STG + "Package: ", x, "  is NOT present on public provider.")
-    elif x.exists == None:
-        print(STG + "Package: ", x, "  test skipped.")
+        logging.info("%sPackage: %s is NOT present on public provider.", STG, x)
+    else:
+        logging.info("%sPackage: %s test skipped.", STG, x)
 
 def test_score(x):
     threshold = 0.6
@@ -29,34 +30,30 @@ def test_score(x):
     ttxt = ". Mid set to " + str(threshold) + ")"
     if x.score != None:
         if x.score > threshold:
-            print(STG + ".... package scored ABOVE MID - "+ str(x.score) + ttxt)
+            logging.info("%s.... package scored ABOVE MID - %s%s", STG, str(x.score), ttxt)
         elif x.score <= threshold and x.score > risky:
-            print(STG + ".... [RISK] package scored BELOW MID - "+ str(x.score) + ttxt)
+            logging.warning("%s.... [RISK] package scored BELOW MID - %s%s", STG, str(x.score), ttxt)
         elif x.score <= risky:
-            print(STG + ".... [RISK] package scored LOW - "+ str(x.score) + ttxt)
+            logging.warning("%s.... [RISK] package scored LOW - %s%s", STG, str(x.score), ttxt)
 
 def test_timestamp(x):
     if x.timestamp != None:
         dayspast = ((time.time()*1000 - x.timestamp)/86400000)
-        print(STG + ".... package is " + str(int(dayspast)) + " days old.")
-        if (dayspast < 2): #freshness test
-            print(".... [RISK] package is SUSPICIOUSLY NEW.")
+        logging.info("%s.... package is %d days old.", STG, int(dayspast))
+        if (dayspast < 2):  # freshness test
+            logging.warning("%s.... [RISK] package is SUSPICIOUSLY NEW.", STG)
 
 def stats_exists(pkgs):
-    count = 0
-    for x in pkgs:
-        if x.exists == True: 
-            count = count + 1
-    toutof = STG + str(count) + " out of " + str(len(pkgs)) + \
-        " packages were present on the public provider"
-    perc = "(" + str(count/len(pkgs)*100) + f"% of total)"
-    print(toutof + " " + perc + ".")
+    count = sum(1 for x in pkgs if x.exists == True)
+    total = len(pkgs)
+    percentage = (count / total) * 100 if total > 0 else 0
+    logging.info("%s%d out of %d packages were present on the public provider (%.2f%% of total).",
+                 STG, count, total, percentage)
 
 def test_verCount(x):
     if x.verCount != None:
         if x.verCount < 2:
-            print(STG + ".... [RISK] package history is SHORT. Total " + \
-                str(x.verCount) + " versions committed.")
+            logging.warning("%s.... [RISK] package history is SHORT. Total %d versions committed.",
+                            STG, x.verCount)
         else:
-            print(STG + ".... Total " + \
-                str(x.verCount) + " versions committed.")
+            logging.info("%s.... Total %d versions committed.", STG, x.verCount)
