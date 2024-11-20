@@ -14,7 +14,7 @@ def recv_pkg_info(pkgs, url=REGISTRY_URL):
     payload = {}
     names = []
     for x in pkgs:
-        fullurl = url + str(x) + '/json'
+        fullurl = url + x.pkg_name + '/json'
         print(fullurl)
         headers = {'Accept': 'application/json',
                    'Content-Type': 'application/json'}

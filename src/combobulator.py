@@ -45,7 +45,7 @@ def parse_args():
                     help="Extract dependencies from local source repository",
                     action="append",
                     type=str)
-    input_group.add_argument("-p" "--package",
+    input_group.add_argument("-p", "--package",
                             dest="SINGLE",
                             help="Name a single package.",
                             action="append",type=str )
@@ -172,10 +172,10 @@ def main():
     if args.package_type == 'npm':
         for x in pkglist:
             metapkg(x, args.package_type)
-    if args.package_type == 'maven':
+    elif args.package_type == 'maven':
         for x in pkglist: # format orgId:packageId
             metapkg(x.split(':')[1], args.package_type, x.split(':')[0])
-    if args.package_type == 'pypi':
+    elif args.package_type == 'pypi':
         for x in pkglist:
             metapkg(x, args.package_type)
 

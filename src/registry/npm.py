@@ -30,7 +30,7 @@ def recv_pkg_info(pkgs, url=REGISTRY_URL):
     try:
         res = requests.post(url, data=payload, headers=headers)
         if res.status_code != 200:
-            print("[ERR] Unexpected status code (" + res.status_code + ")")
+            print(f"[ERR] Unexpected status code ({res.status_code})")
             sys.exit(2)
         x = {}
         x = json.loads(res.text)
@@ -61,7 +61,7 @@ def scan_source(dir):
 
     lister = list(filex['dependencies'].keys())
     if 'devDependencies' in filex:
-        lister.append(filex['devDependencies'].keys())
+        lister.append(list(filex['devDependencies'].keys()))
         # OPTIONAL - de-comment if you would like to add peer deps.
         #lister.append(filex['peerDependencies'].keys())
     return lister
