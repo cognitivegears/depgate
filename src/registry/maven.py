@@ -59,7 +59,7 @@ def scan_source(dir, recursive=False):
                     group = dependency.find(ns + 'groupId').text
                     artifact = dependency.find(ns + 'artifactId').text
                     lister.append(group + ':' + artifact)
-        return lister
+        return list(set(lister))
     except (FileNotFoundError, ET.ParseError) as e:
         logging.error("Couldn't import from given path, error: %s", e)
         sys.exit(ExitCodes.FILE_ERROR.value)

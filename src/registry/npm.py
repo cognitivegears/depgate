@@ -70,7 +70,7 @@ def scan_source(dir, recursive=False):
             lister.extend(list(filex.get('dependencies', {}).keys()))
             if 'devDependencies' in filex:
                 lister.extend(list(filex['devDependencies'].keys()))
-        return lister
+        return list(set(lister))
     except (FileNotFoundError, IOError, json.JSONDecodeError) as e:
         logging.error("Couldn't import from given path, error: %s", e)
         sys.exit(ExitCodes.FILE_ERROR.value)

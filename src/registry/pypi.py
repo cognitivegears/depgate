@@ -69,7 +69,7 @@ def scan_source(dir, recursive=False):
                 body = file.read()
             reqs = requirements.parse(body)
             all_requirements.extend([x.name for x in reqs])
-        return all_requirements
+        return list(set(all_requirements))
     except (FileNotFoundError, IOError) as e:
         logging.error("Couldn't import from given path '%s', error: %s", path, e)
         sys.exit(ExitCodes.FILE_ERROR.value)
