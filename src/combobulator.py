@@ -23,24 +23,6 @@ from args import parse_args
 
 SUPPORTED_PACKAGES = Constants.SUPPORTED_PACKAGES
 
-def init_args():
-    """Initializes the arguments to be used in the program."""
-    # WARNING: don't populate this instance with a hard-coded value
-    # it is merely for initializing a string variable.
-    GITHUB_TOKEN=""
-
-def load_env():
-    """
-    .env file example:
-
-    # GitHub Token
-    GITHUB_TOKEN=ghp_123456789012345678901234567890123456
-    """
-
-    load_dotenv('.env')
-    GITHUB_TOKEN=os.getenv('GITHUB_TOKEN')
-
-
 def load_pkgs_file(file_name):
     """Loads the packages from a file.
 
@@ -124,10 +106,6 @@ def export_csv(instances, path):
 
 def main():
     """Main function of the program."""
-    # envs to be consumed: GITHUB_TOKEN
-    init_args()
-    load_env()
-
     # the most important part of any program starts here
 
     args = parse_args()
@@ -146,7 +124,6 @@ def main():
                                 format=Constants.LOG_FORMAT)  # Used LOG_FORMAT constant
 
     logging.info("Arguments parsed.")
-    GITHUB_TOKEN = args.GITHUB_TOKEN
 
     # Logging the ASCII art banner
     logging.info(r"""
@@ -166,9 +143,6 @@ def main():
     # are you amazed yet?
 
     # SCAN & FLAG ARGS
-    args = parse_args()
-    logging.info("Arguments parsed.")
-    GITHUB_TOKEN = args.GITHUB_TOKEN
 
     # Check if recursive option is used without directory
     if args.RECURSIVE and not args.FROM_SRC:

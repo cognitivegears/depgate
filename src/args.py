@@ -41,10 +41,6 @@ def parse_args():
         help="Export packages properties onto CSV file",
                     action="store", type=str)
 
-    parser.add_argument("-gh", "--github",
-                    dest="GITHUB_TOKEN",
-                    help="GitHub Access Token (Overrides .env file setting)",
-                    action="store", type=str)
     parser.add_argument("-a", "--analysis",
         dest="LEVEL",
         help="Required analysis level - compare (comp), heuristics (heur) (default: compare)",

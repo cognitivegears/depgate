@@ -38,8 +38,6 @@ Make sure to install required dependencies by running:
                         Extract dependencies from local source repository
   -p--package SINGLE    Name a single package.
   -c CSV, --csv CSV     Export packages properties onto CSV file
-  -gh GITHUB_TOKEN, --github GITHUB_TOKEN
-                        GitHub Access Token (Overrides .env file setting)
   -a {compare,comp,heuristics,heur}, --analysis {compare,comp,heuristics,heur}
                         Required analysis level - compare (comp), heuristics
                         (heur) (default: compare)
