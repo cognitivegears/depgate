@@ -83,6 +83,11 @@ def parse_args():
                         dest="RECURSIVE",
                         help="Recursively scan directories when scanning from source.",
                         action="store_true")
+    # Add new argument for controlling exit on warnings
+    parser.add_argument("--error-on-warnings",
+                        dest="ERROR_ON_WARNINGS",
+                        help="Exit with a non-zero status code if warnings are present.",
+                        action="store_true")
     return parser.parse_args()
 
 
@@ -230,6 +235,16 @@ def main():
     # OUTPUT
     if args.CSV:
         export_csv(metapkg.instances, args.CSV)
+
+    # Check if any package was not found
+    not_found = any(not x.exists for x in metapkg.instances)
+    if not_found:
+        logging.warning("One or more packages were not found.")
+        if args.ERROR_ON_WARNINGS:
+            logging.error("Warnings present, exiting with non-zero status code.")
+            sys.exit(ExitCodes.PACKAGE_NOT_FOUND.value)
+
+    sys.exit(ExitCodes.SUCCESS.value)
 
 if __name__ == "__main__":
     main()

@@ -4,6 +4,7 @@ class ExitCodes(Enum):
     SUCCESS = 0
     CONNECTION_ERROR = 2
     FILE_ERROR = 1
+    PACKAGE_NOT_FOUND = 3  # Added new exit code (warning)
 
 class PackageManagers(Enum):
     NPM = "npm"
