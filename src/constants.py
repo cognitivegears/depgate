@@ -45,3 +45,4 @@ class Constants:
     POM_XML_FILE = "pom.xml"
     LOG_FORMAT = "[%(levelname)s] %(message)s"  # Added LOG_FORMAT constant
     ANALYSIS = "[ANALYSIS]"
+    REQUEST_TIMEOUT = 30  # Timeout in seconds for all HTTP requests

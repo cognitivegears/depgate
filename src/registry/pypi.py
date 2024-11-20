@@ -23,7 +23,11 @@ def recv_pkg_info(pkgs, url=Constants.REGISTRY_URL_PYPI):
         headers = {'Accept': 'application/json',
                    'Content-Type': 'application/json'}
         try:
-            res = requests.get(fullurl, params=payload, headers=headers)
+            res = requests.get(fullurl, params=payload, headers=headers, 
+                             timeout=Constants.REQUEST_TIMEOUT)
+        except requests.Timeout:
+            logging.error("Request timed out after %s seconds", Constants.REQUEST_TIMEOUT)
+            exit(ExitCodes.CONNECTION_ERROR.value)
         except requests.RequestException as e:
             logging.error("Connection error: %s", e)
             exit(ExitCodes.CONNECTION_ERROR.value)

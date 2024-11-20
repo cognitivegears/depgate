@@ -44,12 +44,15 @@ def recv_pkg_info(pkgs, url=Constants.REGISTRY_URL_NPM):
                 'Content-Type': 'application/json'}
     logging.info("Connecting to registry at %s ...", url)
     try:
-        res = requests.post(url, data=payload, headers=headers)
+        res = requests.post(url, data=payload, headers=headers, 
+                          timeout=Constants.REQUEST_TIMEOUT)
         if res.status_code != 200:
             logging.error("Unexpected status code (%s)", res.status_code)
             sys.exit(ExitCodes.CONNECTION_ERROR.value)
-        x = {}
         x = json.loads(res.text)
+    except requests.Timeout:
+        logging.error("Request timed out after %s seconds", Constants.REQUEST_TIMEOUT)
+        sys.exit(ExitCodes.CONNECTION_ERROR.value)
     except requests.RequestException as e:
         logging.error("Connection error: %s", e)
         sys.exit(ExitCodes.CONNECTION_ERROR.value)
