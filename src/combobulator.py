@@ -1,29 +1,36 @@
+"""Combobulator - Dependency Confusion Checker
+
+    Raises:
+        TypeError: If the input list cannot be processed
+
+    Returns:
+        int: Exit code
+"""
 import argparse
 import os
+import csv
+import sys
+import logging
 from dotenv import load_dotenv
 
 # internal module imports
 from metapackage import MetaPackage as metapkg
-import registry.npm as npm
-import registry.maven as maven
-import registry.pypi as pypi
+from registry import npm
+from registry import maven
+from registry import pypi
 from analysis import heuristics as heur
-
-# export
-import csv
-import sys
-import logging  # Added import
-
 from constants import ExitCodes, PackageManagers, Constants  # Import Constants including LOG_FORMAT
 
 SUPPORTED_PACKAGES = Constants.SUPPORTED_PACKAGES
 
 def init_args():
+    """Initializes the arguments to be used in the program."""
     # WARNING: don't populate this instance with a hard-coded value
     # it is merely for initializing a string variable.
     GITHUB_TOKEN=""
 
 def parse_args():
+    """Parses the arguments passed to the program."""
     parser = argparse.ArgumentParser(
         prog="combobulator.py",
         description="Dependency Combobulator - Dependency Confusion Checker",
@@ -103,57 +110,89 @@ def load_env():
     GITHUB_TOKEN=os.getenv('GITHUB_TOKEN')
 
 
-def load_pkgs_file(pkgs):
-    try:
-        lister = []
-        lines = open(pkgs).readlines()
-        for i in lines:
-            lister.append(i.strip())
-        return lister
-    except:
-        logging.error("Cannot process input list/file")
-        raise TypeError
+def load_pkgs_file(file_name):
+    """Loads the packages from a file.
 
-def scan_source(pkgtype, dir, recursive=False):
+    Args:
+        file_name (str): File path containing the list of packages.
+
+    Raises:
+        TypeError: If the input list cannot be processed
+
+    Returns:
+        list: List of packages
+    """
+    try:
+        with open(file_name, encoding='utf-8') as file:
+            return [line.strip() for line in file]
+    except FileNotFoundError as e:
+        logging.error("File not found: %s, aborting", e)
+        sys.exit(ExitCodes.FILE_ERROR.value)
+    except IOError as e:
+        logging.error("IO error: %s, aborting", e)
+        sys.exit(ExitCodes.FILE_ERROR.value)
+
+def scan_source(pkgtype, dir_name, recursive=False):
+    """Scans the source directory for packages.
+
+    Args:
+        pkgtype (str): Package manager type, i.e. "npm".
+        dir (str): Directory path to scan.
+        recursive (bool, optional): Option to recurse into subdirectories. Defaults to False.
+
+    Returns:
+        list: List of packages found in the source directory.
+    """
     if pkgtype == PackageManagers.NPM.value:
-        return npm.scan_source(dir, recursive)
+        return npm.scan_source(dir_name, recursive)
     elif pkgtype == PackageManagers.MAVEN.value:
-        return maven.scan_source(dir, recursive)
+        return maven.scan_source(dir_name, recursive)
     elif pkgtype == PackageManagers.PYPI.value:
-        return pypi.scan_source(dir, recursive)
+        return pypi.scan_source(dir_name, recursive)
     else:
         logging.error("Selected package type doesn't support import scan.")
         sys.exit(ExitCodes.FILE_ERROR.value)
 
 def check_against(check_type, check_list):
+    """Checks the packages against the registry.
+
+    Args:
+        check_type (str): Package manager type, i.e. "npm".
+        check_list (list): List of packages to check.
+    """
     if check_type == PackageManagers.NPM.value:
-        response = npm.recv_pkg_info(check_list)
-        return response
+        npm.recv_pkg_info(check_list)
     elif check_type == PackageManagers.MAVEN.value:
-        response = maven.recv_pkg_info(check_list)
-        return response
+        maven.recv_pkg_info(check_list)
     elif check_type == PackageManagers.PYPI.value:
-        response = pypi.recv_pkg_info(check_list)
+        pypi.recv_pkg_info(check_list)
+    else:
+        logging.error("Selected package type doesn't support registry check.")
+        sys.exit(ExitCodes.FILE_ERROR.value)
 
 def export_csv(instances, path):
-    #filer = open(path, 'w', newline='')
+    """Exports the package properties to a CSV file.
+
+    Args:
+        instances (list): List of package instances.
+        path (str): File path to export the CSV.
+    """
     headers = ["Package Name","Package Type", "Exists on External",
             "Org/Group ID","Score","Version Count","Timestamp"]
     rows = [headers]
     for x in instances:
         rows.append(x.listall())
     try:
-        with open(path, 'w', newline='') as file:
+        with open(path, 'w', newline='', encoding='utf-8') as file:
             export = csv.writer(file)
             export.writerows(rows)
         logging.info("CSV file has been successfully exported at: %s", path)
-    except:
-        logging.error("CSV file couldn't be written to disk.")
+    except (OSError, csv.Error) as e:
+        logging.error("CSV file couldn't be written to disk: %s", e)
         sys.exit(1)
-        
-        
-    
+
 def main():
+    """Main function of the program."""
     # envs to be consumed: GITHUB_TOKEN
     init_args()
     load_env()
@@ -172,7 +211,8 @@ def main():
             logging.basicConfig(filename=args.LOG_FILE, level=log_level,
                                 format=Constants.LOG_FORMAT)  # Used LOG_FORMAT constant
         else:
-            logging.basicConfig(level=log_level, format=Constants.LOG_FORMAT)  # Used LOG_FORMAT constant
+            logging.basicConfig(level=log_level,
+                                format=Constants.LOG_FORMAT)  # Used LOG_FORMAT constant
 
     logging.info("Arguments parsed.")
     GITHUB_TOKEN = args.GITHUB_TOKEN
@@ -212,12 +252,12 @@ def main():
         pkglist = []
         pkglist.append(args.SINGLE[0])
     logging.info("Package list imported: %s", str(pkglist))
-    
+
     if args.package_type == PackageManagers.NPM.value:
         for x in pkglist:
             metapkg(x, args.package_type)
     elif args.package_type == PackageManagers.MAVEN.value:
-        for x in pkglist: # format orgId:packageId
+        for x in pkglist: # format org_id:package_id
             metapkg(x.split(':')[1], args.package_type, x.split(':')[0])
     elif args.package_type == PackageManagers.PYPI.value:
         for x in pkglist:
@@ -227,9 +267,9 @@ def main():
     check_against(args.package_type, metapkg.instances)
 
     # ANALYZE
-    if args.LEVEL == Constants.LEVELS[0] or args.LEVEL == Constants.LEVELS[1]:
+    if args.LEVEL in (Constants.LEVELS[0], Constants.LEVELS[1]):
         heur.combobulate_min(metapkg.instances)
-    elif args.LEVEL == Constants.LEVELS[2] or args.LEVEL == Constants.LEVELS[3]:
+    elif args.LEVEL in (Constants.LEVELS[2], Constants.LEVELS[3]):
         heur.combobulate_heur(metapkg.instances)
 
     # OUTPUT
@@ -248,3 +288,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    

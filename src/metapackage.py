@@ -1,23 +1,28 @@
-import logging  # Added import
-
 class MetaPackage:
+    """Class to represent a package"""
     instances = []
 
     def __init__(self, pkgname, pkgtype=None, pkgorg=None):
         self.instances.append(self) # adding the instance to colllective
         if len(pkgname.split(':')) == 2:
             if pkgtype == "maven":
-                if pkgorg == None:
+                if pkgorg is None:
                     self._pkg_name = pkgname.split(':')[1]
-                    self._orgId = pkgname.split(':')[0]
+                    self._org_id = pkgname.split(':')[0]
         else:
             self._pkg_name = pkgname
-            self._orgId = pkgorg
+            self._org_id = pkgorg
         self._exists = None
         self._pkg_type = pkgtype
         self._score = None
         self._timestamp = None
-        self._verCount = None
+        self._version_count = None
+        self._fork_count = None
+        self._subs_count = None
+        self._star_count = None
+        self._contributor_count = None
+        self._download_count = None
+        self._issue_count = None
         #self._pkg_ver = pkgver TBA
 
     def __repr__(self):
@@ -27,25 +32,46 @@ class MetaPackage:
         return str(self._pkg_name)
 
     def listall(self):
+        """List all the attributes of the class.
+
+        Returns:
+            list: List of all the attributes of the class.
+        """
         lister = []
         lister.append(self._pkg_name)
         lister.append(self._pkg_type)
         lister.append(self._exists)
-        lister.append(self._orgId)
+        lister.append(self._org_id)
         lister.append(self._score)
-        lister.append(self._verCount)
+        lister.append(self._version_count)
         lister.append(self._timestamp)
         return lister
-    
+
+    @staticmethod
     def get_instances():
+        """Get all instances of the class.
+
+        Returns:
+            list: List of all instances of the class.
+        """
         return MetaPackage.instances
 
     @property
     def pkg_name(self):
+        """Property for the package name.
+
+        Returns:
+            str: Package name.
+        """
         return self._pkg_name
 
     @property
     def author(self):
+        """Property for the author.
+
+        Returns:
+            str: Author.
+        """
         return self._author
 
     @author.setter
@@ -54,6 +80,11 @@ class MetaPackage:
 
     @property
     def author_email(self):
+        """Property for the author email.
+
+        Returns:
+            str: Author email.
+        """
         return self._author_email
 
     @author_email.setter
@@ -62,14 +93,24 @@ class MetaPackage:
 
     @property
     def exists(self):
+        """Property defining if the package exists.
+
+        Returns:
+            boolean: True if the package exists, False otherwise.
+        """
         return self._exists
-    
+
     @exists.setter
     def exists(self, a):
         self._exists = a
 
     @property
     def publisher(self):
+        """Property for the publisher.
+
+        Returns:
+            str: Publisher.
+        """
         return self._publisher
 
     @publisher.setter
@@ -78,6 +119,11 @@ class MetaPackage:
 
     @property
     def publisher_email(self):
+        """Property for the publisher email.
+
+        Returns:
+            str: Publisher email.
+        """
         return self._publisher_email
 
     @publisher.setter
@@ -86,6 +132,11 @@ class MetaPackage:
 
     @property
     def maintainer(self):
+        """Property for the maintainer.
+
+        Returns:
+            str: Maintainer.
+        """
         return self._maintainer
 
     @maintainer.setter
@@ -94,98 +145,159 @@ class MetaPackage:
 
     @property
     def maintainer_email(self):
+        """Property for the maintainer email.
+
+        Returns:
+            str: Maintainer email.
+        """
         return self._maintainer_email
 
     @maintainer_email.setter
-    def maintainer_email(self, a):
-        self._maintainer_email = a 
-    
-    @property
-    def forkCount(self):
-        return self._forkCount
-
-    @forkCount.setter
-    def forkCount(self, a):
-        self._forkCount = a
+    def maintainer_email(self, email_address):
+        self._maintainer_email = email_address
 
     @property
-    def subsCount(self):
-        return self._subsCount
+    def fork_count(self):
+        """Property for the fork count.
 
-    @subsCount.setter
-    def subsCount(self, a):
-        self._subsCount = a
+        Returns:
+            int: Fork count.
+        """
+        return self._fork_count
 
-    @property
-    def starCount(self):
-        return self._starCount
-
-    @starCount.setter
-    def starCount(self, a):
-        self._starCount = a
+    @fork_count.setter
+    def fork_count(self, count):
+        self._fork_count = count
 
     @property
-    def downloadCount(self):
-        return self._downloadCount
+    def subs_count(self):
+        """Property for the subscription count.
 
-    @downloadCount.setter
-    def downloadCount(self, a):
-        self._downloadCount = a
+        Returns:
+            int: Subscription count.
+        """
+        return self._subs_count
+
+    @subs_count.setter
+    def subs_count(self, a):
+        self._subs_count = a
+
+    @property
+    def star_count(self):
+        """Property for the star count.
+
+        Returns:
+            int: Star count.
+        """
+        return self._star_count
+
+    @star_count.setter
+    def star_count(self, a):
+        self._star_count = a
+
+    @property
+    def download_count(self):
+        """Property for the download count.
+
+        Returns:
+            int: Download count.
+        """
+        return self._download_count
+
+    @download_count.setter
+    def download_count(self, count):
+        self._download_count = count
 
     @property
     def score(self):
+        """Property for the score.
+
+        Returns:
+            int: Score.
+        """
         return self._score
 
     @score.setter
     def score(self, a):
         self._score = a
- 
+
     @property
     def dependencies(self):
+        """Property for the dependencies.
+
+        Returns:
+            list: List of dependencies.
+        """
         return self._dependencies
 
     @dependencies.setter
-    def dependencies(self, a):
-        self._dependencies = a
+    def dependencies(self, dependency_list):
+        self._dependencies = dependency_list
 
     @property
-    def issueCount(self):
-        return self._issueCount
+    def issue_count(self):
+        """Property for the issue count.
 
-    @issueCount.setter
-    def issueCount(self, a):
-        self._issueCount = a
+        Returns:
+            int: Issue count.
+        """
+        return self._issue_count
 
-    @property
-    def contributorCount(self):
-        return self._contributorCount
-
-    @contributorCount.setter
-    def contributorCount(self, a):
-        self._contributorCount = a
+    @issue_count.setter
+    def issue_count(self, count):
+        self._issue_count = count
 
     @property
-    def orgId(self):
-        return self._orgId
+    def contributor_count(self):
+        """Property for the contributor count.
 
-    @orgId.setter
-    def orgId(self, a):
-        self._orgId = a
+        Returns:
+            int: Contributor count.
+        """
+        return self._contributor_count
+
+    @contributor_count.setter
+    def contributor_count(self, a):
+        self._contributor_count = a
 
     @property
-    def verCount(self):
-        return self._verCount
+    def org_id(self):
+        """Property for the organization ID.
 
-    @verCount.setter
-    def verCount(self, a):
-        self._verCount = a
+        Returns:
+            str: Organization ID.
+        """
+        return self._org_id
+
+    @org_id.setter
+    def org_id(self, a):
+        self._org_id = a
+
+    @property
+    def version_count(self):
+        """Property for the version count.
+
+        Returns:
+            int: Version count.
+        """
+        return self._version_count
+
+    @version_count.setter
+    def version_count(self, a):
+        self._version_count = a
 
     @property
     def timestamp(self):
+        """Property for the timestamp.
+
+        Returns:
+            timestamp: Timestamp.
+        """
+
         return self._timestamp
 
     @timestamp.setter
-    def timestamp(self, a): #unix timestamp
-        self._timestamp = a
+    def timestamp(self, timestamp): #unix timestamp
+        self._timestamp = timestamp
 
 # not-supported for now: hasTests, testsSize, privateRepo

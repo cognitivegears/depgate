@@ -3,7 +3,6 @@ from gql import gql, Client
 from gql.transport.aiohttp import AIOHTTPTransport
 import json
 import requests
-import metapackage
 
 def public_npm_checker(pkg_list):
     print("npm checker")
@@ -11,7 +10,7 @@ def public_npm_checker(pkg_list):
     payload =  '['+','.join(f'"{w}"' for w in pkg_list.keys())+']' 
     headers = {'Accept': 'application/json', 'Content-Type': 'application/json'}
     res = requests.post(url, data=payload, headers=headers)
-    x = json.loHads(res.text)
+    x = json.loads(res.text)
     if not x:
         return
         

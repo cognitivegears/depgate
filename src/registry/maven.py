@@ -1,49 +1,45 @@
 import json
-import requests
 import os
 import sys
+import logging
 import xml.etree.ElementTree as ET
+import requests
 from constants import ExitCodes, Constants
-import logging  # Added import
 
 def recv_pkg_info(pkgs, url=Constants.REGISTRY_URL_MAVEN):
     logging.info("Maven checker engaged.")
     payload = {"wt": "json", "rows": 20}
-    names = []
-    keyvals = {}
     #TODO move everything off names and modify instances instead
     for x in pkgs:
-        tempstring = "g:" + x.orgId + " a:" + x.pkg_name
+        tempstring = "g:" + x.org_id + " a:" + x.pkg_name
         payload.update({"q": tempstring})
         #print(payload) 
         headers = { 'Accept': 'application/json',
                 'Content-Type': 'application/json'}
         try:
             res = requests.get(url, params=payload, headers=headers)
-        except:
-            logging.error("Connection error.")
-            exit(ExitCodes.CONNECTION_ERROR.value)
+        except requests.RequestException as e:
+            logging.error("Connection error: %s", e)
+            sys.exit(ExitCodes.CONNECTION_ERROR.value)
         #print(res)
         j = json.loads(res.text)
         if j['response']['numFound'] == 1: #safety, can't have multiples
-            names.append(j['response']['docs'][0]['a']) #add pkgName
             x.exists = True
             x.timestamp = j['response']['docs'][0]['timestamp']
-            x.verCount = j['response']['docs'][0]['versionCount']
+            x.version_count = j['response']['docs'][0]['versionCount']
         else:
             x.exists = False
-    return names
 
-def scan_source(dir, recursive=False):
+def scan_source(dir_name, recursive=False):
     try:
         logging.info("Maven scanner engaged.")
         pom_files = []
         if recursive:
-            for root, dirs, files in os.walk(dir):
+            for root, _, files in os.walk(dir_name):
                 if Constants.POM_XML_FILE in files:
                     pom_files.append(os.path.join(root, Constants.POM_XML_FILE))
         else:
-            path = os.path.join(dir, Constants.POM_XML_FILE)
+            path = os.path.join(dir_name, Constants.POM_XML_FILE)
             if os.path.isfile(path):
                 pom_files.append(path)
             else:

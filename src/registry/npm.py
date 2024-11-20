@@ -1,10 +1,10 @@
 import json
-import requests
 import sys
 import os
 from datetime import datetime as dt
-from constants import ExitCodes, Constants
 import logging  # Added import
+import requests
+from constants import ExitCodes, Constants
 
 def get_keys(data):
     result = []
@@ -45,18 +45,18 @@ def recv_pkg_info(pkgs, url=Constants.REGISTRY_URL_NPM):
             i.timestamp = unixtime
         else:
             i.exists = False
-            
 
-def scan_source(dir, recursive=False):
+
+def scan_source(dir_name, recursive=False):
     try:
         logging.info("npm scanner engaged.")
         pkg_files = []
         if recursive:
-            for root, dirs, files in os.walk(dir):
+            for root, _, files in os.walk(dir_name):
                 if Constants.PACKAGE_JSON_FILE in files:
                     pkg_files.append(os.path.join(root, Constants.PACKAGE_JSON_FILE))
         else:
-            path = os.path.join(dir, Constants.PACKAGE_JSON_FILE)
+            path = os.path.join(dir_name, Constants.PACKAGE_JSON_FILE)
             if os.path.isfile(path):
                 pkg_files.append(path)
             else:
@@ -64,7 +64,7 @@ def scan_source(dir, recursive=False):
 
         lister = []
         for path in pkg_files:
-            with open(path, "r") as file:
+            with open(path, "r", encoding="utf-8") as file:
                 body = file.read()
             filex = json.loads(body)
             lister.extend(list(filex.get('dependencies', {}).keys()))

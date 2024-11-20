@@ -1,16 +1,15 @@
 import json
-import requests
-import requirements
 import sys
 import os
 from datetime import datetime as dt
-from constants import ExitCodes, Constants
 import logging  # Added import
+import requests
+import requirements
+from constants import ExitCodes, Constants
 
 def recv_pkg_info(pkgs, url=Constants.REGISTRY_URL_PYPI):
     logging.info("PyPI registry engaged.")
     payload = {}
-    names = []
     for x in pkgs:
         fullurl = url + x.pkg_name + '/json'
         logging.debug(fullurl)
@@ -34,7 +33,6 @@ def recv_pkg_info(pkgs, url=Constants.REGISTRY_URL_PYPI):
             x.exists = False
             return
         if j['info']:
-            names.append(j['info']['name'])  # add pkgName
             x.exists = True
             latest = j['info']['version']
             for version in j['releases']:
@@ -43,21 +41,20 @@ def recv_pkg_info(pkgs, url=Constants.REGISTRY_URL_PYPI):
                     fmtx = '%Y-%m-%dT%H:%M:%S.%fZ'
                     unixtime = int(dt.timestamp(dt.strptime(timex, fmtx)) * 1000)
                     x.timestamp = unixtime
-            x.verCount = len(j['releases'])
+            x.version_count = len(j['releases'])
         else:
             x.exists = False
-    return names
 
-def scan_source(dir, recursive=False):
+def scan_source(dir_name, recursive=False):
     try:
         logging.info("PyPI scanner engaged.")
         req_files = []
         if recursive:
-            for root, dirs, files in os.walk(dir):
+            for root, _, files in os.walk(dir_name):
                 if Constants.REQUIREMENTS_FILE in files:
                     req_files.append(os.path.join(root, Constants.REQUIREMENTS_FILE))
         else:
-            path = os.path.join(dir, Constants.REQUIREMENTS_FILE)
+            path = os.path.join(dir_name, Constants.REQUIREMENTS_FILE)
             if os.path.isfile(path):
                 req_files.append(path)
             else:
