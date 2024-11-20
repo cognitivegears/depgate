@@ -13,8 +13,9 @@ from analysis import heuristics as heur
 import csv
 import sys
 
-SUPPORTED_PACKAGES=['npm', 'pypi', 'maven']
-LEVELS = ['compare', "comp", 'heuristics', "heur"]
+from constants import ExitCodes, PackageManagers, Constants
+
+SUPPORTED_PACKAGES = Constants.SUPPORTED_PACKAGES
 
 def init_args():
     # WARNING: don't populate this instance with a hard-coded value
@@ -63,7 +64,7 @@ def parse_args():
         dest="LEVEL",
         help="Required analysis level - compare (comp), heuristics (heur) (default: compare)",
                     action="store", default="compare", type=str,
-                    choices = LEVELS)
+                    choices = Constants.LEVELS)
     return parser.parse_args()
 
 
@@ -91,26 +92,24 @@ def load_pkgs_file(pkgs):
         raise TypeError
 
 def scan_source(pkgtype, dir):
-    if pkgtype == "npm":
+    if pkgtype == PackageManagers.NPM.value:
         return npm.scan_source(dir)
-    elif pkgtype == "maven":
+    elif pkgtype == PackageManagers.MAVEN.value:
         return maven.scan_source(dir)
-    elif pkgtype == "pypi":
+    elif pkgtype == PackageManagers.PYPI.value:
         return pypi.scan_source(dir)
     else:
         print("[ERROR]  Selected package type doesn't support import scan.")
-        sys.exit(1)
+        sys.exit(ExitCodes.FILE_ERROR.value)
 
 def check_against(check_type, check_list):
-    if check_type == "npm":
+    if check_type == PackageManagers.NPM.value:
         response = npm.recv_pkg_info(check_list)
         return response
-    elif check_type == "NuGet":
-        return True #placeholder
-    elif check_type == "maven":
+    elif check_type == PackageManagers.MAVEN.value:
         response = maven.recv_pkg_info(check_list)
         return response
-    elif check_type == "pypi":
+    elif check_type == PackageManagers.PYPI.value:
         response = pypi.recv_pkg_info(check_list)
 
 def export_csv(instances, path):
@@ -169,13 +168,13 @@ def main():
         pkglist.append(args.SINGLE[0])
     print("[PROC] Package list imported....  " + str(pkglist))
     
-    if args.package_type == 'npm':
+    if args.package_type == PackageManagers.NPM.value:
         for x in pkglist:
             metapkg(x, args.package_type)
-    elif args.package_type == 'maven':
+    elif args.package_type == PackageManagers.MAVEN.value:
         for x in pkglist: # format orgId:packageId
             metapkg(x.split(':')[1], args.package_type, x.split(':')[0])
-    elif args.package_type == 'pypi':
+    elif args.package_type == PackageManagers.PYPI.value:
         for x in pkglist:
             metapkg(x, args.package_type)
 
@@ -183,9 +182,9 @@ def main():
     check_against(args.package_type, metapkg.instances)
 
     # ANALYZE
-    if args.LEVEL == LEVELS[0] or args.LEVEL == LEVELS[1]:
+    if args.LEVEL == Constants.LEVELS[0] or args.LEVEL == Constants.LEVELS[1]:
         heur.combobulate_min(metapkg.instances)
-    elif args.LEVEL == LEVELS[2] or args.LEVEL == LEVELS[3]:
+    elif args.LEVEL == Constants.LEVELS[2] or args.LEVEL == Constants.LEVELS[3]:
         heur.combobulate_heur(metapkg.instances)
 
     # OUTPUT

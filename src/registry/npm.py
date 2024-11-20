@@ -3,10 +3,7 @@ import requests
 import sys
 import os
 from datetime import datetime as dt
-
-# checking against npms.io API
-# deets: https://api-docs.npms.io/#api-Package-GetPackageInfo
-REGISTRY_URL = "https://api.npms.io/v2/package/mget"
+from constants import ExitCodes, Constants
 
 def get_keys(data):
     result = []
@@ -18,7 +15,7 @@ def get_keys(data):
     return result
 
 
-def recv_pkg_info(pkgs, url=REGISTRY_URL):
+def recv_pkg_info(pkgs, url=Constants.REGISTRY_URL_NPM):
     print("[PROC] npm checker engaged.")
     pkg_list = []
     for x in pkgs:
@@ -31,12 +28,12 @@ def recv_pkg_info(pkgs, url=REGISTRY_URL):
         res = requests.post(url, data=payload, headers=headers)
         if res.status_code != 200:
             print(f"[ERR] Unexpected status code ({res.status_code})")
-            sys.exit(2)
+            sys.exit(ExitCodes.CONNECTION_ERROR.value)
         x = {}
         x = json.loads(res.text)
     except:
         print("[ERR] Connection error.")
-        sys.exit(2)
+        sys.exit(ExitCodes.CONNECTION_ERROR.value)
     for i in pkgs:
         if i.pkg_name in x:
             i.exists = True
@@ -51,13 +48,13 @@ def recv_pkg_info(pkgs, url=REGISTRY_URL):
 
 def scan_source(dir):
     try:
-        path = os.path.join(dir,"package.json")
+        path = os.path.join(dir, Constants.PACKAGE_JSON_FILE)
         file = open(path, "r")
         body = file.read()
         filex = json.loads(body)
     except:
         print("[ERR] Couldn't import from given path.")
-        sys.exit(1)
+        sys.exit(ExitCodes.FILE_ERROR.value)
 
     lister = list(filex['dependencies'].keys())
     if 'devDependencies' in filex:
@@ -65,4 +62,3 @@ def scan_source(dir):
         # OPTIONAL - de-comment if you would like to add peer deps.
         #lister.append(filex['peerDependencies'].keys())
     return lister
-    

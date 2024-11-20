@@ -4,12 +4,10 @@ import requirements
 import sys
 import os
 from datetime import datetime as dt
-
-# classic api - https://pypi.org/pypi/<package-name>/json
-REGISTRY_URL = "https://pypi.org/pypi/"
+from constants import ExitCodes, Constants
 
 
-def recv_pkg_info(pkgs, url=REGISTRY_URL):
+def recv_pkg_info(pkgs, url=Constants.REGISTRY_URL_PYPI):
     print("[PROC] PyPI registry engaged.")
     payload = {}
     names = []
@@ -22,14 +20,14 @@ def recv_pkg_info(pkgs, url=REGISTRY_URL):
             res = requests.get(fullurl, params=payload, headers=headers)
         except:
             print("[ERR] Connection error.")
-            exit(2)
+            exit(ExitCodes.CONNECTION_ERROR.value)
         if res.status_code == 404:
             # Package not found
             x.exists = False
             continue
         if res.status_code != 200:
             print(f"[ERR] Connection error, status code: {res.status_code}")
-            exit(2)
+            exit(ExitCodes.CONNECTION_ERROR.value)
         try:
             j = json.loads(res.text)
         except:
@@ -53,11 +51,11 @@ def recv_pkg_info(pkgs, url=REGISTRY_URL):
 def scan_source(dir):
     try:
         print("[PROC] PyPI scanner engaged.")
-        path = os.path.join(dir, "requirements.txt")
+        path = os.path.join(dir, Constants.REQUIREMENTS_FILE)
         with open(path, "r") as file:
             body = file.read()
         reqs = requirements.parse(body)
         return [x.name for x in reqs]
     except (FileNotFoundError, IOError) as e:
         print(f"[ERR] Couldn't import from given path '{path}', error: {e}")
-        sys.exit(1)
+        sys.exit(ExitCodes.FILE_ERROR.value)

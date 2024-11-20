@@ -2,11 +2,9 @@ import json
 import requests
 import os
 import xml.etree.ElementTree as ET
+from constants import ExitCodes, Constants
 
-# classic api - https://search.maven.org/classic/#api
-REGISTRY_URL = "https://search.maven.org/solrsearch/select"
-
-def recv_pkg_info(pkgs, url=REGISTRY_URL):
+def recv_pkg_info(pkgs, url=Constants.REGISTRY_URL_MAVEN):
     print("[PROC] Maven checker engaged.")
     payload = {"wt": "json", "rows": 20}
     names = []
@@ -22,7 +20,7 @@ def recv_pkg_info(pkgs, url=REGISTRY_URL):
             res = requests.get(url, params=payload, headers=headers)
         except:
             print("[ERR] Connection error.")
-            exit(2)
+            exit(ExitCodes.CONNECTION_ERROR.value)
         #print(res)
         j = json.loads(res.text)
         if j['response']['numFound'] == 1: #safety, can't have multiples
@@ -36,7 +34,7 @@ def recv_pkg_info(pkgs, url=REGISTRY_URL):
 
 def scan_source(dir):
     try:
-        path = os.path.join(dir, "pom.xml")
+        path = os.path.join(dir, Constants.POM_XML_FILE)
         tree = ET.parse(path)
         pom = tree.getroot()
         ns = ".//{http://maven.apache.org/POM/4.0.0}"
@@ -50,5 +48,4 @@ def scan_source(dir):
         return lister
     except:
         print("[ERR] Couldn't import from given path.")
-        exit(1)
-    
+        exit(ExitCodes.FILE_ERROR.value)
