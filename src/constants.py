@@ -27,6 +27,17 @@ class PackageManagers(Enum):
     PYPI = "pypi"
     MAVEN = "maven"
 
+class DefaultHeuristics(Enum):
+    """Default heuristics for the program.
+
+    Args:
+        Enum (int): Default heuristics for the program.
+    """
+
+    MIN_VERSIONS = 2
+    NEW_DAYS_THRESHOLD = 2
+    SCORE_THRESHOLD = 0.6
+    RISKY_THRESHOLD = 0.15
 
 class Constants:
     """General constants used in the project."""

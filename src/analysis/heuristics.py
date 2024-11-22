@@ -1,7 +1,7 @@
 """Heuristics for package analysis."""
 import time
 import logging  # Added import
-from constants import Constants
+from constants import Constants, DefaultHeuristics
 
 STG = f"{Constants.ANALYSIS} "
 
@@ -47,15 +47,15 @@ def test_score(x):
     Args:
         x (str): Package to check.
     """
-    threshold = 0.6
-    risky = 0.15
-    ttxt = ". Mid set to " + str(threshold) + ")"
+    ttxt = ". Mid set to " + str(DefaultHeuristics.SCORE_THRESHOLD.value) + ")"
     if x.score is not None:
-        if x.score > threshold:
-            logging.info("%s.... package scored ABOVE MID - %s%s", STG, str(x.score), ttxt)
-        elif x.score <= threshold and x.score > risky:
-            logging.warning("%s.... [RISK] package scored BELOW MID - %s%s", STG, str(x.score), ttxt)
-        elif x.score <= risky:
+        if x.score > DefaultHeuristics.SCORE_THRESHOLD.value:
+            logging.info("%s.... package scored ABOVE MID - %s%s",
+                STG, str(x.score), ttxt)
+        elif x.score <= DefaultHeuristics.SCORE_THRESHOLD.value and x.score > DefaultHeuristics.RISKY_THRESHOLD.value:
+            logging.warning("%s.... [RISK] package scored BELOW MID - %s%s",
+                STG, str(x.score), ttxt)
+        elif x.score <= DefaultHeuristics.RISKY_THRESHOLD.value:
             logging.warning("%s.... [RISK] package scored LOW - %s%s", STG, str(x.score), ttxt)
 
 def test_timestamp(x):
