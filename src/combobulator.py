@@ -156,17 +156,22 @@ def main():
     elif args.SINGLE:
         pkglist = []
         pkglist.append(args.SINGLE[0])
+
+    if not pkglist or not isinstance(pkglist, list):
+        logging.warning("No packages found in the input list.")
+        sys.exit(ExitCodes.SUCCESS.value)
+
     logging.info("Package list imported: %s", str(pkglist))
 
     if args.package_type == PackageManagers.NPM.value:
-        for x in pkglist:
-            metapkg(x, args.package_type)
+        for pkg in pkglist:
+            metapkg(pkg, args.package_type)
     elif args.package_type == PackageManagers.MAVEN.value:
-        for x in pkglist: # format org_id:package_id
-            metapkg(x.split(':')[1], args.package_type, x.split(':')[0])
+        for pkg in pkglist: # format org_id:package_id
+            metapkg(pkg.split(':')[1], args.package_type, pkg.split(':')[0])
     elif args.package_type == PackageManagers.PYPI.value:
-        for x in pkglist:
-            metapkg(x, args.package_type)
+        for pkg in pkglist:
+            metapkg(pkg, args.package_type)
 
     # QUERY & POPULATE
     check_against(args.package_type, metapkg.instances)

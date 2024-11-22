@@ -1,11 +1,14 @@
+"""Module to represent a package."""
+from constants import PackageManagers
+
 class MetaPackage:
-    """Class to represent a package"""
+    """Class to represent a package."""
     instances = []
 
     def __init__(self, pkgname, pkgtype=None, pkgorg=None):
         self.instances.append(self) # adding the instance to colllective
         if len(pkgname.split(':')) == 2:
-            if pkgtype == "maven":
+            if pkgtype == PackageManagers.MAVEN.value:
                 if pkgorg is None:
                     self._pkg_name = pkgname.split(':')[1]
                     self._org_id = pkgname.split(':')[0]
