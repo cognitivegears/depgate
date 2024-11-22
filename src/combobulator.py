@@ -95,7 +95,7 @@ def export_csv(instances, path):
     """
     headers = ["Package Name","Package Type", "Exists on External",
             "Org/Group ID","Score","Version Count","Timestamp",
-            "Risk: Missing", "Risk: Low Score","Risk: Min Versions","Risk: Too New"]
+            "Risk: Missing", "Risk: Low Score","Risk: Min Versions","Risk: Too New", "Risk: Any Risks"]
     rows = [headers]
     for x in instances:
         rows.append(x.listall())
@@ -126,6 +126,7 @@ def export_json(instances, path):
             "versionCount": x.version_count,
             "createdTimestamp": x.timestamp,
             "risk": {
+                "hasRisk": x.has_risk(),
                 "isMissing": x.risk_missing,
                 "hasLowScore": x.risk_low_score,
                 "minVersions": x.risk_min_versions,

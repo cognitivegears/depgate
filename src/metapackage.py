@@ -56,6 +56,7 @@ class MetaPackage:
         lister.append(self._risk_low_score)
         lister.append(self._risk_min_versions)
         lister.append(self._risk_too_new)
+        lister.append(self.has_risk())
         return lister
 
     @staticmethod
@@ -377,4 +378,13 @@ class MetaPackage:
     def timestamp(self, timestamp): #unix timestamp
         self._timestamp = timestamp
 
+    def has_risk(self):
+        """Check if the package has any risk.
+
+        Returns:
+            bool: True if the package has any risk, False otherwise.
+        """
+        if self._risk_missing or self._risk_low_score or self._risk_min_versions or self._risk_too_new:
+            return True
+        return False
 # not-supported for now: hasTests, testsSize, privateRepo
