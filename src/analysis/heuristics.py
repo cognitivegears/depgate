@@ -82,15 +82,17 @@ def stats_exists(pkgs):
     logging.info("%s%d out of %d packages were present on the public provider (%.2f%% of total).",
                  STG, count, total, percentage)
 
-def test_version_count(x):
+def test_version_count(package_name):
     """Check the version count of the package.
 
     Args:
-        x (str): Package to check.
+        package_name (str): Package to check.
     """
-    if x.version_count is None:
-        if x.version_count < 2:
+    if package_name.version_count is not None:
+        if package_name.version_count < 2:
             logging.warning("%s.... [RISK] package history is SHORT. Total %d versions committed.",
-                            STG, x.version_count)
+                            STG, package_name.version_count)
         else:
-            logging.info("%s.... Total %d versions committed.", STG, x.version_count)
+            logging.info("%s.... Total %d versions committed.", STG, package_name.version_count)
+    else:
+        logging.warning("%s.... Package version count not available.", STG)
