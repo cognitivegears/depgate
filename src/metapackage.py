@@ -27,6 +27,10 @@ class MetaPackage:
         self._download_count = None
         self._issue_count = None
         #self._pkg_ver = pkgver TBA
+        self._risk_missing = None
+        self._risk_low_score = None
+        self._risk_min_versions = None
+        self._risk_too_new = None
 
     def __repr__(self):
         return self._pkg_name
@@ -48,6 +52,10 @@ class MetaPackage:
         lister.append(self._score)
         lister.append(self._version_count)
         lister.append(self._timestamp)
+        lister.append(self._risk_missing)
+        lister.append(self._risk_low_score)
+        lister.append(self._risk_min_versions)
+        lister.append(self._risk_too_new)
         return lister
 
     @staticmethod
@@ -264,6 +272,58 @@ class MetaPackage:
     def issue_count(self, count):
         self._issue_count = count
 
+    @property
+    def risk_missing(self):
+        """Risk property for missing package.
+
+        Returns:
+            bool: True if the package is missing, False otherwise.
+        """
+        return self._risk_missing
+
+    @risk_missing.setter
+    def risk_missing(self, is_missing):
+        self._risk_missing = is_missing
+
+    @property
+    def risk_low_score(self):
+        """Risk property for having a low score
+
+        Returns:
+            bool: True if the package has a low score, False otherwise.
+        """
+        return self._risk_low_score
+
+    @risk_low_score.setter
+    def risk_low_score(self, is_low_score):
+        self._risk_low_score = is_low_score
+
+    @property
+    def risk_min_versions(self):
+        """Risk property for too few versions
+
+        Returns:
+            bool: True if the package has too few versions, False otherwise.
+        """
+        return self._risk_min_versions
+
+    @risk_min_versions.setter
+    def risk_min_versions(self, is_risk_min_versions):
+        self._risk_min_versions = is_risk_min_versions
+
+    @property
+    def risk_too_new(self):
+        """Risk property for too new package
+
+        Returns:
+            bool: True if the package is too new, False otherwise.
+        """
+        return self._risk_too_new
+
+    @risk_too_new.setter
+    def risk_too_new(self, is_risk_too_new):
+        self._risk_too_new = is_risk_too_new
+        
     @property
     def contributor_count(self):
         """Property for the contributor count.

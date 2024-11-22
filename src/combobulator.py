@@ -94,7 +94,8 @@ def export_csv(instances, path):
         path (str): File path to export the CSV.
     """
     headers = ["Package Name","Package Type", "Exists on External",
-            "Org/Group ID","Score","Version Count","Timestamp"]
+            "Org/Group ID","Score","Version Count","Timestamp",
+            "Risk: Missing", "Risk: Low Score","Risk: Min Versions","Risk: Too New"]
     rows = [headers]
     for x in instances:
         rows.append(x.listall())
@@ -123,7 +124,13 @@ def export_json(instances, path):
             "exists": x.exists,
             "score": x.score,
             "versionCount": x.version_count,
-            "createdTimestamp": x.timestamp
+            "createdTimestamp": x.timestamp,
+            "risk": {
+                "isMissing": x.risk_missing,
+                "hasLowScore": x.risk_low_score,
+                "minVersions": x.risk_min_versions,
+                "isNew": x.risk_too_new
+            }
         })
     try:
         with open(path, 'w', encoding='utf-8') as file:

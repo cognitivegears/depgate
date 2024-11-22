@@ -36,8 +36,10 @@ def test_exists(x):
     """
     if x.exists is True:
         logging.info("%sPackage: %s is present on public provider.", STG, x)
+        x.risk_missing = False
     elif x.exists is False:
         logging.warning("%sPackage: %s is NOT present on public provider.", STG, x)
+        x.risk_missing = True
     else:
         logging.info("%sPackage: %s test skipped.", STG, x)
 
@@ -52,11 +54,14 @@ def test_score(x):
         if x.score > DefaultHeuristics.SCORE_THRESHOLD.value:
             logging.info("%s.... package scored ABOVE MID - %s%s",
                 STG, str(x.score), ttxt)
+            x.risk_low_score = False
         elif x.score <= DefaultHeuristics.SCORE_THRESHOLD.value and x.score > DefaultHeuristics.RISKY_THRESHOLD.value:
             logging.warning("%s.... [RISK] package scored BELOW MID - %s%s",
                 STG, str(x.score), ttxt)
+            x.risk_low_score = False
         elif x.score <= DefaultHeuristics.RISKY_THRESHOLD.value:
             logging.warning("%s.... [RISK] package scored LOW - %s%s", STG, str(x.score), ttxt)
+            x.risk_low_score = True
 
 def test_timestamp(x):
     """Check the timestamp of the package.
@@ -65,10 +70,14 @@ def test_timestamp(x):
         x (str): Package to check.
     """
     if x.timestamp is not None:
-        dayspast = ((time.time()*1000 - x.timestamp)/86400000)
+        dayspast = (time.time()*1000 - x.timestamp)/86400000
         logging.info("%s.... package is %d days old.", STG, int(dayspast))
-        if (dayspast < 2):  # freshness test
+        if dayspast < 2:  # freshness test
             logging.warning("%s.... [RISK] package is SUSPICIOUSLY NEW.", STG)
+            x.risk_too_new = True
+        else:
+            logging.debug("%s.... package is not suspiciously new.", STG)
+            x.risk_too_new = False
 
 def stats_exists(pkgs):
     """Summarize the existence of the packages on the public provider.
@@ -82,17 +91,19 @@ def stats_exists(pkgs):
     logging.info("%s%d out of %d packages were present on the public provider (%.2f%% of total).",
                  STG, count, total, percentage)
 
-def test_version_count(package_name):
+def test_version_count(pkg):
     """Check the version count of the package.
 
     Args:
-        package_name (str): Package to check.
+        pkg (str): Package to check.
     """
-    if package_name.version_count is not None:
-        if package_name.version_count < 2:
+    if pkg.version_count is not None:
+        if pkg.version_count < 2:
             logging.warning("%s.... [RISK] package history is SHORT. Total %d versions committed.",
-                            STG, package_name.version_count)
+                            STG, pkg.version_count)
+            pkg.risk_min_versions = True
         else:
-            logging.info("%s.... Total %d versions committed.", STG, package_name.version_count)
+            logging.info("%s.... Total %d versions committed.", STG, pkg.version_count)
+            pkg.risk_min_versions = False
     else:
         logging.warning("%s.... Package version count not available.", STG)
