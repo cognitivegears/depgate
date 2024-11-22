@@ -226,12 +226,12 @@ def main():
         export_json(metapkg.instances, args.JSON)
 
     # Check if any package was not found
-    not_found = any(not x.exists for x in metapkg.instances)
-    if not_found:
-        logging.warning("One or more packages were not found.")
+    has_risk = any( x.has_risk() for x in metapkg.instances)
+    if has_risk:
+        logging.warning("One or more packages have identified risks.")
         if args.ERROR_ON_WARNINGS:
             logging.error("Warnings present, exiting with non-zero status code.")
-            sys.exit(ExitCodes.PACKAGE_NOT_FOUND.value)
+            sys.exit(ExitCodes.EXIT_WARNINGS.value)
 
     sys.exit(ExitCodes.SUCCESS.value)
 

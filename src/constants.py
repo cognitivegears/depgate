@@ -13,7 +13,7 @@ class ExitCodes(Enum):
     SUCCESS = 0
     CONNECTION_ERROR = 2
     FILE_ERROR = 1
-    PACKAGE_NOT_FOUND = 3
+    EXIT_WARNINGS = 3
 
 
 class PackageManagers(Enum):
