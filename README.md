@@ -45,6 +45,7 @@ Make sure to install required dependencies by running:
   -r, --recursive       Recursively analyze dependencies
   --loglevel LOG_LEVEL  Set the logging level (default: INFO)
   --logfile LOG_FILE    Set the logging file
+  -q, --quiet           Suppress console output
   --error-on-warning    Exit with error code if warnings are found
 
 Apiiro <Heart> Community

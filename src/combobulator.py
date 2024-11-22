@@ -149,6 +149,8 @@ def main():
 
     # Configure logging
     log_level = getattr(logging, args.LOG_LEVEL.upper(), logging.INFO)
+   
+    
     if '-h' in sys.argv or '--help' in sys.argv:
         # Ensure help output is always at INFO level
         logging.basicConfig(level=logging.INFO, format=Constants.LOG_FORMAT)
@@ -157,7 +159,11 @@ def main():
             logging.basicConfig(filename=args.LOG_FILE, level=log_level,
                                 format=Constants.LOG_FORMAT)  # Used LOG_FORMAT constant
         else:
-            logging.basicConfig(level=log_level,
+            # If log is not set to a LOG_FILE and quiet mode is not enabled, set log level to none
+            if args.QUIET:
+                logging.disable(logging.CRITICAL)
+            else:
+                logging.basicConfig(level=log_level,
                                 format=Constants.LOG_FORMAT)  # Used LOG_FORMAT constant
 
     logging.info("Arguments parsed.")

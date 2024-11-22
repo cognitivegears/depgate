@@ -69,5 +69,9 @@ def parse_args():
                         dest="ERROR_ON_WARNINGS",
                         help="Exit with a non-zero status code if warnings are present.",
                         action="store_true")
+    parser.add_argument("-q", "--quiet",
+                        dest="QUIET",
+                        help="Do not output to console.",
+                        action="store_true")
 
     return parser.parse_args()
