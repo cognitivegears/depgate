@@ -6,11 +6,9 @@
     Returns:
         int: Exit code
 """
-import os
 import csv
 import sys
 import logging
-from dotenv import load_dotenv
 
 # internal module imports
 from metapackage import MetaPackage as metapkg
