@@ -66,15 +66,19 @@ def scan_source(pkgtype, dir_name, recursive=False):
         logging.error("Selected package type doesn't support import scan.")
         sys.exit(ExitCodes.FILE_ERROR.value)
 
-def check_against(check_type, check_list):
+def check_against(check_type, level, check_list):
     """Checks the packages against the registry.
 
     Args:
         check_type (str): Package manager type, i.e. "npm".
         check_list (list): List of packages to check.
     """
+    
+    
     if check_type == PackageManagers.NPM.value:
-        npm.recv_pkg_info(check_list)
+        # Only fetch details for levels 1 and 2
+        should_fetch_details = level in (Constants.LEVELS[2], Constants.LEVELS[3])
+        npm.recv_pkg_info(check_list, should_fetch_details)
     elif check_type == PackageManagers.MAVEN.value:
         maven.recv_pkg_info(check_list)
     elif check_type == PackageManagers.PYPI.value:
@@ -174,7 +178,7 @@ def main():
             metapkg(pkg, args.package_type)
 
     # QUERY & POPULATE
-    check_against(args.package_type, metapkg.instances)
+    check_against(args.package_type, args.LEVEL, metapkg.instances)
 
     # ANALYZE
     if args.LEVEL in (Constants.LEVELS[0], Constants.LEVELS[1]):

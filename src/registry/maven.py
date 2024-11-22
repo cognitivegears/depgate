@@ -2,6 +2,7 @@
 import json
 import os
 import sys
+import time
 import logging
 import xml.etree.ElementTree as ET
 import requests
@@ -24,6 +25,8 @@ def recv_pkg_info(pkgs, url=Constants.REGISTRY_URL_MAVEN):
         headers = { 'Accept': 'application/json',
                 'Content-Type': 'application/json'}
         try:
+            # Sleep to avoid rate limiting
+            time.sleep(0.1)
             res = requests.get(url, params=payload, headers=headers, 
                              timeout=Constants.REQUEST_TIMEOUT)
         except requests.Timeout:
@@ -34,10 +37,14 @@ def recv_pkg_info(pkgs, url=Constants.REGISTRY_URL_MAVEN):
             sys.exit(ExitCodes.CONNECTION_ERROR.value)
 
         j = json.loads(res.text)
-        if j['response']['numFound'] == 1: #safety, can't have multiples
+        number_found = j.get('response', {}).get('numFound', 0)
+        if number_found == 1: #safety, can't have multiples
             x.exists = True
-            x.timestamp = j['response']['docs'][0]['timestamp']
-            x.version_count = j['response']['docs'][0]['versionCount']
+            x.timestamp = j.get('response', {}).get('docs', [{}])[0].get('timestamp', 0)
+            x.version_count = j.get('response', {}).get('docs', [{}])[0].get('versionCount', 0)
+        elif number_found > 1:
+            logging.warning("Multiple packages found, skipping")
+            x.exists = False
         else:
             x.exists = False
 

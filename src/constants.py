@@ -32,7 +32,8 @@ class Constants:
     """General constants used in the project."""
 
     REGISTRY_URL_PYPI = "https://pypi.org/pypi/"
-    REGISTRY_URL_NPM = "https://api.npms.io/v2/package/mget"
+    REGISTRY_URL_NPM = "https://registry.npmjs.org/"
+    REGISTRY_URL_NPM_STATS = "https://api.npms.io/v2/package/mget"
     REGISTRY_URL_MAVEN = "https://search.maven.org/solrsearch/select"
     SUPPORTED_PACKAGES = [
         PackageManagers.NPM.value,

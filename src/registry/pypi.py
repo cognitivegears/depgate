@@ -2,6 +2,7 @@
 import json
 import sys
 import os
+import time
 from datetime import datetime as dt
 import logging  # Added import
 import requests
@@ -18,6 +19,8 @@ def recv_pkg_info(pkgs, url=Constants.REGISTRY_URL_PYPI):
     logging.info("PyPI registry engaged.")
     payload = {}
     for x in pkgs:
+        # Sleep to avoid rate limiting
+        time.sleep(0.1)
         fullurl = url + x.pkg_name + '/json'
         logging.debug(fullurl)
         headers = {'Accept': 'application/json',
@@ -51,8 +54,12 @@ def recv_pkg_info(pkgs, url=Constants.REGISTRY_URL_PYPI):
                 if version == latest:
                     timex = j['releases'][version][0]['upload_time_iso_8601']
                     fmtx = '%Y-%m-%dT%H:%M:%S.%fZ'
-                    unixtime = int(dt.timestamp(dt.strptime(timex, fmtx)) * 1000)
-                    x.timestamp = unixtime
+                    try:
+                        unixtime = int(dt.timestamp(dt.strptime(timex, fmtx)) * 1000)
+                        x.timestamp = unixtime
+                    except ValueError as e:
+                        logging.warning("Couldn't parse timestamp %s, setting to 0.", e)
+                        x.timestamp = 0
             x.version_count = len(j['releases'])
         else:
             x.exists = False
