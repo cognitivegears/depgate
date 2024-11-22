@@ -68,6 +68,20 @@ class MetaPackage:
         """
         return self._pkg_name
 
+
+    @property
+    def pkg_type(self):
+        """Property for the package type.
+
+        Returns:
+            str: Package type.
+        """
+        return self._pkg_type
+
+    @pkg_type.setter
+    def pkg_type(self, pkg_type):
+        self._pkg_type = pkg_type
+
     @property
     def author(self):
         """Property for the author.

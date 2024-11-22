@@ -9,6 +9,7 @@
 import csv
 import sys
 import logging
+import json  # Import json module
 
 # internal module imports
 from metapackage import MetaPackage as metapkg
@@ -106,6 +107,32 @@ def export_csv(instances, path):
         logging.error("CSV file couldn't be written to disk: %s", e)
         sys.exit(1)
 
+def export_json(instances, path):
+    """Exports the package properties to a JSON file.
+
+    Args:
+        instances (list): List of package instances.
+        path (str): File path to export the JSON.
+    """
+    data = []
+    for x in instances:
+        data.append({
+            "packageName": x.pkg_name,
+            "orgId": x.org_id,
+            "packageType": x.pkg_type,
+            "exists": x.exists,
+            "score": x.score,
+            "versionCount": x.version_count,
+            "createdTimestamp": x.timestamp
+        })
+    try:
+        with open(path, 'w', encoding='utf-8') as file:
+            json.dump(data, file, ensure_ascii=False, indent=4)
+        logging.info("JSON file has been successfully exported at: %s", path)
+    except (OSError, json.JSONDecodeError) as e:
+        logging.error("JSON file couldn't be written to disk: %s", e)
+        sys.exit(1)
+
 def main():
     """Main function of the program."""
     # the most important part of any program starts here
@@ -187,6 +214,8 @@ def main():
     # OUTPUT
     if args.CSV:
         export_csv(metapkg.instances, args.CSV)
+    if args.JSON:
+        export_json(metapkg.instances, args.JSON)
 
     # Check if any package was not found
     not_found = any(not x.exists for x in metapkg.instances)

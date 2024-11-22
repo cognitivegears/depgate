@@ -38,6 +38,7 @@ Make sure to install required dependencies by running:
                         Extract dependencies from local source repository
   -p--package SINGLE    Name a single package.
   -c CSV, --csv CSV     Export packages properties onto CSV file
+  -j JSON, --json JSON  Export packages properties onto JSON file
   -a {compare,comp,heuristics,heur}, --analysis {compare,comp,heuristics,heur}
                         Required analysis level - compare (comp), heuristics
                         (heur) (default: compare)

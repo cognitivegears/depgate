@@ -1,4 +1,3 @@
-
 """Argument parsing functionality for Combobulator."""
 
 import argparse
@@ -40,6 +39,10 @@ def parse_args():
         dest="CSV",
         help="Export packages properties onto CSV file",
                     action="store", type=str)
+    output_group.add_argument("-j", "--json",
+        dest="JSON",
+        help="Export packages properties onto JSON file",
+        action="store", type=str)
 
     parser.add_argument("-a", "--analysis",
         dest="LEVEL",
