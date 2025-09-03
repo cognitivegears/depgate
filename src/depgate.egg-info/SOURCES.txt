@@ -1,4 +1,5 @@
 LICENSE
+MANIFEST.in
 NOTICE
 README.md
 pyproject.toml
