@@ -1,4 +1,4 @@
-"""Argument parsing functionality for Combobulator."""
+"""Argument parsing functionality for DepGate (hard fork)."""
 
 import argparse
 from constants import Constants
@@ -6,9 +6,9 @@ from constants import Constants
 def parse_args():
     """Parses the arguments passed to the program."""
     parser = argparse.ArgumentParser(
-        prog="combobulator.py",
-        description="Dependency Combobulator - Dependency Confusion Checker",
-        epilog='Apiiro <Heart> Community',
+        prog="depgate.py",
+        description="DepGate - Dependency supply-chain risk and confusion checker (hard fork of Apiiro's Dependency Combobulator)",
+        epilog='Hard fork of Apiiro/combobulator by cognitivegears',
         add_help=True)
     
     parser.add_argument("-t", "--type",

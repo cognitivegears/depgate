@@ -2,7 +2,7 @@ import json
 import os
 
 # This script is intended for testing full-cycle from reading Bill of Materials
-# and to push the output as arguments for combobulator to evaluate
+# and to push the output as arguments for depgate to evaluate
 
 with open(os.path.join("tests", "package.json"), "r") as file:
     body = file.read()

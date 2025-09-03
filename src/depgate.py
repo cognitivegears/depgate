@@ -1,4 +1,4 @@
-"""Combobulator - Dependency Confusion Checker
+"""DepGate - Dependency supply-chain/confusion risk checker (hard fork)
 
     Raises:
         TypeError: If the input list cannot be processed
@@ -9,15 +9,11 @@
 import csv
 import sys
 import logging
-import json  # Import json module
+import json
 
-# internal module imports
+# internal module imports (kept light to avoid heavy deps on --help)
 from metapackage import MetaPackage as metapkg
-from registry import npm
-from registry import maven
-from registry import pypi
-from analysis import heuristics as heur
-from constants import ExitCodes, PackageManagers, Constants  # Import Constants including LOG_FORMAT
+from constants import ExitCodes, PackageManagers, Constants
 from args import parse_args
 
 SUPPORTED_PACKAGES = Constants.SUPPORTED_PACKAGES
@@ -56,11 +52,14 @@ def scan_source(pkgtype, dir_name, recursive=False):
         list: List of packages found in the source directory.
     """
     if pkgtype == PackageManagers.NPM.value:
-        return npm.scan_source(dir_name, recursive)
+        from registry import npm as _npm
+        return _npm.scan_source(dir_name, recursive)
     elif pkgtype == PackageManagers.MAVEN.value:
-        return maven.scan_source(dir_name, recursive)
+        from registry import maven as _maven
+        return _maven.scan_source(dir_name, recursive)
     elif pkgtype == PackageManagers.PYPI.value:
-        return pypi.scan_source(dir_name, recursive)
+        from registry import pypi as _pypi
+        return _pypi.scan_source(dir_name, recursive)
     else:
         logging.error("Selected package type doesn't support import scan.")
         sys.exit(ExitCodes.FILE_ERROR.value)
@@ -77,11 +76,14 @@ def check_against(check_type, level, check_list):
     if check_type == PackageManagers.NPM.value:
         # Only fetch details for levels 1 and 2
         should_fetch_details = level in (Constants.LEVELS[2], Constants.LEVELS[3])
-        npm.recv_pkg_info(check_list, should_fetch_details)
+        from registry import npm as _npm
+        _npm.recv_pkg_info(check_list, should_fetch_details)
     elif check_type == PackageManagers.MAVEN.value:
-        maven.recv_pkg_info(check_list)
+        from registry import maven as _maven
+        _maven.recv_pkg_info(check_list)
     elif check_type == PackageManagers.PYPI.value:
-        pypi.recv_pkg_info(check_list)
+        from registry import pypi as _pypi
+        _pypi.recv_pkg_info(check_list)
     else:
         logging.error("Selected package type doesn't support registry check.")
         sys.exit(ExitCodes.FILE_ERROR.value)
@@ -137,7 +139,7 @@ def export_json(instances, path):
         with open(path, 'w', encoding='utf-8') as file:
             json.dump(data, file, ensure_ascii=False, indent=4)
         logging.info("JSON file has been successfully exported at: %s", path)
-    except (OSError, json.JSONDecodeError) as e:
+    except OSError as e:
         logging.error("JSON file couldn't be written to disk: %s", e)
         sys.exit(1)
 
@@ -170,17 +172,14 @@ def main():
 
     # Logging the ASCII art banner
     logging.info(r"""
-  ____  _____ ____  _____ _   _ ____  _____ _   _  ______   __
- |  _ \| ____|  _ \| ____| \ | |  _ \| ____| \ | |/ ___\ \ / /
- | | | |  _| | |_) |  _| |  \| | | | |  _| |  \| | |    \ V / 
- | |_| | |___|  __/| |___| |\  | |_| | |___| |\  | |___  | |  
- |____/|_____|_|   |_____|_| \_|____/|_____|_| \_|\____| |_|  
+   _____            _____       _        
+  |  __ \          / ____|     | |       
+  | |  | | ___  __| |  __  __ _| |_ ___  
+  | |  | |/ _ \/ _` | |_ |/ _` | __/ _ \ 
+  | |__| |  __/ (_| |__| | (_| | || (_) |
+  |_____/ \___|\__,_|_____\__,_|\__\___/ 
 
-   ____ ____  __  __ ____   ____  ____  _   _ _        _  _____ ____  ____  
-  / ___/ /\ \|  \/  | __ ) / /\ \| __ )| | | | |      / \|_   _/ /\ \|  _ \ 
- | |  / /  \ \ |\/| |  _ \/ /  \ \  _ \| | | | |     / _ \ | |/ /  \ \ |_) |
- | |__\ \  / / |  | | |_) \ \  / / |_) | |_| | |___ / ___ \| |\ \  / /  _ < 
-  \____\_\/_/|_|  |_|____/ \_\/_/|____/ \___/|_____/_/   \_\_| \_\/_/|_| \_\
+  Hard fork of Apiiro's Dependency Combobulator
 """)
 
     # are you amazed yet?
@@ -221,9 +220,11 @@ def main():
 
     # ANALYZE
     if args.LEVEL in (Constants.LEVELS[0], Constants.LEVELS[1]):
-        heur.combobulate_min(metapkg.instances)
+        from analysis import heuristics as _heur
+        _heur.combobulate_min(metapkg.instances)
     elif args.LEVEL in (Constants.LEVELS[2], Constants.LEVELS[3]):
-        heur.combobulate_heur(metapkg.instances)
+        from analysis import heuristics as _heur
+        _heur.combobulate_heur(metapkg.instances)
 
     # OUTPUT
     if args.CSV:

@@ -195,8 +195,8 @@ wheels = [
 ]
 
 [[package]]
-name = "combobulator-moshe-apiiro"
-version = "0.1"
+name = "depgate"
+version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "gql", version = "3.5.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.8.1'" },

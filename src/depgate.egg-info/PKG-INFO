@@ -1,29 +1,29 @@
 Metadata-Version: 2.4
-Name: combobulator-moshe-apiiro
-Version: 0.1
-Summary: Dependency Combobulator detects and prevents dependency confusion risks.
-Home-page: https://github.com/apiiro/combobulator
-Author: Moshe Zioni
-Author-email: Moshe Zioni <moshe@apiiro.com>
-License: MIT
-Project-URL: Homepage, https://github.com/apiiro/combobulator
-Project-URL: Bug Tracker, https://github.com/apiiro/combobulator/issues
+Name: depgate
+Version: 0.1.0
+Summary: DepGate detects and prevents dependency confusion and supply-chain risks. (Hard fork of Apiiro's Dependency Combobulator)
+Author: cognitivegears
+License: Apache-2.0
+Project-URL: Homepage, https://github.com/cognitivegears/depgate
+Project-URL: Bug Tracker, https://github.com/cognitivegears/depgate/issues
+Project-URL: Upstream, https://github.com/apiiro/combobulator
 Classifier: Programming Language :: Python :: 3
-Classifier: License :: OSI Approved :: MIT License
+Classifier: License :: OSI Approved :: Apache Software License
 Classifier: Operating System :: OS Independent
 Requires-Python: >=3.8
 Description-Content-Type: text/markdown
 License-File: LICENSE
+License-File: NOTICE
 Requires-Dist: requests<2.32.5,>=2.32.4
 Requires-Dist: gql>=3.5.0
 Requires-Dist: python-dotenv>=0.19.2
 Requires-Dist: requirements-parser>=0.11.0
 Dynamic: license-file
 
-# Dependency Combobulator
+# DepGate (hard fork of Dependency Combobulator)
 ![BHEU BADGE](docs/bheu21.svg) ![python](https://img.shields.io/badge/Python-14354C) ![maintained](https://img.shields.io/badge/Maintained%3F-yes-green.svg)
 
-Dependency Combobulator is an Open-Source, modular and extensible framework to detect and prevent dependency confusion leakage and potential attacks. This facilitates a holistic approach for ensuring secure application releases that can be evaluated against different sources (e.g., GitHub Packages, JFrog Artifactory) and many package management schemes (e.g., npm, maven).
+DepGate is an open-source, modular and extensible framework to detect and prevent dependency confusion and related supply‑chain risks. It supports multiple sources (e.g., GitHub Packages, JFrog Artifactory) and package managers (e.g., npm, maven, PyPI).
 
 ### Intended Audiences
 
@@ -43,11 +43,15 @@ The project is putting practicionar's ability to extend and fit the toolkit to h
 
 ## Installation
 
-Dependency Combobulator is ready to work with as it is - just `git clone` or download the package from https://github.com/apiiro/combobulator
+Clone this repository and install dependencies with uv:
 
-Make sure to install required dependencies by running:
+Use uv to create a local environment and install dependencies:
 
-`pip install -r requirements.txt`
+```
+uv venv
+source .venv/bin/activate
+uv sync
+```
 
 ## Arguments (--help)
 ```
@@ -70,7 +74,7 @@ Make sure to install required dependencies by running:
   -q, --quiet           Suppress console output
   --error-on-warning    Exit with error code if warnings are found
 
-Apiiro <Heart> Community
+Hard fork of Apiiro/combobulator by cognitivegears
 ```
 Supported package types (-t, --t): npm, maven, pypi
 
@@ -79,7 +83,7 @@ Supported source dependency assessment:
 - By analyzing the appropriate repo's software bill-of-materials (e.g. package.json, pom.xml) (-d, --directory)
 - Naming a single identifier (-p, --package)
 
-Analysis level is customizable as you can build your own preferred analysis profile in seconds. Dependency Combobulator does come with several analysis levels out-of-the-box, selected by -a, --analysis
+Analysis level is customizable as you can build your own preferred analysis profile in seconds. DepGate ships with several analysis levels out-of-the-box, selected by -a, --analysis.
 
 Supported output format:
 - Screen stdout (default)
@@ -90,8 +94,8 @@ Supported output format:
 https://user-images.githubusercontent.com/90651458/140915800-c267034b-90c9-42d1-b12a-83e12f70d44e.mp4
 
 
-## Credits
+## Credits & Attribution
 
-The project is maintained and sponsored by Apiiro with 💜
+DepGate is a hard fork of "Dependency Combobulator" originally developed by Apiiro and its contributors: https://github.com/apiiro/combobulator
 
-We honor great developers & AppSec practitioners with a passion for change 🙏
+This fork is maintained by cognitivegears. The original authors and contributors are credited in CONTRIBUTORS.md. The project continues under the Apache License 2.0, preserving the original license and attribution.

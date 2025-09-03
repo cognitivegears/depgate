@@ -3,18 +3,18 @@ requires = ["setuptools>=61", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "combobulator-moshe-apiiro"
-version = "0.1"
-description = "Dependency Combobulator detects and prevents dependency confusion risks."
+name = "depgate"
+version = "0.1.0"
+description = "DepGate detects and prevents dependency confusion and supply-chain risks. (Hard fork of Apiiro's Dependency Combobulator)"
 readme = "README.md"
 requires-python = ">=3.8"
-license = { text = "MIT" }
+license = { text = "Apache-2.0" }
 authors = [
-  { name = "Moshe Zioni", email = "moshe@apiiro.com" }
+  { name = "cognitivegears" }
 ]
 classifiers = [
   "Programming Language :: Python :: 3",
-  "License :: OSI Approved :: MIT License",
+  "License :: OSI Approved :: Apache Software License",
   "Operating System :: OS Independent",
 ]
 dependencies = [
@@ -25,15 +25,16 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/apiiro/combobulator"
-"Bug Tracker" = "https://github.com/apiiro/combobulator/issues"
+Homepage = "https://github.com/cognitivegears/depgate"
+"Bug Tracker" = "https://github.com/cognitivegears/depgate/issues"
+Upstream = "https://github.com/apiiro/combobulator"
 
 [project.scripts]
-combobulator = "combobulator:main"
+depgate = "depgate:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
-py-modules = ["combobulator", "args", "constants", "metapackage"]
+py-modules = ["depgate", "args", "constants", "metapackage"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
