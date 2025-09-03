@@ -1,7 +1,45 @@
 [build-system]
-requires = [
-    "gql",
-    "python-dotenv",
-    "argparse",
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "combobulator-moshe-apiiro"
+version = "0.1"
+description = "Dependency Combobulator detects and prevents dependency confusion risks."
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+authors = [
+  { name = "Moshe Zioni", email = "moshe@apiiro.com" }
 ]
-build-backend = "setuptools"
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+]
+dependencies = [
+  "requests>=2.32.4,<2.32.5",
+  "gql>=3.5.0",
+  "python-dotenv>=0.19.2",
+  "requirements-parser>=0.11.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/apiiro/combobulator"
+"Bug Tracker" = "https://github.com/apiiro/combobulator/issues"
+
+[project.scripts]
+combobulator = "combobulator:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+py-modules = ["combobulator", "args", "constants", "metapackage"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.uv]
+dev-dependencies = [
+  "pytest>=7.0",
+  "pylint>=3.0",
+]

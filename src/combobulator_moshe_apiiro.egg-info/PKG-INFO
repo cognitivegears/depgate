@@ -1,3 +1,25 @@
+Metadata-Version: 2.4
+Name: combobulator-moshe-apiiro
+Version: 0.1
+Summary: Dependency Combobulator detects and prevents dependency confusion risks.
+Home-page: https://github.com/apiiro/combobulator
+Author: Moshe Zioni
+Author-email: Moshe Zioni <moshe@apiiro.com>
+License: MIT
+Project-URL: Homepage, https://github.com/apiiro/combobulator
+Project-URL: Bug Tracker, https://github.com/apiiro/combobulator/issues
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: requests<2.32.5,>=2.32.4
+Requires-Dist: gql>=3.5.0
+Requires-Dist: python-dotenv>=0.19.2
+Requires-Dist: requirements-parser>=0.11.0
+Dynamic: license-file
+
 # Dependency Combobulator
 ![BHEU BADGE](docs/bheu21.svg) ![python](https://img.shields.io/badge/Python-14354C) ![maintained](https://img.shields.io/badge/Maintained%3F-yes-green.svg)
 
@@ -21,15 +43,11 @@ The project is putting practicionar's ability to extend and fit the toolkit to h
 
 ## Installation
 
-Dependency Combobulator is ready to work with as it is — just `git clone` or download the package from https://github.com/apiiro/combobulator
+Dependency Combobulator is ready to work with as it is - just `git clone` or download the package from https://github.com/apiiro/combobulator
 
-Use uv to create a local environment and install dependencies:
+Make sure to install required dependencies by running:
 
-```
-uv venv
-source .venv/bin/activate
-uv sync
-```
+`pip install -r requirements.txt`
 
 ## Arguments (--help)
 ```
