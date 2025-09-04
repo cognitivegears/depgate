@@ -71,8 +71,8 @@ def check_against(check_type, level, check_list):
         check_type (str): Package manager type, i.e. "npm".
         check_list (list): List of packages to check.
     """
-    
-    
+
+
     if check_type == PackageManagers.NPM.value:
         # Only fetch details for levels 1 and 2
         should_fetch_details = level in (Constants.LEVELS[2], Constants.LEVELS[3])
@@ -151,8 +151,8 @@ def main():
 
     # Configure logging
     log_level = getattr(logging, args.LOG_LEVEL.upper(), logging.INFO)
-   
-    
+
+
     if '-h' in sys.argv or '--help' in sys.argv:
         # Ensure help output is always at INFO level
         logging.basicConfig(level=logging.INFO, format=Constants.LOG_FORMAT)
@@ -170,19 +170,13 @@ def main():
 
     logging.info("Arguments parsed.")
 
-    # Logging the ASCII art banner
     logging.info(r"""
-   _____            _____       _        
-  |  __ \          / ____|     | |       
-  | |  | | ___  __| |  __  __ _| |_ ___  
-  | |  | |/ _ \/ _` | |_ |/ _` | __/ _ \ 
-  | |__| |  __/ (_| |__| | (_| | || (_) |
-  |_____/ \___|\__,_|_____\__,_|\__\___/ 
+┬─┐ ┬─┐ ┬─┐ ┌─┐ ┬─┐ ┌┐┐ ┬─┐
+│ │ │─  │─┘ │ ┬ │─┤  │  │─
+──┘ ┴─┘ ┴   │─┘ ┘ │  ┘  ┴─┘
 
-  Hard fork of Apiiro's Dependency Combobulator
+  Dependency Supply-Chain/Confusion Risk Checker
 """)
-
-    # are you amazed yet?
 
     # SCAN & FLAG ARGS
 
@@ -191,12 +185,12 @@ def main():
         logging.warning("Recursive option is only applicable to source scans.")
 
     #IMPORT
+    pkglist = []
     if args.LIST_FROM_FILE:
         pkglist = load_pkgs_file(args.LIST_FROM_FILE[0])
     elif args.FROM_SRC:
         pkglist = scan_source(args.package_type, args.FROM_SRC[0], recursive=args.RECURSIVE)
     elif args.SINGLE:
-        pkglist = []
         pkglist.append(args.SINGLE[0])
 
     if not pkglist or not isinstance(pkglist, list):
