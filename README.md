@@ -1,79 +1,96 @@
-# DepGate (hard fork of Dependency Combobulator)
-![BHEU BADGE](docs/bheu21.svg) ![python](https://img.shields.io/badge/Python-14354C) ![maintained](https://img.shields.io/badge/Maintained%3F-yes-green.svg)
+# DepGate — Dependency Supply‑Chain Risk & Confusion Checker
 
-DepGate is an open-source, modular and extensible framework to detect and prevent dependency confusion and related supply‑chain risks. It supports multiple sources (e.g., GitHub Packages, JFrog Artifactory) and package managers (e.g., npm, maven, PyPI).
+DepGate is a modular CLI that detects dependency confusion and related supply‑chain risks across npm, Maven, and PyPI projects. It analyzes dependencies from manifests, checks public registries, and flags potential risks with a simple, scriptable interface.
 
-### Intended Audiences
+DepGate is a fork of Apiiro’s “Dependency Combobulator”, maintained going forward by cognitivegears. See Credits & Attribution below.
 
-The framework can be used by security auditors, pentesters and even baked into an enterprise's application security program and release cycle in an automated fashion.
-### Main features
-* Pluggable - interject on commit level, build, release steps in SDLC.
-* Expandable - easily add your own package management scheme or code source of choice
-* General-purpose Heuristic-Engine - an abstract package data model provides agnostic heuristic approach
-* Supporting wide range of technologies
-* Flexible - decision trees can be determined upon insights or verdicts provided by the toolkit
+## Features
 
+- Pluggable analysis: compare vs. heuristics levels (`compare/comp`, `heuristics/heur`).
+- Multiple ecosystems: npm (`package.json`), Maven (`pom.xml`), PyPI (`requirements.txt`).
+- Flexible inputs: single package, manifest scan, or list from file.
+- Structured outputs: human‑readable logs plus CSV/JSON exports for CI.
+- Designed for automation: predictable exit codes and quiet/log options.
 
-### Easly extensible
+## Requirements
 
-The project is putting practicionar's ability to extend and fit the toolkit to her own specific needs. As such, it is designed to be able to extend it to other sources, public registries, package management schemes and extending the abstract model and accompnaied heuristics engine.
+- Python 3.8+
+- Network access for registry lookups when running analysis
 
+## Install
 
-## Installation
+Using uv (development):
 
-Clone this repository and install dependencies with uv:
+- `uv venv && source .venv/bin/activate`
+- `uv sync`
 
-Use uv to create a local environment and install dependencies:
+From PyPI (after publishing):
 
-```
-uv venv
-source .venv/bin/activate
-uv sync
-```
+- pip: `pip install depgate`
+- pipx: `pipx install depgate`
+- uvx: `uvx depgate --help`
 
-## Arguments (--help)
-```
-  -h, --help            show this help message and exit
-  -t {npm,maven,pypi}, --type {npm,maven,pypi}
-                        Package Manager Type, i.e: npm, maven, pypi
-  -l LIST_FROM_FILE, --load_list LIST_FROM_FILE
-                        Load list of dependencies from a file
-  -d FROM_SRC, --directory FROM_SRC
-                        Extract dependencies from local source repository
-  -p--package SINGLE    Name a single package.
-  -c CSV, --csv CSV     Export packages properties onto CSV file
-  -j JSON, --json JSON  Export packages properties onto JSON file
-  -a {compare,comp,heuristics,heur}, --analysis {compare,comp,heuristics,heur}
-                        Required analysis level - compare (comp), heuristics
-                        (heur) (default: compare)
-  -r, --recursive       Recursively analyze dependencies
-  --loglevel LOG_LEVEL  Set the logging level (default: INFO)
-  --logfile LOG_FILE    Set the logging file
-  -q, --quiet           Suppress console output
-  --error-on-warning    Exit with error code if warnings are found
+## Quick Start
 
-Hard fork of Apiiro/combobulator by cognitivegears
-```
-Supported package types (-t, --t): npm, maven, pypi
+- Single package (npm): `depgate -t npm -p left-pad`
+- Scan a repo (Maven): `depgate -t maven -d ./tests`
+- Heuristics + JSON: `depgate -t pypi -a heur -j out.json`
 
-Supported source dependency assessment:
-- From file containing the dependency identifiers line-by-line. (-l, --load_list)
-- By analyzing the appropriate repo's software bill-of-materials (e.g. package.json, pom.xml) (-d, --directory)
-- Naming a single identifier (-p, --package)
+With uv during development:
 
-Analysis level is customizable as you can build your own preferred analysis profile in seconds. DepGate ships with several analysis levels out-of-the-box, selected by -a, --analysis.
+- `uv run depgate -t npm -d ./tests`
+- `uv run depgate -t pypi -a heur -j out.json`
 
-Supported output format:
-- Screen stdout (default)
-- CSV export to designated file -(-CSV)
+## Inputs and Scanning
 
-## Usage examples
+- `-p, --package <name>`: single package name
+  - npm: package name (e.g., `left-pad`)
+  - PyPI: project name (e.g., `requests`)
+  - Maven: not used (see below)
+- `-d, --directory <path>`: scan local source
+  - npm: finds `package.json` (and `devDependencies`)
+  - Maven: finds `pom.xml`, emits `groupId:artifactId`
+  - PyPI: finds `requirements.txt`
+- `-l, --load_list <file>`: newline‑delimited identifiers
+  - npm/PyPI: package names per line
+  - Maven: `groupId:artifactId` per line
 
-https://user-images.githubusercontent.com/90651458/140915800-c267034b-90c9-42d1-b12a-83e12f70d44e.mp4
+## Analysis Levels
 
+- `compare` or `comp`: presence/metadata checks against public registries
+- `heuristics` or `heur`: adds scoring, version count, age signals
+
+## Output
+
+- Default: logs to stdout (respecting `--loglevel` and `--quiet`)
+- CSV: `-c, --csv <path>`
+  - Columns: `Package Name, Package Type, Exists on External, Org/Group ID, Score, Version Count, Timestamp, Risk: Missing, Risk: Low Score, Risk: Min Versions, Risk: Too New, Risk: Any Risks`
+- JSON: `-j, --json <path)`
+  - Array of objects with keys: `packageName, orgId, packageType, exists, score, versionCount, createdTimestamp, risk.{hasRisk,isMissing,hasLowScore,minVersions,isNew}`
+
+## CLI Options (summary)
+
+- `-t, --type {npm,pypi,maven}`: package manager
+- `-p/‑d/‑l`: input source (mutually exclusive)
+- `-a, --analysis {compare,comp,heuristics,heur}`: analysis level
+- `-c/‑j`: CSV/JSON export paths
+- Logging: `--loglevel {DEBUG,INFO,WARNING,ERROR,CRITICAL}`, `--logfile <path>`, `-q, --quiet`
+- Scanning: `-r, --recursive` (for `--directory` scans)
+- CI: `--error-on-warnings` (non‑zero exit if risks detected)
+
+## Exit Codes
+
+- `0`: success (no risks or informational only)
+- `1`: file/IO error
+- `2`: connection error
+- `3`: risks found and `--error-on-warnings` set
+
+## Contributing
+
+- See `AGENTS.md` for repo layout, dev commands, and linting.
+- Lint: `uv run pylint src`
 
 ## Credits & Attribution
 
-DepGate is a hard fork of "Dependency Combobulator" originally developed by Apiiro and its contributors: https://github.com/apiiro/combobulator
-
-This fork is maintained by cognitivegears. The original authors and contributors are credited in CONTRIBUTORS.md. The project continues under the Apache License 2.0, preserving the original license and attribution.
+- DepGate is a fork of “Dependency Combobulator” originally developed by Apiiro and its contributors: https://github.com/apiiro/combobulator - see `CONTRIBUTORS.md`.
+- Licensed under the Apache License 2.0. See `LICENSE` and `NOTICE`.
