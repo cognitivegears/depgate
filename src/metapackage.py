@@ -6,7 +6,7 @@ class MetaPackage:
     instances = []
 
     def __init__(self, pkgname, pkgtype=None, pkgorg=None):
-        self.instances.append(self) # adding the instance to colllective
+        self.instances.append(self)  # adding the instance to collective
         if len(pkgname.split(':')) == 2:
             if pkgtype == PackageManagers.MAVEN.value:
                 if pkgorg is None:
@@ -26,6 +26,14 @@ class MetaPackage:
         self._contributor_count = None
         self._download_count = None
         self._issue_count = None
+        # Initialize optional metadata fields to avoid attribute-defined-outside-init warnings
+        self._author = None
+        self._author_email = None
+        self._publisher = None
+        self._publisher_email = None
+        self._maintainer = None
+        self._maintainer_email = None
+        self._dependencies = None
         #self._pkg_ver = pkgver TBA
         self._risk_missing = None
         self._risk_low_score = None
@@ -152,8 +160,8 @@ class MetaPackage:
         """
         return self._publisher_email
 
-    @publisher.setter
-    def publisher(self, a):
+    @publisher_email.setter
+    def publisher_email(self, a):
         self._publisher_email = a
 
     @property
@@ -324,7 +332,7 @@ class MetaPackage:
     @risk_too_new.setter
     def risk_too_new(self, is_risk_too_new):
         self._risk_too_new = is_risk_too_new
-        
+
     @property
     def contributor_count(self):
         """Property for the contributor count.
@@ -384,7 +392,12 @@ class MetaPackage:
         Returns:
             bool: True if the package has any risk, False otherwise.
         """
-        if self._risk_missing or self._risk_low_score or self._risk_min_versions or self._risk_too_new:
+        if (
+            self._risk_missing
+            or self._risk_low_score
+            or self._risk_min_versions
+            or self._risk_too_new
+        ):
             return True
         return False
 # not-supported for now: hasTests, testsSize, privateRepo

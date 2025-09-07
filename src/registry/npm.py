@@ -1,15 +1,16 @@
 """
   NPM registry module. This module is responsible for checking
-  the existence of the packages in the NPM registry and scanning'
-  the source code for dependencies."""
+  the existence of packages in the NPM registry and scanning
+  the source code for dependencies.
+"""
 import json
 import sys
 import os
 import time
 from datetime import datetime as dt
 import logging  # Added import
-import requests
 from constants import ExitCodes, Constants
+from registry.http import safe_get, safe_post
 
 def get_keys(data):
     """Get all keys from a nested dictionary.
@@ -32,27 +33,18 @@ def get_package_details(pkg, url):
     """Get the details of a package from the NPM registry.
 
     Args:
-        x (_type_): _description_
-        url (_type_): _description_
+        pkg: MetaPackage instance to populate.
+        url (str): Registry API base URL for details.
     """
 
     # Short sleep to avoid rate limiting
     time.sleep(0.1)
 
-    try:
-        logging.debug("Checking package: %s", pkg.pkg_name)
-        package_url = url + pkg.pkg_name
-        package_headers = {
-            'Accept': 'application/vnd.npm.install-v1+json; q=1.0, application/json; q=0.8, */*'}
-        res = requests.get(package_url,
-            headers=package_headers,
-            timeout=Constants.REQUEST_TIMEOUT)
-    except requests.Timeout:
-        logging.error("Request timed out after %s seconds", Constants.REQUEST_TIMEOUT)
-        sys.exit(ExitCodes.CONNECTION_ERROR.value)
-    except requests.RequestException as e:
-        logging.error("Connection error: %s", e)
-        sys.exit(ExitCodes.CONNECTION_ERROR.value)
+    logging.debug("Checking package: %s", pkg.pkg_name)
+    package_url = url + pkg.pkg_name
+    package_headers = {
+        'Accept': 'application/vnd.npm.install-v1+json; q=1.0, application/json; q=0.8, */*'}
+    res = safe_get(package_url, context="npm", headers=package_headers)
     if res.status_code == 404:
         pkg.exists = False
         return
@@ -65,7 +57,12 @@ def get_package_details(pkg, url):
     pkg.exists = True
     pkg.version_count = len(package_info['versions'])
 
-def recv_pkg_info(pkgs, should_fetch_details=False, details_url=Constants.REGISTRY_URL_NPM, url=Constants.REGISTRY_URL_NPM_STATS):
+def recv_pkg_info(
+    pkgs,
+    should_fetch_details=False,
+    details_url=Constants.REGISTRY_URL_NPM,
+    url=Constants.REGISTRY_URL_NPM_STATS,
+):
     """Check the existence of the packages in the NPM registry.
 
     Args:
@@ -82,19 +79,11 @@ def recv_pkg_info(pkgs, should_fetch_details=False, details_url=Constants.REGIST
     headers = { 'Accept': 'application/json',
                 'Content-Type': 'application/json'}
     logging.info("Connecting to registry at %s ...", url)
-    try:
-        res = requests.post(url, data=payload, headers=headers,
-                          timeout=Constants.REQUEST_TIMEOUT)
-        if res.status_code != 200:
-            logging.error("Unexpected status code (%s)", res.status_code)
-            sys.exit(ExitCodes.CONNECTION_ERROR.value)
-        pkg = json.loads(res.text)
-    except requests.Timeout:
-        logging.error("Request timed out after %s seconds", Constants.REQUEST_TIMEOUT)
+    res = safe_post(url, context="npm", data=payload, headers=headers)
+    if res.status_code != 200:
+        logging.error("Unexpected status code (%s)", res.status_code)
         sys.exit(ExitCodes.CONNECTION_ERROR.value)
-    except requests.RequestException as e:
-        logging.error("Connection error: %s", e)
-        sys.exit(ExitCodes.CONNECTION_ERROR.value)
+    pkg = json.loads(res.text)
     for i in pkgs:
         if i.pkg_name in pkg:
             package_info = pkg[i.pkg_name]
@@ -138,8 +127,8 @@ def scan_source(dir_name, recursive=False):
                 sys.exit(ExitCodes.FILE_ERROR.value)
 
         lister = []
-        for path in pkg_files:
-            with open(path, "r", encoding="utf-8") as file:
+        for pkg_path in pkg_files:
+            with open(pkg_path, "r", encoding="utf-8") as file:
                 body = file.read()
             filex = json.loads(body)
             lister.extend(list(filex.get('dependencies', {}).keys()))

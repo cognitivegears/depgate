@@ -7,14 +7,16 @@ def parse_args():
     """Parses the arguments passed to the program."""
     parser = argparse.ArgumentParser(
         prog="depgate.py",
-        description="DepGate - Dependency supply-chain risk and confusion checker (hard fork of Apiiro's Dependency Combobulator)",
-        epilog='Hard fork of Apiiro/combobulator by cognitivegears',
-        add_help=True)
-    
+        description=(
+            "DepGate - Dependency supply-chain risk and confusion checker"
+        ),
+        add_help=True,
+    )
+
     parser.add_argument("-t", "--type",
                         dest="package_type",
                         help="Package Manager Type, i.e: npm, PyPI, maven",
-                        action="store", type=str, 
+                        action="store", type=str,
                         choices=Constants.SUPPORTED_PACKAGES,
                         required=True)
 

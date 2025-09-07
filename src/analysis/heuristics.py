@@ -55,7 +55,10 @@ def test_score(x):
             logging.info("%s.... package scored ABOVE MID - %s%s",
                 STG, str(x.score), ttxt)
             x.risk_low_score = False
-        elif x.score <= DefaultHeuristics.SCORE_THRESHOLD.value and x.score > DefaultHeuristics.RISKY_THRESHOLD.value:
+        elif (
+            x.score <= DefaultHeuristics.SCORE_THRESHOLD.value
+            and x.score > DefaultHeuristics.RISKY_THRESHOLD.value
+        ):
             logging.warning("%s.... [RISK] package scored BELOW MID - %s%s",
                 STG, str(x.score), ttxt)
             x.risk_low_score = False

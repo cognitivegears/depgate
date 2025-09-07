@@ -45,8 +45,8 @@ def scan_source(pkgtype, dir_name, recursive=False):
 
     Args:
         pkgtype (str): Package manager type, i.e. "npm".
-        dir (str): Directory path to scan.
-        recursive (bool, optional): Option to recurse into subdirectories. Defaults to False.
+        dir_name (str): Directory path to scan.
+        recursive (bool, optional): Whether to recurse into subdirectories. Defaults to False.
 
     Returns:
         list: List of packages found in the source directory.
@@ -54,21 +54,21 @@ def scan_source(pkgtype, dir_name, recursive=False):
     if pkgtype == PackageManagers.NPM.value:
         from registry import npm as _npm
         return _npm.scan_source(dir_name, recursive)
-    elif pkgtype == PackageManagers.MAVEN.value:
+    if pkgtype == PackageManagers.MAVEN.value:
         from registry import maven as _maven
         return _maven.scan_source(dir_name, recursive)
-    elif pkgtype == PackageManagers.PYPI.value:
+    if pkgtype == PackageManagers.PYPI.value:
         from registry import pypi as _pypi
         return _pypi.scan_source(dir_name, recursive)
-    else:
-        logging.error("Selected package type doesn't support import scan.")
-        sys.exit(ExitCodes.FILE_ERROR.value)
+    logging.error("Selected package type doesn't support import scan.")
+    sys.exit(ExitCodes.FILE_ERROR.value)
 
 def check_against(check_type, level, check_list):
     """Checks the packages against the registry.
 
     Args:
         check_type (str): Package manager type, i.e. "npm".
+        level (str): Analysis level affecting fetch behavior.
         check_list (list): List of packages to check.
     """
 
@@ -95,9 +95,20 @@ def export_csv(instances, path):
         instances (list): List of package instances.
         path (str): File path to export the CSV.
     """
-    headers = ["Package Name","Package Type", "Exists on External",
-            "Org/Group ID","Score","Version Count","Timestamp",
-            "Risk: Missing", "Risk: Low Score","Risk: Min Versions","Risk: Too New", "Risk: Any Risks"]
+    headers = [
+        "Package Name",
+        "Package Type",
+        "Exists on External",
+        "Org/Group ID",
+        "Score",
+        "Version Count",
+        "Timestamp",
+        "Risk: Missing",
+        "Risk: Low Score",
+        "Risk: Min Versions",
+        "Risk: Too New",
+        "Risk: Any Risks",
+    ]
     rows = [headers]
     for x in instances:
         rows.append(x.listall())
