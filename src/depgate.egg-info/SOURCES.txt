@@ -16,6 +16,7 @@ src/depgate.egg-info/entry_points.txt
 src/depgate.egg-info/requires.txt
 src/depgate.egg-info/top_level.txt
 src/registry/__init__.py
+src/registry/http.py
 src/registry/maven.py
 src/registry/npm.py
 src/registry/pypi.py

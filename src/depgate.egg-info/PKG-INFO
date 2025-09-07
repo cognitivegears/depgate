@@ -6,7 +6,6 @@ Author: cognitivegears
 License: Apache-2.0
 Project-URL: Homepage, https://github.com/cognitivegears/depgate
 Project-URL: Bug Tracker, https://github.com/cognitivegears/depgate/issues
-Project-URL: Upstream, https://github.com/apiiro/combobulator
 Classifier: Programming Language :: Python :: 3
 Classifier: License :: OSI Approved :: Apache Software License
 Classifier: Operating System :: OS Independent

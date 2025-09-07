@@ -27,7 +27,6 @@ dependencies = [
 [project.urls]
 Homepage = "https://github.com/cognitivegears/depgate"
 "Bug Tracker" = "https://github.com/cognitivegears/depgate/issues"
-Upstream = "https://github.com/apiiro/combobulator"
 
 [project.scripts]
 depgate = "depgate:main"
@@ -43,4 +42,5 @@ where = ["src"]
 dev-dependencies = [
   "pytest>=7.0",
   "pylint>=3.0",
+  "behave>=1.2.6",
 ]

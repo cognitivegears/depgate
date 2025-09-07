@@ -1,0 +1,220 @@
+Feature: NPM single package (compare and heuristics)
+  Background:
+    Given fake registries are enabled
+    And a clean artifacts directory
+
+  Scenario Outline: Analyze a single npm package with JSON export
+    When I run depgate with arguments:
+      | arg | value |
+      | -t  | npm   |
+      | -p  | <pkg> |
+      | -a  | <level> |
+      | -j  | <json_path> |
+    Then the process exits with code <exit_code>
+    And the JSON output at "<json_path>" contains 1 record for "<pkg>" with:
+      | field         | expected |
+      | exists        | <exists> |
+      | risk.hasRisk  | <has_risk> |
+
+    Examples:
+      | pkg         | level   | exists | has_risk | exit_code |
+      | left-pad    | compare | true   | false    | 0         |
+      | missing-pkg | compare | false  | true     | 0         |
+
+  Scenario Outline: NPM heuristics risk flags
+    When I run depgate with arguments:
+      | arg | value |
+      | -t  | npm   |
+      | -p  | <pkg> |
+      | -a  | heur  |
+      | -j  | <json_path> |
+    Then the process exits with code 0
+    And the JSON output at "<json_path>" record for "<pkg>" has risk flags:
+      | field            | expected |
+      | risk.isMissing   | <is_missing> |
+      | risk.hasLowScore | <low_score> |
+      | risk.minVersions | <min_versions> |
+      | risk.isNew       | <is_new> |
+
+    Examples:
+      | pkg          | is_missing | low_score | min_versions | is_new |
+      | left-pad     | false      | false     | false        | false  |
+      | badscore-pkg | false      | true      | false        | false  |
+      | shortver-pkg | false      | false     | true         | false  |
+      | newpkg       | false      | false     | false        | true   |
+      | missing-pkg  | true       |           |              |        |
+
+Feature: NPM directory scan
+  Background:
+    Given fake registries are enabled
+    And a clean artifacts directory
+    And a temp directory with package.json:
+      """
+      {
+        "name": "tmp",
+        "version": "0.0.1",
+        "dependencies": { "left-pad": "^1.3.0", "shortver-pkg": "1.0.0" }
+      }
+      """
+
+  Scenario: Scan npm project and export JSON
+    When I run depgate with arguments:
+      | arg | value |
+      | -t  | npm   |
+      | -d  | <tmp_dir> |
+      | -a  | heur  |
+      | -j  | <json_path> |
+    Then the process exits with code 0
+    And the JSON output at "<json_path>" contains records for:
+      | packageName |
+      | left-pad    |
+      | shortver-pkg |
+
+Feature: PyPI single package and requirements scan
+  Background:
+    Given fake registries are enabled
+    And a clean artifacts directory
+
+  Scenario Outline: Analyze a single PyPI package
+    When I run depgate with arguments:
+      | arg | value |
+      | -t  | pypi  |
+      | -p  | <pkg> |
+      | -a  | heur  |
+      | -j  | <json_path> |
+    Then the process exits with code 0
+    And the JSON output at "<json_path>" record for "<pkg>" has fields:
+      | field            | expected |
+      | exists           | <exists> |
+      | risk.isMissing   | <is_missing> |
+      | risk.minVersions | <min_versions> |
+      | risk.isNew       | <is_new> |
+
+    Examples:
+      | pkg          | exists | is_missing | min_versions | is_new |
+      | requests     | true   | false      | false        | false  |
+      | pypi-new     | true   | false      | false        | true   |
+      | pypi-short   | true   | false      | true         | false  |
+      | pypi-missing | false  | true       |              |        |
+
+  Scenario: Scan requirements from temp dir
+    Given a temp directory with requirements.txt:
+      """
+      requests==2.0.0
+      pypi-short==0.0.1
+      """
+    When I run depgate with arguments:
+      | arg | value |
+      | -t  | pypi  |
+      | -d  | <tmp_dir> |
+      | -a  | heur  |
+      | -j  | <json_path> |
+    Then the process exits with code 0
+    And the JSON output at "<json_path>" contains records for:
+      | packageName |
+      | requests    |
+      | pypi-short  |
+
+Feature: Maven single and pom scan
+  Background:
+    Given fake registries are enabled
+    And a clean artifacts directory
+
+  Scenario Outline: Analyze Maven coordinate
+    Given a package list file containing "<artifact>"
+    When I run depgate with arguments:
+      | arg | value |
+      | -t  | maven |
+      | -l  | <list_file> |
+      | -a  | heur  |
+      | -j  | <json_path> |
+    Then the process exits with code 0
+    And the JSON output at "<json_path>" contains 1 record for "<artifact>" with:
+      | field            | expected |
+      | exists           | <exists> |
+      | risk.minVersions | <min_versions> |
+
+    Examples:
+      | artifact     | exists | min_versions |
+      | present-art  | true   | false        |
+      | missing-art  | false  |              |
+
+  Scenario: Scan pom.xml in temp dir
+    Given a temp directory with pom.xml:
+      """
+      <project xmlns="http://maven.apache.org/POM/4.0.0"
+               xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+               xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+        <modelVersion>4.0.0</modelVersion>
+        <groupId>example</groupId>
+        <artifactId>demo</artifactId>
+        <version>1.0.0</version>
+        <dependencies>
+          <dependency><groupId>com.example</groupId><artifactId>present-art</artifactId><version>1.0.0</version></dependency>
+        </dependencies>
+      </project>
+      """
+    When I run depgate with arguments:
+      | arg | value |
+      | -t  | maven |
+      | -d  | <tmp_dir> |
+      | -a  | heur  |
+      | -j  | <json_path> |
+    Then the process exits with code 0
+    And the JSON output at "<json_path>" contains records for:
+      | packageName |
+      | present-art |
+
+Feature: Exports and exit codes
+  Background:
+    Given fake registries are enabled
+    And a clean artifacts directory
+
+  Scenario: JSON and CSV export with warnings gated to non-zero
+    When I run depgate with arguments:
+      | arg | value |
+      | -t  | npm   |
+      | -p  | shortver-pkg |
+      | -a  | heur  |
+      | -j  | <json_path> |
+      | -c  | <csv_path> |
+      | --error-on-warnings | true |
+    Then the process exits with code 3
+    And the JSON output at "<json_path>" record for "shortver-pkg" has risk flags:
+      | field            | expected |
+      | risk.minVersions | true     |
+    And the CSV at "<csv_path>" has a header row and 2 rows total
+
+Feature: Network failures
+  Background:
+    Given fake registries are enabled
+    And a clean artifacts directory
+
+  Scenario: Timeout surfaces as connection error exit code
+    Given fake registry mode "timeout"
+    When I run depgate with arguments:
+      | arg | value |
+      | -t  | npm   |
+      | -p  | left-pad |
+    Then the process exits with code 2
+
+  Scenario: Generic connection error surfaces exit code
+    Given fake registry mode "conn_error"
+    When I run depgate with arguments:
+      | arg | value |
+      | -t  | pypi  |
+      | -p  | requests |
+    Then the process exits with code 2
+
+Feature: Quiet mode
+  Background:
+    Given fake registries are enabled
+
+  Scenario: -q suppresses stdout
+    When I run depgate with arguments:
+      | arg | value |
+      | -t  | npm   |
+      | -p  | left-pad |
+      | -q  | true |
+    Then the process exits with code 0
+    And stdout is empty or whitespace only
