@@ -60,3 +60,14 @@ class Constants:  # pylint: disable=too-few-public-methods
     LOG_FORMAT = "[%(levelname)s] %(message)s"  # Added LOG_FORMAT constant
     ANALYSIS = "[ANALYSIS]"
     REQUEST_TIMEOUT = 30  # Timeout in seconds for all HTTP requests
+
+    # Repository API constants
+    GITHUB_API_BASE = "https://api.github.com"
+    GITLAB_API_BASE = "https://gitlab.com/api/v4"
+    READTHEDOCS_API_BASE = "https://readthedocs.org/api/v3"
+    ENV_GITHUB_TOKEN = "GITHUB_TOKEN"
+    ENV_GITLAB_TOKEN = "GITLAB_TOKEN"
+    REPO_API_PER_PAGE = 100
+    HTTP_RETRY_MAX = 3
+    HTTP_RETRY_BASE_DELAY_SEC = 0.3
+    HTTP_CACHE_TTL_SEC = 300

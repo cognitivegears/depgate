@@ -41,6 +41,18 @@ class MetaPackage:  # pylint: disable=too-many-instance-attributes, too-many-pub
         self._risk_low_score = None
         self._risk_min_versions = None
         self._risk_too_new = None
+        # Repository integration fields
+        self._repo_present_in_registry = False
+        self._repo_resolved = False
+        self._repo_url_normalized = None
+        self._repo_host = None
+        self._repo_exists = None
+        self._repo_last_activity_at = None
+        self._repo_stars = None
+        self._repo_contributors = None
+        self._repo_version_match = None
+        self._provenance = None
+        self._repo_errors = None
 
     def __repr__(self):
         return self._pkg_name
@@ -387,6 +399,149 @@ class MetaPackage:  # pylint: disable=too-many-instance-attributes, too-many-pub
     @timestamp.setter
     def timestamp(self, timestamp): #unix timestamp
         self._timestamp = timestamp
+
+    @property
+    def repo_present_in_registry(self):
+        """Property for repository presence in registry.
+
+        Returns:
+            bool: True if repository URL is present in package registry
+        """
+        return self._repo_present_in_registry
+
+    @repo_present_in_registry.setter
+    def repo_present_in_registry(self, value):
+        self._repo_present_in_registry = value
+
+    @property
+    def repo_resolved(self):
+        """Property for repository resolution status.
+
+        Returns:
+            bool: True if repository URL has been resolved and validated
+        """
+        return self._repo_resolved
+
+    @repo_resolved.setter
+    def repo_resolved(self, value):
+        self._repo_resolved = value
+
+    @property
+    def repo_url_normalized(self):
+        """Property for normalized repository URL.
+
+        Returns:
+            str or None: Normalized repository URL
+        """
+        return self._repo_url_normalized
+
+    @repo_url_normalized.setter
+    def repo_url_normalized(self, value):
+        self._repo_url_normalized = value
+
+    @property
+    def repo_host(self):
+        """Property for repository host type.
+
+        Returns:
+            str or None: Repository host ("github", "gitlab", or "other")
+        """
+        return self._repo_host
+
+    @repo_host.setter
+    def repo_host(self, value):
+        self._repo_host = value
+
+    @property
+    def repo_exists(self):
+        """Property for repository existence.
+
+        Returns:
+            bool or None: True if repository exists, False if not, None if unknown
+        """
+        return self._repo_exists
+
+    @repo_exists.setter
+    def repo_exists(self, value):
+        self._repo_exists = value
+
+    @property
+    def repo_last_activity_at(self):
+        """Property for repository last activity timestamp.
+
+        Returns:
+            str or None: ISO 8601 timestamp of last repository activity
+        """
+        return self._repo_last_activity_at
+
+    @repo_last_activity_at.setter
+    def repo_last_activity_at(self, value):
+        self._repo_last_activity_at = value
+
+    @property
+    def repo_stars(self):
+        """Property for repository star count.
+
+        Returns:
+            int or None: Number of repository stars
+        """
+        return self._repo_stars
+
+    @repo_stars.setter
+    def repo_stars(self, value):
+        self._repo_stars = value
+
+    @property
+    def repo_contributors(self):
+        """Property for repository contributor count.
+
+        Returns:
+            int or None: Number of repository contributors
+        """
+        return self._repo_contributors
+
+    @repo_contributors.setter
+    def repo_contributors(self, value):
+        self._repo_contributors = value
+
+    @property
+    def repo_version_match(self):
+        """Property for repository version match information.
+
+        Returns:
+            dict or None: Version match details with matched, match_type, artifact, tag_or_release
+        """
+        return self._repo_version_match
+
+    @repo_version_match.setter
+    def repo_version_match(self, value):
+        self._repo_version_match = value
+
+    @property
+    def provenance(self):
+        """Property for repository resolution provenance.
+
+        Returns:
+            dict or None: Source keys and values used to resolve repository
+        """
+        return self._provenance
+
+    @provenance.setter
+    def provenance(self, value):
+        self._provenance = value
+
+    @property
+    def repo_errors(self):
+        """Property for repository resolution errors.
+
+        Returns:
+            list or None: List of error dictionaries with type, message, context
+        """
+        return self._repo_errors
+
+    @repo_errors.setter
+    def repo_errors(self, value):
+        self._repo_errors = value
 
     def has_risk(self):
         """Check if the package has any risk.

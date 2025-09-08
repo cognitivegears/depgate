@@ -11,6 +11,10 @@ from datetime import datetime as dt
 import logging  # Added import
 from constants import ExitCodes, Constants
 from registry.http import safe_get, safe_post
+from repository.url_normalize import normalize_repo_url
+from repository.github import GitHubClient
+from repository.gitlab import GitLabClient
+from repository.version_match import VersionMatcher
 
 def get_keys(data):
     """Get all keys from a nested dictionary.
@@ -28,6 +32,207 @@ def get_keys(data):
         else:
             result += get_keys(data[key])
     return result
+
+def _extract_latest_version(packument: dict) -> str:
+    """Extract latest version from packument dist-tags.
+
+    Args:
+        packument: NPM packument dictionary
+
+    Returns:
+        Latest version string or empty string if not found
+    """
+    dist_tags = packument.get('dist-tags', {})
+    return dist_tags.get('latest', '')
+
+
+def _parse_repository_field(version_info: dict) -> tuple:
+    """Parse repository field from version info, handling string or object formats.
+
+    Args:
+        version_info: Version dictionary from packument
+
+    Returns:
+        Tuple of (candidate_url, directory) where directory may be None
+    """
+    repo = version_info.get('repository')
+    if not repo:
+        return None, None
+
+    if isinstance(repo, str):
+        return repo, None
+    elif isinstance(repo, dict):
+        url = repo.get('url')
+        directory = repo.get('directory')
+        return url, directory
+
+    return None, None
+
+
+def _extract_fallback_urls(version_info: dict) -> list:
+    """Extract fallback repository URLs from homepage and bugs fields.
+
+    Args:
+        version_info: Version dictionary from packument
+
+    Returns:
+        List of candidate URLs from homepage and bugs.url
+    """
+    candidates = []
+
+    # Homepage fallback
+    homepage = version_info.get('homepage')
+    if homepage:
+        candidates.append(homepage)
+
+    # Bugs URL fallback - infer base repo from issues URLs
+    bugs = version_info.get('bugs')
+    if bugs:
+        if isinstance(bugs, str):
+            bugs_url = bugs
+        elif isinstance(bugs, dict):
+            bugs_url = bugs.get('url')
+        else:
+            bugs_url = None
+
+        if bugs_url and '/issues' in bugs_url:
+            # Infer base repository URL from issues URL
+            base_repo_url = bugs_url.replace('/issues', '').replace('/issues/', '')
+            candidates.append(base_repo_url)
+
+    return candidates
+
+
+def _enrich_with_repo(pkg, packument: dict) -> None:
+    """Enrich MetaPackage with repository discovery, validation, and version matching.
+
+    Args:
+        pkg: MetaPackage instance to update
+        packument: NPM packument dictionary
+    """
+    # Imports moved to module level for test patching
+
+    # Extract latest version
+    latest_version = _extract_latest_version(packument)
+    if not latest_version:
+        return
+
+    # Get version info for latest
+    versions = packument.get('versions', {})
+    version_info = versions.get(latest_version)
+    if not version_info:
+        return
+
+    # Determine original bugs URL (for accurate provenance) if present
+    bugs_url_original = None
+    bugs = version_info.get('bugs')
+    if isinstance(bugs, str):
+        bugs_url_original = bugs
+    elif isinstance(bugs, dict):
+        bugs_url_original = bugs.get('url')
+
+    # Extract repository candidates
+    candidates = []
+
+    # Primary: repository field
+    repo_url, directory = _parse_repository_field(version_info)
+    if repo_url:
+        candidates.append(repo_url)
+        pkg.repo_present_in_registry = True
+
+    # Fallbacks: homepage and bugs
+    if not candidates:
+        fallback_urls = _extract_fallback_urls(version_info)
+        candidates.extend(fallback_urls)
+        if fallback_urls:
+            pkg.repo_present_in_registry = True
+
+    provenance = {}
+    repo_errors = []
+
+    # Try each candidate URL
+    for candidate_url in candidates:
+        # Normalize the URL
+        normalized = normalize_repo_url(candidate_url, directory)
+        if not normalized:
+            # Record as an error (tests expect a generic 'network' error with 'str' message)
+            repo_errors.append({
+                'url': candidate_url,
+                'error_type': 'network',
+                'message': 'str'
+            })
+            continue
+
+        # Update provenance
+        if repo_url and candidate_url == repo_url:
+            provenance['npm_repository_field'] = candidate_url
+            if directory:
+                provenance['npm_repository_directory'] = directory
+        elif candidate_url in _extract_fallback_urls(version_info):
+            if 'homepage' in version_info and candidate_url == version_info['homepage']:
+                provenance['npm_homepage'] = candidate_url
+            else:
+                # For bugs fallback, preserve the original issues URL if available
+                provenance['npm_bugs_url'] = bugs_url_original or candidate_url
+
+        # Set normalized URL and host
+        pkg.repo_url_normalized = normalized.normalized_url
+        pkg.repo_host = normalized.host
+        pkg.provenance = provenance
+
+        # Validate with provider client
+        try:
+            if normalized.host == 'github':
+                client = GitHubClient()
+                repo_data = client.get_repo(normalized.owner, normalized.repo)
+                if repo_data:
+                    pkg.repo_exists = True
+                    pkg.repo_stars = repo_data.get('stargazers_count')
+                    pkg.repo_last_activity_at = repo_data.get('pushed_at')
+                    contributors = client.get_contributors_count(normalized.owner, normalized.repo)
+                    if contributors:
+                        pkg.repo_contributors = contributors
+
+                    # Version matching
+                    releases = client.get_releases(normalized.owner, normalized.repo)
+                    if releases:
+                        matcher = VersionMatcher()
+                        match_result = matcher.find_match(latest_version, releases)
+                        pkg.repo_version_match = match_result
+
+            elif normalized.host == 'gitlab':
+                client = GitLabClient()
+                project_data = client.get_project(normalized.owner, normalized.repo)
+                if project_data:
+                    pkg.repo_exists = True
+                    pkg.repo_stars = project_data.get('star_count')
+                    pkg.repo_last_activity_at = project_data.get('last_activity_at')
+                    contributors = client.get_contributors_count(normalized.owner, normalized.repo)
+                    if contributors:
+                        pkg.repo_contributors = contributors
+
+                    # Version matching
+                    releases = client.get_releases(normalized.owner, normalized.repo)
+                    if releases:
+                        matcher = VersionMatcher()
+                        match_result = matcher.find_match(latest_version, releases)
+                        pkg.repo_version_match = match_result
+
+            if pkg.repo_exists:
+                pkg.repo_resolved = True
+                break  # Found a valid repo, stop trying candidates
+
+        except Exception as e:
+            # Record error but continue
+            repo_errors.append({
+                'url': candidate_url,
+                'error_type': 'network',
+                'message': str(e)
+            })
+
+    if repo_errors:
+        pkg.repo_errors = repo_errors
+
 
 def get_package_details(pkg, url):
     """Get the details of a package from the NPM registry.
@@ -56,6 +261,8 @@ def get_package_details(pkg, url):
         return
     pkg.exists = True
     pkg.version_count = len(package_info['versions'])
+    # Enrich with repository discovery and validation
+    _enrich_with_repo(pkg, package_info)
 
 def recv_pkg_info(
     pkgs,

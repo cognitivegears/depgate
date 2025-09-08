@@ -8,7 +8,18 @@ import logging  # Added import
 import requirements
 from constants import ExitCodes, Constants
 from registry.http import safe_get
+from typing import Optional, List
+from repository.url_normalize import normalize_repo_url
+from repository.github import GitHubClient
+from repository.gitlab import GitLabClient
+from repository.version_match import VersionMatcher
+from repository.rtd import infer_rtd_slug, resolve_repo_from_rtd
 
+# Compatibility alias for tests that patch using 'src.registry.pypi'
+# Ensures patch('src.registry.pypi.*') targets the same module object as 'registry.pypi'
+import sys as _sys  # noqa: E402
+if 'src.registry.pypi' not in _sys.modules:
+    _sys.modules['src.registry.pypi'] = _sys.modules[__name__]
 def recv_pkg_info(pkgs, url=Constants.REGISTRY_URL_PYPI):
     """Check the existence of the packages in the PyPI registry.
 
@@ -53,8 +64,177 @@ def recv_pkg_info(pkgs, url=Constants.REGISTRY_URL_PYPI):
                         logging.warning("Couldn't parse timestamp %s, setting to 0.", e)
                         x.timestamp = 0
             x.version_count = len(j['releases'])
+
+            # Enrich with repository discovery and validation
+            _enrich_with_repo(x, x.pkg_name, j['info'], latest)
         else:
             x.exists = False
+def _extract_repo_candidates(info: dict) -> List[str]:
+    """Extract repository candidate URLs from PyPI package info.
+
+    Returns ordered list of candidate URLs from project_urls and home_page.
+    Prefers explicit repository/source keys first, then docs/homepage.
+
+    Args:
+        info: PyPI package info dict
+
+    Returns:
+        List of candidate URLs in priority order
+    """
+    candidates = []
+    project_urls = info.get('project_urls', {}) or {}
+
+    # Priority 1: Explicit repository/source keys in project_urls
+    repo_keys = [
+        'repository', 'source', 'source code', 'code',
+        'project-urls.repository', 'project-urls.source'
+    ]
+    repo_candidates = [
+        url for key, url in project_urls.items()
+        if url and any(repo_key.lower() in key.lower() for repo_key in repo_keys)
+    ]
+
+    # If repo links exist, include them and any explicit documentation/docs links (but not homepage)
+    if repo_candidates:
+        doc_keys_strict = ['documentation', 'docs']
+        doc_candidates = [
+            url for key, url in project_urls.items()
+            if url and any(doc_key.lower() in key.lower() for doc_key in doc_keys_strict)
+        ]
+        return repo_candidates + doc_candidates
+
+    # Priority 2: Documentation/homepage keys that might point to repos (when no explicit repo present)
+    doc_keys = ['documentation', 'docs', 'homepage', 'home page']
+    for key, url in project_urls.items():
+        if url and any(doc_key.lower() in key.lower() for doc_key in doc_keys):
+            candidates.append(url)
+
+    # Priority 3: info.home_page as weak fallback
+    home_page = info.get('home_page')
+    if home_page:
+        candidates.append(home_page)
+
+    return candidates
+
+
+def _maybe_resolve_via_rtd(url: str) -> Optional[str]:
+    """Resolve repository URL from Read the Docs URL if applicable.
+
+    Args:
+        url: Potential RTD URL
+
+    Returns:
+        Repository URL if RTD resolution succeeds, None otherwise
+    """
+    if not url:
+        return None
+
+    slug = infer_rtd_slug(url)
+    if slug:
+        return resolve_repo_from_rtd(url)
+
+    return None
+
+
+def _enrich_with_repo(mp, name: str, info: dict, version: str) -> None:
+    """Enrich MetaPackage with repository discovery, validation, and version matching.
+
+    Args:
+        mp: MetaPackage instance to update
+        name: Package name
+        info: PyPI package info dict
+        version: Package version string
+    """
+    # Imports moved to module level for test patching
+
+    candidates = _extract_repo_candidates(info)
+    mp.repo_present_in_registry = bool(candidates)
+
+    provenance = {}
+    repo_errors = []
+
+    # Try each candidate URL
+    for candidate_url in candidates:
+        # Only try RTD resolution for RTD-hosted docs URLs
+        if ('readthedocs.io' in candidate_url) or ('readthedocs.org' in candidate_url):
+            rtd_repo_url = _maybe_resolve_via_rtd(candidate_url)
+            if rtd_repo_url:
+                final_url = rtd_repo_url
+                provenance['rtd_slug'] = infer_rtd_slug(candidate_url)
+                provenance['rtd_source'] = 'detail'  # Simplified
+            else:
+                final_url = candidate_url
+        else:
+            final_url = candidate_url
+
+        # Normalize the URL
+        normalized = normalize_repo_url(final_url)
+        if not normalized:
+            continue
+
+        # Update provenance
+        if 'rtd_slug' not in provenance:
+            provenance['pypi_project_urls'] = final_url
+        if final_url != normalized.normalized_url:
+            provenance['normalization_changed'] = True
+
+        # Set normalized URL and host
+        mp.repo_url_normalized = normalized.normalized_url
+        mp.repo_host = normalized.host
+        mp.provenance = provenance
+
+        # Validate with provider client
+        try:
+            if normalized.host == 'github':
+                client = GitHubClient()
+                repo_data = client.get_repo(normalized.owner, normalized.repo)
+                if repo_data:
+                    mp.repo_exists = True
+                    mp.repo_stars = repo_data.get('stargazers_count')
+                    mp.repo_last_activity_at = repo_data.get('pushed_at')
+                    contributors = client.get_contributors_count(normalized.owner, normalized.repo)
+                    if contributors:
+                        mp.repo_contributors = contributors
+
+                    # Version matching
+                    releases = client.get_releases(normalized.owner, normalized.repo)
+                    if releases:
+                        matcher = VersionMatcher()
+                        match_result = matcher.find_match(version, releases)
+                        mp.repo_version_match = match_result
+
+            elif normalized.host == 'gitlab':
+                client = GitLabClient()
+                project_data = client.get_project(normalized.owner, normalized.repo)
+                if project_data:
+                    mp.repo_exists = True
+                    mp.repo_stars = project_data.get('star_count')
+                    mp.repo_last_activity_at = project_data.get('last_activity_at')
+                    contributors = client.get_contributors_count(normalized.owner, normalized.repo)
+                    if contributors:
+                        mp.repo_contributors = contributors
+
+                    # Version matching
+                    releases = client.get_releases(normalized.owner, normalized.repo)
+                    if releases:
+                        matcher = VersionMatcher()
+                        match_result = matcher.find_match(version, releases)
+                        mp.repo_version_match = match_result
+
+            if mp.repo_exists:
+                mp.repo_resolved = True
+                break  # Found a valid repo, stop trying candidates
+
+        except Exception as e:
+            # Record error but continue
+            repo_errors.append({
+                'url': final_url,
+                'error_type': 'network',
+                'message': str(e)
+            })
+
+    if repo_errors:
+        mp.repo_errors = repo_errors
 
 def scan_source(dir_name, recursive=False):
     """Scan the source directory for requirements.txt files.
