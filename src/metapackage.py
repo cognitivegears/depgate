@@ -1,8 +1,10 @@
 """Module to represent a package."""
 from constants import PackageManagers
 
-class MetaPackage:
-    """Class to represent a package."""
+class MetaPackage:  # pylint: disable=too-many-instance-attributes, too-many-public-methods
+    """Class to represent a package.
+    Data container with explicit fields and accessors; pylint thresholds not applicable.
+    """
     instances = []
 
     def __init__(self, pkgname, pkgtype=None, pkgorg=None):

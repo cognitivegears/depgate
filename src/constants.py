@@ -39,8 +39,10 @@ class DefaultHeuristics(Enum):
     SCORE_THRESHOLD = 0.6
     RISKY_THRESHOLD = 0.15
 
-class Constants:
-    """General constants used in the project."""
+class Constants:  # pylint: disable=too-few-public-methods
+    """General constants used in the project.
+    Data holder for configuration constants; not intended to provide behavior.
+    """
 
     REGISTRY_URL_PYPI = "https://pypi.org/pypi/"
     REGISTRY_URL_NPM = "https://registry.npmjs.org/"
