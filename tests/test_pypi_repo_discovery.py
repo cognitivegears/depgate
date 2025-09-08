@@ -95,8 +95,8 @@ class TestMaybeResolveViaRtd:
 class TestEnrichWithRepo:
     """Test _enrich_with_repo function."""
 
-    @patch('src.registry.pypi.normalize_repo_url')
-    @patch('src.registry.pypi.GitHubClient')
+    @patch('registry.pypi.normalize_repo_url')
+    @patch('registry.pypi.GitHubClient')
     def test_enriches_github_repo(self, mock_github_client, mock_normalize):
         """Test enrichment with GitHub repository."""
         # Setup mocks
@@ -123,7 +123,7 @@ class TestEnrichWithRepo:
             mock_matcher = MagicMock()
             mock_matcher.find_match.return_value = {
                 'matched': True,
-                'match_type': 'exact',
+                'match_type': 'v-prefix',
                 'artifact': {'name': 'v1.5.0'},
                 'tag_or_release': 'v1.5.0'
             }
@@ -150,7 +150,7 @@ class TestEnrichWithRepo:
             assert mp.repo_last_activity_at == '2023-01-01T00:00:00Z'
             assert mp.repo_version_match == {
                 'matched': True,
-                'match_type': 'exact',
+                'match_type': 'v-prefix',
                 'artifact': {'name': 'v1.5.0'},
                 'tag_or_release': 'v1.5.0'
             }

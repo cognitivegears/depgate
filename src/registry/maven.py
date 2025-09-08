@@ -12,6 +12,9 @@ from repository.url_normalize import normalize_repo_url
 from repository.github import GitHubClient
 from repository.gitlab import GitLabClient
 from repository.version_match import VersionMatcher
+from repository.providers import ProviderType, map_host_to_type
+from repository.provider_registry import ProviderRegistry
+from repository.provider_validation import ProviderValidationService
 
 def recv_pkg_info(pkgs, url=Constants.REGISTRY_URL_MAVEN):
     """Check the existence of the packages in the Maven registry.
@@ -383,42 +386,17 @@ def _enrich_with_repo(mp, group: str, artifact: str, version: Optional[str]) -> 
 
         # Validate with provider client
         try:
-            if normalized.host == 'github':
-                client = GitHubClient()
-                repo_data = client.get_repo(normalized.owner, normalized.repo)
-                if repo_data:
-                    mp.repo_exists = True
-                    mp.repo_stars = repo_data.get('stargazers_count')
-                    mp.repo_last_activity_at = repo_data.get('pushed_at')
-                    contributors = client.get_contributors_count(normalized.owner, normalized.repo)
-                    if contributors:
-                        mp.repo_contributors = contributors
-
-                    # Version matching
-                    releases = client.get_releases(normalized.owner, normalized.repo)
-                    if releases:
-                        matcher = VersionMatcher()
-                        match_result = matcher.find_match(version, releases)
-                        mp.repo_version_match = match_result
-
-            elif normalized.host == 'gitlab':
-                client = GitLabClient()
-                project_data = client.get_project(normalized.owner, normalized.repo)
-                if project_data:
-                    mp.repo_exists = True
-                    mp.repo_stars = project_data.get('star_count')
-                    mp.repo_last_activity_at = project_data.get('last_activity_at')
-                    contributors = client.get_contributors_count(normalized.owner, normalized.repo)
-                    if contributors:
-                        mp.repo_contributors = contributors
-
-                    # Version matching
-                    releases = client.get_releases(normalized.owner, normalized.repo)
-                    if releases:
-                        matcher = VersionMatcher()
-                        match_result = matcher.find_match(version, releases)
-                        mp.repo_version_match = match_result
-
+            ptype = map_host_to_type(normalized.host)
+            if ptype != ProviderType.UNKNOWN:
+                injected = (
+                    {'github': GitHubClient()}
+                    if ptype == ProviderType.GITHUB
+                    else {'gitlab': GitLabClient()}
+                )
+                provider = ProviderRegistry.get(ptype, injected)  # type: ignore
+                ProviderValidationService.validate_and_populate(
+                    mp, normalized, version, provider, VersionMatcher()
+                )
             if mp.repo_exists:
                 mp.repo_resolved = True
                 break  # Found a valid repo, stop trying candidates

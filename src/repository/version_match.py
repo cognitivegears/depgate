@@ -144,14 +144,13 @@ class VersionMatcher:
         package_version: str,
         artifacts: List[Dict[str, Any]]
     ) -> Optional[Dict[str, Any]]:
-        """Find match with v-prefix (e.g., v1.0.0 matches 1.0.0)."""
-        # If package version starts with 'v', look for version without 'v'
-        if package_version.startswith('v'):
-            base_version = package_version[1:]
-            for artifact in artifacts:
-                artifact_version = self._get_version_from_artifact(artifact)
-                if artifact_version == base_version:
-                    return artifact
+        """Find match with v-prefix variations."""
+        for artifact in artifacts:
+            artifact_version = self._get_version_from_artifact(artifact)
+            # Handle v-prefix variations: v1.0.0 matches 1.0.0, and 1.0.0 matches v1.0.0
+            if (package_version.startswith('v') and artifact_version == package_version[1:]) or \
+               (artifact_version.startswith('v') and package_version == artifact_version[1:]):
+                return artifact
         return None
 
     def _find_normalized_match(
