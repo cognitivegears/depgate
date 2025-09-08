@@ -9,7 +9,7 @@ import re
 from typing import Optional
 
 from constants import Constants
-from registry.http import get_json
+from common.http_client import get_json
 
 
 def infer_rtd_slug(url: Optional[str]) -> Optional[str]:

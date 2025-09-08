@@ -1,7 +1,8 @@
-"""Shared HTTP helpers for registry clients.
+"""Shared HTTP helpers used across registry and repository clients.
 
-Encapsulates common request/timeout error handling so individual
-registry modules avoid duplicating try/except blocks.
+Encapsulates common request/timeout error handling so modules avoid
+duplicating try/except blocks. This module is dependency-light and can be
+safely imported by both registry/* and repository/* without cycles.
 """
 from __future__ import annotations
 

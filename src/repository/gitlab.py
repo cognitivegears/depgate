@@ -10,7 +10,7 @@ from typing import List, Optional, Dict, Any
 from urllib.parse import quote
 
 from constants import Constants
-from registry.http import get_json
+from common.http_client import get_json
 
 
 class GitLabClient:

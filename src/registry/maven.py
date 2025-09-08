@@ -6,7 +6,7 @@ import time
 import logging
 import xml.etree.ElementTree as ET
 from constants import ExitCodes, Constants
-from registry.http import safe_get
+from common.http_client import safe_get
 from typing import Optional, Dict, Any
 from repository.url_normalize import normalize_repo_url
 from repository.github import GitHubClient

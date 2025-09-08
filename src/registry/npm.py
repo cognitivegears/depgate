@@ -10,7 +10,7 @@ import time
 from datetime import datetime as dt
 import logging  # Added import
 from constants import ExitCodes, Constants
-from registry.http import safe_get, safe_post
+from common.http_client import safe_get, safe_post
 from repository.url_normalize import normalize_repo_url
 from repository.github import GitHubClient
 from repository.gitlab import GitLabClient
