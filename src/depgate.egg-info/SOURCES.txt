@@ -11,6 +11,7 @@ src/analysis/__init__.py
 src/analysis/heuristics.py
 src/common/__init__.py
 src/common/http_client.py
+src/common/logging_utils.py
 src/depgate.egg-info/PKG-INFO
 src/depgate.egg-info/SOURCES.txt
 src/depgate.egg-info/dependency_links.txt
@@ -42,9 +43,14 @@ src/repository/providers.py
 src/repository/rtd.py
 src/repository/url_normalize.py
 src/repository/version_match.py
+tests/test_client_logging.py
+tests/test_discovery_enrichment_logging.py
 tests/test_github_client.py
 tests/test_gitlab_client.py
 tests/test_heuristics_repo_signals.py
+tests/test_logging_integration_e2e.py
+tests/test_logging_utils_formatters.py
+tests/test_logging_utils_redaction.py
 tests/test_maven_repo_discovery.py
 tests/test_npm_repo_discovery.py
 tests/test_pypi_repo_discovery.py

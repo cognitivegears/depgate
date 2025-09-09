@@ -15,31 +15,53 @@ from typing import Any, Optional, Dict, Tuple
 import requests
 
 from constants import Constants, ExitCodes
+from common.logging_utils import extra_context, is_debug_enabled, safe_url, Timer
+
+logger = logging.getLogger(__name__)
 
 
 def safe_get(url: str, *, context: str, **kwargs: Any) -> requests.Response:
-    """Perform a GET request with consistent error handling.
-
-    Args:
-        url: Target URL.
-        context: Human-readable source tag for logs (e.g., "npm", "pypi", "maven").
-        **kwargs: Passed through to requests.get.
-
-    Returns:
-        requests.Response: The HTTP response object.
-    """
-    try:
-        return requests.get(url, timeout=Constants.REQUEST_TIMEOUT, **kwargs)
-    except requests.Timeout:
-        logging.error(
-            "%s request timed out after %s seconds",
-            context,
-            Constants.REQUEST_TIMEOUT,
-        )
-        sys.exit(ExitCodes.CONNECTION_ERROR.value)
-    except requests.RequestException as exc:  # includes ConnectionError
-        logging.error("%s connection error: %s", context, exc)
-        sys.exit(ExitCodes.CONNECTION_ERROR.value)
+    """Perform a GET request with consistent error handling and DEBUG traces."""
+    safe_target = safe_url(url)
+    with Timer() as t:
+        if is_debug_enabled(logger):
+            logger.debug(
+                "HTTP request",
+                extra=extra_context(
+                    event="http_request",
+                    component="http_client",
+                    action="GET",
+                    target=safe_target,
+                    context=context
+                )
+            )
+        try:
+            res = requests.get(url, timeout=Constants.REQUEST_TIMEOUT, **kwargs)
+            if is_debug_enabled(logger):
+                logger.debug(
+                    "HTTP response ok",
+                    extra=extra_context(
+                        event="http_response",
+                        component="http_client",
+                        action="GET",
+                        outcome="success",
+                        status_code=res.status_code,
+                        duration_ms=t.duration_ms(),
+                        target=safe_target,
+                        context=context
+                    )
+                )
+            return res
+        except requests.Timeout:
+            logger.error(
+                "%s request timed out after %s seconds",
+                context,
+                Constants.REQUEST_TIMEOUT,
+            )
+            sys.exit(ExitCodes.CONNECTION_ERROR.value)
+        except requests.RequestException as exc:  # includes ConnectionError
+            logger.error("%s connection error: %s", context, exc)
+            sys.exit(ExitCodes.CONNECTION_ERROR.value)
 
 
 # Simple in-memory cache for HTTP responses
@@ -64,51 +86,99 @@ def robust_get(
     headers: Optional[Dict[str, str]] = None,
     **kwargs: Any
 ) -> Tuple[int, Dict[str, str], str]:
-    """Perform GET request with timeout, retries, and caching.
-
-    Args:
-        url: Target URL
-        headers: Optional request headers
-        **kwargs: Additional requests.get parameters
-
-    Returns:
-        Tuple of (status_code, headers_dict, text_content)
-    """
+    """Perform GET request with timeout, retries, and caching with DEBUG traces."""
     cache_key = _get_cache_key('GET', url, headers)
+    safe_target = safe_url(url)
 
     # Check cache first
     if cache_key in _http_cache and _is_cache_valid(_http_cache[cache_key]):
         cached_data, _ = _http_cache[cache_key]
+        if is_debug_enabled(logger):
+            logger.debug(
+                "HTTP cache hit",
+                extra=extra_context(
+                    event="cache_hit",
+                    component="http_client",
+                    action="GET",
+                    target=safe_target
+                )
+            )
         return cached_data
 
     last_exception = None
 
     for attempt in range(Constants.HTTP_RETRY_MAX):
-        try:
-            delay = Constants.HTTP_RETRY_BASE_DELAY_SEC * (2 ** attempt)
-            if attempt > 0:
-                time.sleep(delay)
+        with Timer() as t:
+            try:
+                if is_debug_enabled(logger):
+                    logger.debug(
+                        "HTTP request",
+                        extra=extra_context(
+                            event="http_request",
+                            component="http_client",
+                            action="GET",
+                            target=safe_target,
+                            attempt=attempt + 1
+                        )
+                    )
 
-            response = requests.get(
-                url,
-                timeout=Constants.REQUEST_TIMEOUT,
-                headers=headers,
-                **kwargs
-            )
+                response = requests.get(
+                    url,
+                    timeout=Constants.REQUEST_TIMEOUT,
+                    headers=headers,
+                    **kwargs
+                )
 
-            # Cache successful responses
-            if response.status_code < 500:  # Don't cache server errors
-                cache_data = (response.status_code, dict(response.headers), response.text)
-                _http_cache[cache_key] = (cache_data, time.time())
+                # Cache successful responses
+                if response.status_code < 500:  # Don't cache server errors
+                    cache_data = (response.status_code, dict(response.headers), response.text)
+                    _http_cache[cache_key] = (cache_data, time.time())
 
-            return response.status_code, dict(response.headers), response.text
+                if is_debug_enabled(logger):
+                    logger.debug(
+                        "HTTP response ok",
+                        extra=extra_context(
+                            event="http_response",
+                            component="http_client",
+                            action="GET",
+                            outcome="success",
+                            status_code=response.status_code,
+                            duration_ms=t.duration_ms(),
+                            target=safe_target
+                        )
+                    )
+                return response.status_code, dict(response.headers), response.text
 
-        except requests.Timeout:
-            last_exception = "timeout"
-            continue
-        except requests.RequestException as exc:
-            last_exception = str(exc)
-            continue
+            except requests.Timeout:
+                last_exception = "timeout"
+                if is_debug_enabled(logger):
+                    logger.debug(
+                        "HTTP timeout",
+                        extra=extra_context(
+                            event="http_exception",
+                            component="http_client",
+                            action="GET",
+                            outcome="timeout",
+                            attempt=attempt + 1,
+                            target=safe_target
+                        )
+                    )
+                continue
+            except requests.RequestException as exc:
+                last_exception = str(exc)
+                if is_debug_enabled(logger):
+                    logger.debug(
+                        "HTTP request exception",
+                        extra=extra_context(
+                            event="http_exception",
+                            component="http_client",
+                            action="GET",
+                            outcome="request_exception",
+                            attempt=attempt + 1,
+                            target=safe_target
+                        )
+                    )
+                continue
 
     # All retries failed
     return 0, {}, f"Request failed after {Constants.HTTP_RETRY_MAX} attempts: {last_exception}"
@@ -120,7 +190,7 @@ def get_json(
     headers: Optional[Dict[str, str]] = None,
     **kwargs: Any
 ) -> Tuple[int, Dict[str, str], Optional[Any]]:
-    """Perform GET request and parse JSON response.
+    """Perform GET request and parse JSON response with DEBUG traces.
 
     Args:
         url: Target URL
@@ -134,8 +204,33 @@ def get_json(
 
     if status_code == 200 and text:
         try:
-            return status_code, response_headers, json.loads(text)
+            parsed = json.loads(text)
+            if is_debug_enabled(logger):
+                logger.debug(
+                    "Parsed JSON response",
+                    extra=extra_context(
+                        event="parse",
+                        component="http_client",
+                        action="get_json",
+                        outcome="success",
+                        status_code=status_code,
+                        target=safe_url(url)
+                    )
+                )
+            return status_code, response_headers, parsed
         except json.JSONDecodeError:
+            if is_debug_enabled(logger):
+                logger.debug(
+                    "JSON decode error",
+                    extra=extra_context(
+                        event="parse",
+                        component="http_client",
+                        action="get_json",
+                        outcome="json_decode_error",
+                        status_code=status_code,
+                        target=safe_url(url)
+                    )
+                )
             return status_code, response_headers, None
 
     return status_code, response_headers, None
@@ -148,7 +243,7 @@ def safe_post(
     data: Optional[str] = None,
     **kwargs: Any,
 ) -> requests.Response:
-    """Perform a POST request with consistent error handling.
+    """Perform a POST request with consistent error handling and DEBUG traces.
 
     Args:
         url: Target URL.
@@ -159,15 +254,43 @@ def safe_post(
     Returns:
         requests.Response: The HTTP response object.
     """
-    try:
-        return requests.post(url, data=data, timeout=Constants.REQUEST_TIMEOUT, **kwargs)
-    except requests.Timeout:
-        logging.error(
-            "%s request timed out after %s seconds",
-            context,
-            Constants.REQUEST_TIMEOUT,
-        )
-        sys.exit(ExitCodes.CONNECTION_ERROR.value)
-    except requests.RequestException as exc:  # includes ConnectionError
-        logging.error("%s connection error: %s", context, exc)
-        sys.exit(ExitCodes.CONNECTION_ERROR.value)
+    safe_target = safe_url(url)
+    with Timer() as t:
+        if is_debug_enabled(logger):
+            logger.debug(
+                "HTTP request",
+                extra=extra_context(
+                    event="http_request",
+                    component="http_client",
+                    action="POST",
+                    target=safe_target,
+                    context=context
+                )
+            )
+        try:
+            res = requests.post(url, data=data, timeout=Constants.REQUEST_TIMEOUT, **kwargs)
+            if is_debug_enabled(logger):
+                logger.debug(
+                    "HTTP response ok",
+                    extra=extra_context(
+                        event="http_response",
+                        component="http_client",
+                        action="POST",
+                        outcome="success",
+                        status_code=res.status_code,
+                        duration_ms=t.duration_ms(),
+                        target=safe_target,
+                        context=context
+                    )
+                )
+            return res
+        except requests.Timeout:
+            logger.error(
+                "%s request timed out after %s seconds",
+                context,
+                Constants.REQUEST_TIMEOUT,
+            )
+            sys.exit(ExitCodes.CONNECTION_ERROR.value)
+        except requests.RequestException as exc:  # includes ConnectionError
+            logger.error("%s connection error: %s", context, exc)
+            sys.exit(ExitCodes.CONNECTION_ERROR.value)

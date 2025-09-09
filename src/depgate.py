@@ -10,11 +10,12 @@ import csv
 import sys
 import logging
 import json
+import os
 
 # internal module imports (kept light to avoid heavy deps on --help)
 from metapackage import MetaPackage as metapkg
 from constants import ExitCodes, PackageManagers, Constants
-from common.logging_utils import configure_logging
+from common.logging_utils import configure_logging, extra_context, is_debug_enabled
 from args import parse_args
 
 SUPPORTED_PACKAGES = Constants.SUPPORTED_PACKAGES
@@ -191,8 +192,26 @@ def run_analysis(level):
         _heur.combobulate_heur(metapkg.instances)
 def main():
     """Main function of the program."""
+    logger = logging.getLogger(__name__)
+
     args = parse_args()
+    # Honor CLI --loglevel by passing it to centralized logger via env
+    if getattr(args, "LOG_LEVEL", None):
+        os.environ['DEPGATE_LOG_LEVEL'] = str(args.LOG_LEVEL).upper()
     configure_logging()
+    # Ensure runtime CLI flag wins regardless of environment defaults
+    try:
+        _level_name = str(args.LOG_LEVEL).upper()
+        _level_value = getattr(logging, _level_name, logging.INFO)
+        logging.getLogger().setLevel(_level_value)
+    except Exception:  # defensive: never break CLI on logging setup
+        pass
+
+    if is_debug_enabled(logger):
+        logger.debug(
+            "CLI start",
+            extra=extra_context(event="function_entry", component="cli", action="main")
+        )
 
     logging.info("Arguments parsed.")
 
@@ -205,8 +224,39 @@ def main():
 """)
 
     pkglist = build_pkglist(args)
+    if is_debug_enabled(logging.getLogger(__name__)):
+        logging.getLogger(__name__).debug(
+            "Built package list",
+            extra=extra_context(
+                event="decision",
+                component="cli",
+                action="build_pkglist",
+                outcome="empty" if not pkglist else "non_empty",
+                count=len(pkglist) if isinstance(pkglist, list) else 0
+            )
+        )
     if not pkglist or not isinstance(pkglist, list):
         logging.warning("No packages found in the input list.")
+        if is_debug_enabled(logging.getLogger(__name__)):
+            logging.getLogger(__name__).debug(
+                "CLI finished (no packages)",
+                extra=extra_context(
+                    event="function_exit",
+                    component="cli",
+                    action="main",
+                    outcome="no_packages"
+                )
+            )
+        if is_debug_enabled(logging.getLogger(__name__)):
+            logging.getLogger(__name__).debug(
+                "CLI finished",
+                extra=extra_context(
+                    event="function_exit",
+                    component="cli",
+                    action="main",
+                    outcome="success"
+                )
+            )
         sys.exit(ExitCodes.SUCCESS.value)
 
     logging.info("Package list imported: %s", str(pkglist))
@@ -214,7 +264,29 @@ def main():
     create_metapackages(args, pkglist)
 
     # QUERY & POPULATE
+    if is_debug_enabled(logging.getLogger(__name__)):
+        logging.getLogger(__name__).debug(
+            "Checking against registry",
+            extra=extra_context(
+                event="function_entry",
+                component="cli",
+                action="check_against",
+                target=args.package_type,
+                outcome="starting"
+            )
+        )
     check_against(args.package_type, args.LEVEL, metapkg.instances)
+    if is_debug_enabled(logging.getLogger(__name__)):
+        logging.getLogger(__name__).debug(
+            "Finished checking against registry",
+            extra=extra_context(
+                event="function_exit",
+                component="cli",
+                action="check_against",
+                target=args.package_type,
+                outcome="completed"
+            )
+        )
 
     # ANALYZE
     run_analysis(args.LEVEL)
