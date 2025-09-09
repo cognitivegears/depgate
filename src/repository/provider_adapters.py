@@ -65,9 +65,15 @@ class GitHubProviderAdapter(ProviderClient):
             repo: Repository name
 
         Returns:
-            List of release dictionaries
+            List of release dictionaries. Falls back to tags if releases are empty.
         """
-        return self.client.get_releases(owner, repo)
+        releases = self.client.get_releases(owner, repo)
+        if releases:
+            return releases
+
+        # Fallback: use tags when releases are unavailable to enable version matching
+        tags = self.client.get_tags(owner, repo)
+        return tags or []
 
 
 class GitLabProviderAdapter(ProviderClient):
@@ -123,6 +129,12 @@ class GitLabProviderAdapter(ProviderClient):
             repo: Project name
 
         Returns:
-            List of release dictionaries
+            List of release dictionaries. Falls back to tags if releases are empty.
         """
-        return self.client.get_releases(owner, repo)
+        releases = self.client.get_releases(owner, repo)
+        if releases:
+            return releases
+
+        # Fallback: use tags when releases are unavailable to enable version matching
+        tags = self.client.get_tags(owner, repo)
+        return tags or []

@@ -110,6 +110,11 @@ def export_csv(instances, path):
         "Risk: Min Versions",
         "Risk: Too New",
         "Risk: Any Risks",
+        "repo_stars",
+        "repo_contributors",
+        "repo_last_activity",
+        "repo_present_in_registry",
+        "repo_version_match",
     ]
     rows = [headers]
     for x in instances:
@@ -140,6 +145,11 @@ def export_json(instances, path):
             "score": x.score,
             "versionCount": x.version_count,
             "createdTimestamp": x.timestamp,
+            "repo_stars": x.repo_stars,
+            "repo_contributors": x.repo_contributors,
+            "repo_last_activity": x.repo_last_activity_at,
+            "repo_present_in_registry": (None if (getattr(x, "repo_url_normalized", None) is None and x.repo_present_in_registry is False) else x.repo_present_in_registry),
+            "repo_version_match": x.repo_version_match,
             "risk": {
                 "hasRisk": x.has_risk(),
                 "isMissing": x.risk_missing,

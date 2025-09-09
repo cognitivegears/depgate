@@ -10,7 +10,7 @@ import xml.etree.ElementTree as ET
 from typing import List
 
 from constants import ExitCodes, Constants
-from common.http_client import safe_get
+import common.http_client as http_client
 from common.logging_utils import extra_context, is_debug_enabled, Timer, safe_url, redact
 
 from .enrich import _enrich_with_repo  # Not used here but kept for parity if needed later
@@ -49,7 +49,7 @@ def recv_pkg_info(pkgs, url: str = Constants.REGISTRY_URL_MAVEN) -> None:
                 headers = {"Accept": "application/json", "Content-Type": "application/json"}
                 # Sleep to avoid rate limiting
                 time.sleep(0.1)
-                res = safe_get(url, context="maven", params=payload, headers=headers)
+                res = http_client.safe_get(url, context="maven", params=payload, headers=headers)
             except SystemExit:
                 # safe_get calls sys.exit on errors, so we need to catch and re-raise as exception
                 logger.error(

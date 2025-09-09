@@ -4,6 +4,7 @@ import logging  # Added import
 import math
 from datetime import datetime, timezone
 from constants import Constants, DefaultHeuristics
+from common.logging_utils import is_debug_enabled, extra_context
 
 STG = f"{Constants.ANALYSIS} "
 # Repository signals scoring constants
@@ -97,6 +98,173 @@ def compute_repo_signals_score(mp):
 
     # Clamp the final score
     return max(REPO_SCORE_CLAMP_MIN, min(REPO_SCORE_CLAMP_MAX, score))
+
+def _clamp01(value):
+    """Clamp a numeric value into [0.0, 1.0]."""
+    try:
+        v = float(value)
+    except Exception:
+        return 0.0
+    return 0.0 if v < 0.0 else 1.0 if v > 1.0 else v
+
+def _norm_base_score(base):
+    """Normalize an existing base score (already expected to be 0..1, but clamp defensively)."""
+    if base is None:
+        return None
+    try:
+        return _clamp01(float(base))
+    except Exception:
+        return None
+
+def _norm_repo_stars(stars):
+    """Normalize repository stars to [0,1] using a log scale that saturates around 10^3."""
+    if stars is None:
+        return None
+    try:
+        s = float(stars)
+        if s < 0:
+            s = 0.0
+        # Matches design: min(1.0, log10(stars+1)/3.0) — ~1.0 around 1k stars
+        return min(1.0, max(0.0, math.log10(s + 1.0) / 3.0))
+    except Exception:
+        return None
+
+def _norm_repo_contributors(contrib):
+    """Normalize repository contributors to [0,1], saturating at ~50 contributors."""
+    if contrib is None:
+        return None
+    try:
+        c = float(contrib)
+        if c < 0:
+            c = 0.0
+        return min(1.0, max(0.0, c / 50.0))
+    except Exception:
+        return None
+
+def _parse_iso_to_days(iso_ts):
+    """Parse ISO-8601 timestamp and return days since that time (int)."""
+    try:
+        if isinstance(iso_ts, str):
+            if iso_ts.endswith('Z'):
+                dt = datetime.fromisoformat(iso_ts[:-1])
+            else:
+                dt = datetime.fromisoformat(iso_ts)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            now = datetime.now(timezone.utc)
+            return (now - dt).days
+    except Exception:
+        return None
+    return None
+
+def _norm_repo_last_activity(iso_ts):
+    """Normalize last activity recency into [0,1] using tiered thresholds."""
+    if not iso_ts:
+        return None
+    days = _parse_iso_to_days(iso_ts)
+    if days is None:
+        return None
+    if days <= 30:
+        return 1.0
+    if days <= 365:
+        return 0.6
+    if days <= 730:
+        return 0.3
+    return 0.0
+
+def _norm_bool(flag):
+    """Normalize boolean to [0,1]; None -> None (missing)."""
+    if flag is None:
+        return None
+    return 1.0 if bool(flag) else 0.0
+
+def _norm_version_match(vm):
+    """Normalize version match dict to [0,1]. True match => 1.0; else 0.0; None => missing."""
+    if vm is None:
+        return None
+    try:
+        return 1.0 if bool(vm.get('matched', False)) else 0.0
+    except Exception:
+        return None
+
+def compute_final_score(mp):
+    """Compute the final normalized score in [0,1] with per-heuristic breakdown and weights.
+
+    Normalized inputs (each in [0,1], None if missing):
+      - base_score (existing pkg.score if provided)
+      - repo_version_match
+      - repo_stars
+      - repo_contributors
+      - repo_last_activity
+      - repo_present_in_registry
+
+    Default weights (sum to 1.0 when all present; re-normalized when some are missing):
+      - base_score: 0.30
+      - repo_version_match: 0.30
+      - repo_stars: 0.15
+      - repo_contributors: 0.10
+      - repo_last_activity: 0.10
+      - repo_present_in_registry: 0.05
+
+    Returns:
+      tuple(final_score: float, breakdown: dict, weights_used: dict)
+    """
+    # Raw values
+    raw = {
+        'base_score': getattr(mp, 'score', None),
+        'repo_version_match': getattr(mp, 'repo_version_match', None),
+        'repo_stars': getattr(mp, 'repo_stars', None),
+        'repo_contributors': getattr(mp, 'repo_contributors', None),
+        'repo_last_activity': getattr(mp, 'repo_last_activity_at', None),
+        'repo_present_in_registry': getattr(mp, 'repo_present_in_registry', None),
+    }
+
+    # Normalized values
+    norm = {
+        'base_score': _norm_base_score(raw['base_score']),
+        'repo_version_match': _norm_version_match(raw['repo_version_match']),
+        'repo_stars': _norm_repo_stars(raw['repo_stars']),
+        'repo_contributors': _norm_repo_contributors(raw['repo_contributors']),
+        'repo_last_activity': _norm_repo_last_activity(raw['repo_last_activity']),
+        # Treat default/unknown False as missing to avoid penalizing base-only scenarios
+        'repo_present_in_registry': _norm_bool(raw['repo_present_in_registry']),
+    }
+    # If present_in_registry is False (normalized 0.0) and no normalized repo URL exists,
+    # consider it missing (None) for scoring/weight renormalization purposes.
+    if norm['repo_present_in_registry'] == 0.0 and getattr(mp, 'repo_url_normalized', None) is None:
+        norm['repo_present_in_registry'] = None
+
+    # Default weights
+    weights = {
+        'base_score': 0.30,
+        'repo_version_match': 0.30,
+        'repo_stars': 0.15,
+        'repo_contributors': 0.10,
+        'repo_last_activity': 0.10,
+        'repo_present_in_registry': 0.05,
+    }
+
+    # Re-normalize weights to only those metrics that are present (norm != None)
+    available = [k for k, v in norm.items() if v is not None]
+    total_w = sum(weights[k] for k in available) if available else 0.0
+    if total_w <= 0.0:
+        breakdown = {k: {'raw': raw[k], 'normalized': norm[k]} for k in norm.keys()}
+        return 0.0, breakdown, {}
+
+    weights_used = {k: weights[k] / total_w for k in available}
+
+    # Weighted sum ensures range [0,1] since each component is clamped and weights sum to 1
+    final = 0.0
+    for k in available:
+        val = norm.get(k)
+        if val is None:
+            continue
+        final += float(val) * weights_used[k]
+    final = _clamp01(final)
+
+    breakdown = {k: {'raw': raw[k], 'normalized': norm[k]} for k in norm.keys()}
+    return final, breakdown, weights_used
+
 def combobulate_min(pkgs):
     """Run to check the existence of the packages in the registry.
 
@@ -112,15 +280,47 @@ def combobulate_heur(pkgs):
     Args:
         pkgs (list): List of packages to check.
     """
+    logger = logging.getLogger(__name__)
     for x in pkgs:
         test_exists(x)
         if x.exists is True:
-            # Add repository signals score to existing score
-            repo_score = compute_repo_signals_score(x)
-            if x.score is not None:
-                x.score += repo_score
-            else:
-                x.score = repo_score
+            # Compute final normalized score in [0,1] using available metrics
+            final_score, breakdown, weights_used = compute_final_score(x)
+            x.score = final_score
+            if is_debug_enabled(logger):
+                logger.debug(
+                    "Heuristics score breakdown",
+                    extra=extra_context(
+                        event="analysis",
+                        component="heuristics",
+                        action="score_breakdown",
+                        package_name=str(x),
+                        final_score=final_score,
+                        weights=weights_used,
+                        breakdown=breakdown,
+                    ),
+                )
+            # Emit [ANALYSIS] lines for repository signals
+            try:
+                if getattr(x, "repo_stars", None) is not None:
+                    logging.info("%s.... repository stars: %s.", STG, str(x.repo_stars))
+                if getattr(x, "repo_contributors", None) is not None:
+                    logging.info("%s.... repository contributors: %s.", STG, str(x.repo_contributors))
+                if getattr(x, "repo_last_activity_at", None):
+                    _days = _parse_iso_to_days(x.repo_last_activity_at)
+                    if _days is not None:
+                        logging.info("%s.... repository last activity %d days ago.", STG, int(_days))
+                if getattr(x, "repo_present_in_registry", None) is not None:
+                    logging.info("%s.... repository present in registry: %s.", STG, str(x.repo_present_in_registry))
+                if getattr(x, "repo_version_match", None) is not None:
+                    try:
+                        _matched = bool(x.repo_version_match.get('matched', False))
+                        logging.info("%s.... repository version match: %s.", STG, "yes" if _matched else "no")
+                    except Exception:
+                        logging.info("%s.... repository version match: unavailable.", STG)
+            except Exception:
+                # Do not break analysis on logging issues
+                pass
             test_score(x)
             test_timestamp(x)
             test_version_count(x)

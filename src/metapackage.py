@@ -66,6 +66,9 @@ class MetaPackage:  # pylint: disable=too-many-instance-attributes, too-many-pub
         Returns:
             list: List of all the attributes of the class.
         """
+        def nv(v):
+            return "" if v is None else v
+
         lister = []
         lister.append(self._pkg_name)
         lister.append(self._pkg_type)
@@ -79,6 +82,25 @@ class MetaPackage:  # pylint: disable=too-many-instance-attributes, too-many-pub
         lister.append(self._risk_min_versions)
         lister.append(self._risk_too_new)
         lister.append(self.has_risk())
+
+        # New repo_* CSV columns (empty string for missing)
+        lister.append(nv(self._repo_stars))
+        lister.append(nv(self._repo_contributors))
+        lister.append(nv(self._repo_last_activity_at))
+        # CSV default handling: empty when not set; if explicitly False but no normalized repo URL,
+        # treat as missing for CSV (empty)
+        if (self._repo_present_in_registry is False) and (self._repo_url_normalized is None):
+            lister.append("")
+        else:
+            lister.append(nv(self._repo_present_in_registry))
+        if self._repo_version_match is None:
+            lister.append("")
+        else:
+            try:
+                lister.append(bool(self._repo_version_match.get('matched')))
+            except Exception:  # defensive: malformed dict
+                lister.append("")
+
         return lister
 
     @staticmethod
@@ -405,7 +427,7 @@ class MetaPackage:  # pylint: disable=too-many-instance-attributes, too-many-pub
         """Property for repository presence in registry.
 
         Returns:
-            bool: True if repository URL is present in package registry
+            bool or None: True if repository URL is present in package registry; None if unknown
         """
         return self._repo_present_in_registry
 
@@ -418,7 +440,7 @@ class MetaPackage:  # pylint: disable=too-many-instance-attributes, too-many-pub
         """Property for repository resolution status.
 
         Returns:
-            bool: True if repository URL has been resolved and validated
+            bool or None: True if repository URL has been resolved and validated; None if unknown
         """
         return self._repo_resolved
 
