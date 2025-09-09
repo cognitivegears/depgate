@@ -51,27 +51,36 @@ def _enrich_with_repo(pkg, packument: dict) -> None:
                 event="function_entry", component="enrich", action="enrich_with_repo",
                 package_manager="npm"
             ))
-        # Milestone start
-        logger.info("NPM enrichment started", extra=extra_context(
-            event="start", component="enrich", action="enrich_with_repo",
-            package_manager="npm"
-        ))
 
         # Extract latest version
         latest_version = _extract_latest_version(packument)
         if not latest_version:
-            if is_debug_enabled(logger):
-                logger.debug("No latest version found in packument", extra=extra_context(
-                    event="function_exit", component="enrich", action="enrich_with_repo",
-                    outcome="no_version", package_manager="npm", duration_ms=t.duration_ms()
-                ))
+            logger.warning("No latest version found in packument", extra=extra_context(
+                event="function_exit", component="enrich", action="enrich_with_repo",
+                outcome="no_version", package_manager="npm", duration_ms=t.duration_ms()
+            ))
             return
+        if is_debug_enabled(logger):
+            logger.debug("Latest version found", extra=extra_context(
+                event="debug", component="enrich", action="enrich_with_repo",
+                outcome="version", package_manager="npm", duration_ms=t.duration_ms(), target = latest_version
+            ))
 
     # Get version info for latest
     versions = packument.get("versions", {})
     version_info = versions.get(latest_version)
     if not version_info:
+        logger.warning("Unable to extract latest version", extra=extra_context(
+            event="function_exit", component="enrich", action="enrich_with_repo",
+            outcome="no_version", package_manager="npm"
+        ))
         return
+
+    if is_debug_enabled(logger):
+        logger.debug("Latest version info extracted", extra=extra_context(
+            event="debug", component="enrich", action="enrich_with_repo",
+            outcome="version", package_manager="npm", target = "version"
+        ))
 
     # Access patchable symbols (normalize_repo_url, clients, matcher) via package for test monkeypatching
     # using lazy accessor npm_pkg defined at module scope

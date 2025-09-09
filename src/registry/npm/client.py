@@ -31,7 +31,7 @@ def get_package_details(pkg, url: str) -> None:
     logging.debug("Checking package: %s", pkg.pkg_name)
     package_url = url + pkg.pkg_name
     package_headers = {
-        "Accept": "application/vnd.npm.install-v1+json; q=1.0, application/json; q=0.8, */*"
+        "Accept": "application/json"
     }
 
     # Pre-call DEBUG log
