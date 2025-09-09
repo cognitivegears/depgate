@@ -78,12 +78,12 @@ class NpmVersionResolver(VersionResolver):
             return None, len(candidates), "Unsupported resolution mode"
 
     def _pick_latest(self, candidates: List[str]) -> Tuple[Optional[str], int, Optional[str]]:
-        """Pick the highest version from candidates."""
+        """Pick the highest stable version from candidates (exclude prereleases)."""
         if not candidates:
             return None, 0, "No versions available"
 
         try:
-            # Parse and sort versions using semantic_version
+            # Parse versions using semantic_version
             parsed_versions = []
             for v in candidates:
                 try:
@@ -94,9 +94,14 @@ class NpmVersionResolver(VersionResolver):
             if not parsed_versions:
                 return None, len(candidates), "No valid semantic versions found"
 
-            # Sort and pick highest
-            parsed_versions.sort(reverse=True)
-            return str(parsed_versions[0]), len(candidates), None
+            # Exclude prereleases by default for latest mode
+            stable_versions = [ver for ver in parsed_versions if not ver.prerelease]
+            if stable_versions:
+                stable_versions.sort(reverse=True)
+                return str(stable_versions[0]), len(candidates), None
+
+            # No stable versions available
+            return None, len(candidates), "No stable versions available"
 
         except Exception as e:
             return None, len(candidates), f"Version parsing error: {str(e)}"
