@@ -153,6 +153,16 @@ def _enrich_with_repo(mp, name: str, info: Dict[str, Any], version: str) -> None
         mp.repo_host = normalized.host
         mp.provenance = provenance
 
+        # Compute version used for repository version matching:
+        # If CLI requested an exact version but it was not resolved, pass empty string to disable matching
+        # while still allowing provider metadata (stars/contributors/activity) to populate.
+        mode = str(getattr(mp, "resolution_mode", "")).lower()
+        if mode == "exact" and getattr(mp, "resolved_version", None) is None:
+            version_for_match = ""
+        else:
+            # Prefer CLI-resolved version if available; fallback to provided 'version'
+            version_for_match = getattr(mp, "resolved_version", None) or version
+
         # Validate with provider client
         try:
             ptype = map_host_to_type(normalized.host)
@@ -164,7 +174,7 @@ def _enrich_with_repo(mp, name: str, info: Dict[str, Any], version: str) -> None
                 )
                 provider = ProviderRegistry.get(ptype, injected)  # type: ignore
                 ProviderValidationService.validate_and_populate(
-                    mp, normalized, version, provider, pypi_pkg.VersionMatcher()
+                    mp, normalized, version_for_match, provider, pypi_pkg.VersionMatcher()
                 )
             if mp.repo_exists:
                 mp.repo_resolved = True

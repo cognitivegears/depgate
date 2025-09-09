@@ -82,8 +82,15 @@ def _enrich_with_repo(pkg, packument: dict) -> None:
             outcome="version", package_manager="npm", target = "version"
         ))
 
-    # Choose version for repository version matching: prefer a CLI-resolved version if available
-    version_for_match = getattr(pkg, "resolved_version", None) or _extract_latest_version(packument)
+    # Choose version for repository version matching:
+    # If CLI requested an exact version but it was not resolved, pass empty string to disable matching
+    # while still allowing provider metadata (stars/contributors/activity) to populate.
+    mode = str(getattr(pkg, "resolution_mode", "")).lower()
+    if mode == "exact" and getattr(pkg, "resolved_version", None) is None:
+        version_for_match = ""
+    else:
+        # Prefer a CLI-resolved version if available; fallback to latest from packument
+        version_for_match = getattr(pkg, "resolved_version", None) or _extract_latest_version(packument)
 
     # Access patchable symbols (normalize_repo_url, clients, matcher) via package for test monkeypatching
     # using lazy accessor npm_pkg defined at module scope

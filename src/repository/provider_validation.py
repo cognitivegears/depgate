@@ -5,7 +5,7 @@ instances with repository data from any supported provider.
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, List
 from .version_match import VersionMatcher
 
 if TYPE_CHECKING:
@@ -60,11 +60,36 @@ class ProviderValidationService:  # pylint: disable=too-few-public-methods
         if contributors is not None:
             mp.repo_contributors = contributors
 
-        # Get releases and attempt version matching
-        releases = provider.get_releases(ref.owner, ref.repo)
-        if releases:
+        # Get releases or tags and attempt version matching
+        artifacts = []
+        try:
+            releases = provider.get_releases(ref.owner, ref.repo)
+            if releases:
+                artifacts = releases
+        except Exception:
+            artifacts = []
+
+        # Fallback to tags when releases are empty or unavailable
+        if not artifacts:
+            get_tags = getattr(provider, "get_tags", None)
+            if callable(get_tags):
+                try:
+                    tags = get_tags(ref.owner, ref.repo)
+                    if tags:
+                        artifacts = tags
+                except Exception:
+                    pass
+
+        if artifacts:
+            # Ensure correct typing for matcher
+            artifacts_list: List[Dict[str, Any]] = artifacts if isinstance(artifacts, list) else []
+            if not artifacts_list:
+                try:
+                    artifacts_list = list(artifacts)  # type: ignore[arg-type]
+                except Exception:
+                    artifacts_list = []
             m = matcher or VersionMatcher()
-            match_result = m.find_match(version, releases)
+            match_result = m.find_match(version, artifacts_list)
             # Maintain backward compatibility: artifact should only contain name field
             if (
                 match_result

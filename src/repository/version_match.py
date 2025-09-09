@@ -194,9 +194,25 @@ class VersionMatcher:
 
         Handles different formats from GitHub/GitLab APIs.
         """
-        # Try common keys
-        for key in ['name', 'tag_name', 'version', 'ref']:
-            if key in artifact and artifact[key]:
-                return str(artifact[key])
+        # Prefer tag name over display name; then explicit version; finally ref (e.g., refs/tags/vX.Y.Z)
+        v = artifact.get('tag_name')
+        if v:
+            return str(v)
+
+        v = artifact.get('name')
+        if v:
+            return str(v)
+
+        v = artifact.get('version')
+        if v:
+            return str(v)
+
+        v = artifact.get('ref')
+        if v:
+            s = str(v)
+            # Extract terminal segment from refs/tags/<name> or similar refs
+            if '/' in s:
+                s = s.split('/')[-1]
+            return s
 
         return ""
