@@ -17,6 +17,8 @@ Requires-Dist: requests<2.32.6,>=2.32.4
 Requires-Dist: gql>=3.5.0
 Requires-Dist: python-dotenv>=0.19.2
 Requires-Dist: requirements-parser>=0.11.0
+Requires-Dist: packaging>=23.2
+Requires-Dist: semantic_version>=2.10.0
 Dynamic: license-file
 
 # DepGate — Dependency Supply‑Chain Risk & Confusion Checker

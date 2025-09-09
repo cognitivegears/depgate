@@ -238,10 +238,12 @@ source = { editable = "." }
 dependencies = [
     { name = "gql", version = "3.5.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.8.1'" },
     { name = "gql", version = "4.0.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.8.1'" },
+    { name = "packaging" },
     { name = "python-dotenv", version = "1.0.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.9'" },
     { name = "python-dotenv", version = "1.1.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.9'" },
     { name = "requests" },
     { name = "requirements-parser" },
+    { name = "semantic-version" },
 ]
 
 [package.dev-dependencies]
@@ -256,9 +258,11 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "gql", specifier = ">=3.5.0" },
+    { name = "packaging", specifier = ">=23.2" },
     { name = "python-dotenv", specifier = ">=0.19.2" },
     { name = "requests", specifier = ">=2.32.4,<2.32.6" },
     { name = "requirements-parser", specifier = ">=0.11.0" },
+    { name = "semantic-version", specifier = ">=2.10.0" },
 ]
 
 [package.metadata.requires-dev]
@@ -1088,6 +1092,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/95/96/fb6dbfebb524d5601d359a47c78fe7ba1eef90fc4096404aa60c9a906fbb/requirements_parser-0.13.0.tar.gz", hash = "sha256:0843119ca2cb2331de4eb31b10d70462e39ace698fd660a915c247d2301a4418", size = 22630 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/bd/60/50fbb6ffb35f733654466f1a90d162bcbea358adc3b0871339254fbc37b2/requirements_parser-0.13.0-py3-none-any.whl", hash = "sha256:2b3173faecf19ec5501971b7222d38f04cb45bb9d87d0ad629ca71e2e62ded14", size = 14782 },
+]
+
+[[package]]
+name = "semantic-version"
+version = "2.10.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/7d/31/f2289ce78b9b473d582568c234e104d2a342fd658cc288a7553d83bb8595/semantic_version-2.10.0.tar.gz", hash = "sha256:bdabb6d336998cbb378d4b9db3a4b56a1e3235701dc05ea2690d9a997ed5041c", size = 52289 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6a/23/8146aad7d88f4fcb3a6218f41a60f6c2d4e3a72de72da1825dc7c8f7877c/semantic_version-2.10.0-py2.py3-none-any.whl", hash = "sha256:de78a3b8e0feda74cabc54aab2da702113e33ac9d9eb9d2389bcf1f58b7d9177", size = 15552 },
 ]
 
 [[package]]

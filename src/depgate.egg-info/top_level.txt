@@ -6,3 +6,4 @@ depgate
 metapackage
 registry
 repository
+versioning

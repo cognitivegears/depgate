@@ -54,6 +54,11 @@ class MetaPackage:  # pylint: disable=too-many-instance-attributes, too-many-pub
         self._provenance = None
         self._repo_errors = None
 
+        # Version resolution fields
+        self._requested_spec = None
+        self._resolved_version = None
+        self._resolution_mode = None
+
     def __repr__(self):
         return self._pkg_name
 
@@ -82,6 +87,11 @@ class MetaPackage:  # pylint: disable=too-many-instance-attributes, too-many-pub
         lister.append(self._risk_min_versions)
         lister.append(self._risk_too_new)
         lister.append(self.has_risk())
+
+        # Version resolution info (empty string for missing) — placed before repo_* to keep repo_* as last five columns.
+        lister.append(nv(self._requested_spec))
+        lister.append(nv(self._resolved_version))
+        lister.append(nv(self._resolution_mode))
 
         # New repo_* CSV columns (empty string for missing)
         lister.append(nv(self._repo_stars))
@@ -564,6 +574,33 @@ class MetaPackage:  # pylint: disable=too-many-instance-attributes, too-many-pub
     @repo_errors.setter
     def repo_errors(self, value):
         self._repo_errors = value
+
+    @property
+    def requested_spec(self):
+        """Requested version spec string (raw) from input or manifest."""
+        return self._requested_spec
+
+    @requested_spec.setter
+    def requested_spec(self, value):
+        self._requested_spec = value
+
+    @property
+    def resolved_version(self):
+        """Resolved concrete version string after applying repository semantics."""
+        return self._resolved_version
+
+    @resolved_version.setter
+    def resolved_version(self, value):
+        self._resolved_version = value
+
+    @property
+    def resolution_mode(self):
+        """Resolution mode: 'exact' | 'range' | 'latest'."""
+        return self._resolution_mode
+
+    @resolution_mode.setter
+    def resolution_mode(self, value):
+        self._resolution_mode = value
 
     def has_risk(self):
         """Check if the package has any risk.

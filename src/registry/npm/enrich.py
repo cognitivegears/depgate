@@ -82,6 +82,9 @@ def _enrich_with_repo(pkg, packument: dict) -> None:
             outcome="version", package_manager="npm", target = "version"
         ))
 
+    # Choose version for repository version matching: prefer a CLI-resolved version if available
+    version_for_match = getattr(pkg, "resolved_version", None) or _extract_latest_version(packument)
+
     # Access patchable symbols (normalize_repo_url, clients, matcher) via package for test monkeypatching
     # using lazy accessor npm_pkg defined at module scope
 
@@ -161,7 +164,7 @@ def _enrich_with_repo(pkg, packument: dict) -> None:
                 )
                 provider = ProviderRegistry.get(ptype, injected)  # type: ignore
                 ProviderValidationService.validate_and_populate(
-                    pkg, normalized, latest_version, provider, npm_pkg.VersionMatcher()
+                    pkg, normalized, version_for_match, provider, npm_pkg.VersionMatcher()
                 )
             if pkg.repo_exists:
                 pkg.repo_resolved = True
