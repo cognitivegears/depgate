@@ -24,7 +24,7 @@ def test_score_breakdown_logging_in_debug(caplog):
     mp.repo_version_match = {"matched": False}
 
     with caplog.at_level(logging.DEBUG):
-        _heur.combobulate_heur([mp])
+        _heur.run_heuristics([mp])
 
     # Look for breakdown record with extra fields
     records = [r for r in caplog.records if r.levelno == logging.DEBUG and getattr(r, "action", None) == "score_breakdown"]

@@ -196,10 +196,10 @@ def run_analysis(level):
     """Run the selected analysis for collected packages."""
     if level in (Constants.LEVELS[0], Constants.LEVELS[1]):
         from analysis import heuristics as _heur  # pylint: disable=import-outside-toplevel
-        _heur.combobulate_min(metapkg.instances)
+        _heur.run_min_analysis(metapkg.instances)
     elif level in (Constants.LEVELS[2], Constants.LEVELS[3]):
         from analysis import heuristics as _heur  # pylint: disable=import-outside-toplevel
-        _heur.combobulate_heur(metapkg.instances)
+        _heur.run_heuristics(metapkg.instances)
 def main():
     """Main function of the program."""
     logger = logging.getLogger(__name__)

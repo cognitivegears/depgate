@@ -265,7 +265,7 @@ def compute_final_score(mp):
     breakdown = {k: {'raw': raw[k], 'normalized': norm[k]} for k in norm.keys()}
     return final, breakdown, weights_used
 
-def combobulate_min(pkgs):
+def run_min_analysis(pkgs):
     """Run to check the existence of the packages in the registry.
 
     Args:
@@ -274,7 +274,7 @@ def combobulate_min(pkgs):
     for x in pkgs:
         test_exists(x)
 
-def combobulate_heur(pkgs):
+def run_heuristics(pkgs):
     """Run heuristics on the packages.
 
     Args:
