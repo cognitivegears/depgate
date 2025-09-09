@@ -9,14 +9,14 @@ class MetaPackage:  # pylint: disable=too-many-instance-attributes, too-many-pub
 
     def __init__(self, pkgname, pkgtype=None, pkgorg=None):
         self.instances.append(self)  # adding the instance to collective
-        if len(pkgname.split(':')) == 2:
-            if pkgtype == PackageManagers.MAVEN.value:
-                if pkgorg is None:
-                    self._pkg_name = pkgname.split(':')[1]
-                    self._org_id = pkgname.split(':')[0]
-        else:
-            self._pkg_name = pkgname
-            self._org_id = pkgorg
+        # Initialize defaults to ensure attributes are always present
+        self._pkg_name = pkgname
+        self._org_id = pkgorg
+
+        # Normalize Maven coordinates when provided as "group:artifact" and org not separately supplied
+        if pkgtype == PackageManagers.MAVEN.value and pkgorg is None and len(pkgname.split(':')) == 2:
+            self._pkg_name = pkgname.split(':')[1]
+            self._org_id = pkgname.split(':')[0]
         self._exists = None
         self._pkg_type = pkgtype
         self._score = None

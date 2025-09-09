@@ -14,6 +14,7 @@ import json
 # internal module imports (kept light to avoid heavy deps on --help)
 from metapackage import MetaPackage as metapkg
 from constants import ExitCodes, PackageManagers, Constants
+from common.logging_utils import configure_logging
 from args import parse_args
 
 SUPPORTED_PACKAGES = Constants.SUPPORTED_PACKAGES
@@ -154,20 +155,7 @@ def export_json(instances, path):
         logging.error("JSON file couldn't be written to disk: %s", e)
         sys.exit(1)
 
-def configure_logging(args):
-    """Configure application logging based on CLI arguments."""
-    log_level = getattr(logging, args.LOG_LEVEL.upper(), logging.INFO)
-    if '-h' in sys.argv or '--help' in sys.argv:
-        # Ensure help output is always at INFO level
-        logging.basicConfig(level=logging.INFO, format=Constants.LOG_FORMAT)
-        return
-    if args.LOG_FILE:
-        logging.basicConfig(filename=args.LOG_FILE, level=log_level, format=Constants.LOG_FORMAT)
-    else:
-        if args.QUIET:
-            logging.disable(logging.CRITICAL)
-        else:
-            logging.basicConfig(level=log_level, format=Constants.LOG_FORMAT)
+
 
 def build_pkglist(args):
     """Build the package list from CLI inputs."""
@@ -204,7 +192,7 @@ def run_analysis(level):
 def main():
     """Main function of the program."""
     args = parse_args()
-    configure_logging(args)
+    configure_logging()
 
     logging.info("Arguments parsed.")
 
