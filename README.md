@@ -6,7 +6,7 @@ DepGate is a fork of Apiiro’s “Dependency Combobulator”, maintained going 
 
 ## Features
 
-- Pluggable analysis: compare vs. heuristics levels (`compare/comp`, `heuristics/heur`).
+- Pluggable analysis: compare, heuristics, or policy levels (`compare/comp`, `heuristics/heur`, `policy/pol`).
 - Multiple ecosystems: npm (`package.json`), Maven (`pom.xml`), PyPI (`requirements.txt`).
 - Cross‑ecosystem version resolution with strict prerelease policies (npm/PyPI exclude prereleases by default; Maven latest excludes SNAPSHOT).
 - Repository discovery and version validation (GitHub/GitLab): provenance, metrics (stars, last activity, contributors), and version match strategies (exact, pattern, exact‑bare, v‑prefix, suffix‑normalized).
@@ -61,6 +61,7 @@ With uv during development:
 
 - `compare` or `comp`: presence/metadata checks against public registries
 - `heuristics` or `heur`: adds scoring, version count, age signals
+- `policy` or `pol`: declarative rule-based evaluation with allow/deny decisions
 
 ## Repository discovery & version validation
 
@@ -93,16 +94,17 @@ See detailed design in [docs/repository-integration.md](docs/repository-integrat
 
 - Default: logs to stdout (respecting `--loglevel` and `--quiet`)
 - CSV: `-c, --csv <path>`
-  - Columns: `Package Name, Package Type, Exists on External, Org/Group ID, Score, Version Count, Timestamp, Risk: Missing, Risk: Low Score, Risk: Min Versions, Risk: Too New, Risk: Any Risks`
+  - Columns: `Package Name, Package Type, Exists on External, Org/Group ID, Score, Version Count, Timestamp, Risk: Missing, Risk: Low Score, Risk: Min Versions, Risk: Too New, Risk: Any Risks, [policy fields], [license fields]`
 - JSON: `-j, --json <path)`
-  - Array of objects with keys: `packageName, orgId, packageType, exists, score, versionCount, createdTimestamp, risk.{hasRisk,isMissing,hasLowScore,minVersions,isNew}`
+  - Array of objects with keys: `packageName, orgId, packageType, exists, score, versionCount, createdTimestamp, risk.{hasRisk,isMissing,hasLowScore,minVersions,isNew}, policy.{decision,violated_rules,evaluated_metrics}, license.{id,available,source}`
 
 ## CLI Options (summary)
 
 - `-t, --type {npm,pypi,maven}`: package manager
 - `-p/‑d/‑l`: input source (mutually exclusive)
-- `-a, --analysis {compare,comp,heuristics,heur}`: analysis level
+- `-a, --analysis {compare,comp,heuristics,heur,policy,pol}`: analysis level
 - `-c/‑j`: CSV/JSON export paths
+- Policy: `--policy-config <path>` (YAML/JSON/YML config file), `--set KEY=VALUE` (dot-path overrides)
 - Logging: `--loglevel {DEBUG,INFO,WARNING,ERROR,CRITICAL}`, `--logfile <path>`, `-q, --quiet`
 - Scanning: `-r, --recursive` (for `--directory` scans)
 - CI: `--error-on-warnings` (non‑zero exit if risks detected)
@@ -162,6 +164,61 @@ rtd:
 All keys are optional; unspecified values fall back to built‑in defaults. Additional options may be added over time.
 
 Heuristics weights are non‑negative numbers expressing relative priority for each signal. They are automatically re‑normalized across the metrics that are available for a given package, so the absolute values do not need to sum to 1. Unknown keys are ignored; missing metrics are excluded from the normalization set.
+
+## Policy Configuration
+
+The `policy` analysis level uses declarative configuration to evaluate allow/deny rules against package facts. Policy configuration can be provided via `--policy-config` (YAML/JSON/YML file) and overridden with `--set KEY=VALUE` options.
+
+### Policy Configuration Schema
+
+```yaml
+policy:
+  enabled: true                    # Global policy enable/disable
+  fail_fast: true                  # Stop at first violation (default: false)
+  metrics:                         # Declarative metric constraints
+    stars_count: { min: 5 }        # Minimum stars
+    heuristic_score: { min: 0.6 }  # Minimum heuristic score
+    version_count: { min: 3 }      # Minimum version count
+  regex:                           # Regex-based rules
+    include: ["^@myorg/"]          # Must match at least one include pattern
+    exclude: ["-beta$"]            # Must not match any exclude pattern
+  license_check:                   # License validation
+    enabled: true                  # Enable license discovery/checking
+    disallowed_licenses: ["GPL-3.0-only", "AGPL-3.0-only"]
+    allow_unknown: false           # Allow packages with unknown licenses
+  output:
+    include_license_fields: true   # Include license fields in output
+```
+
+### Dot-path Override Examples
+
+```bash
+# Override specific metric constraints
+depgate -t npm -p left-pad -a policy --set policy.metrics.heuristic_score.min=0.8
+
+# Disable license checking
+depgate -t npm -p left-pad -a policy --set policy.license_check.enabled=false
+
+# Change fail_fast behavior
+depgate -t npm -p left-pad -a policy --set policy.fail_fast=true
+```
+
+### Implicit Heuristics Trigger
+
+When policy rules reference heuristic-derived metrics (e.g., `heuristic_score`, `is_license_available`), the system automatically runs heuristics analysis for affected packages if those metrics are missing. This ensures policy evaluation has access to all required data without manual intervention.
+
+### License Discovery Performance
+
+License discovery uses LRU caching (default maxsize: 256) to minimize network calls. It follows a metadata-first strategy:
+1. Check registry metadata for license information
+2. Optionally fall back to repository file parsing (LICENSE, LICENSE.md)
+3. Cache results per (repo_url, ref) combination
+
+Set `policy.license_check.enabled=false` to disable all license-related network calls.
+
+### New Heuristic: is_license_available
+
+The `is_license_available` heuristic indicates whether license information is available for a package. This boolean value is computed from existing registry enrichment data and is automatically included when heuristics run.
 
 ## Exit Codes
 

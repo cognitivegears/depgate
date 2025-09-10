@@ -352,6 +352,7 @@ def run_heuristics(pkgs):
             test_score(x)
             test_timestamp(x)
             test_version_count(x)
+            test_license_available(x)
     stats_exists(pkgs)
 
 def test_exists(x):
@@ -436,3 +437,33 @@ def test_version_count(pkg):
             pkg.risk_min_versions = False
     else:
         logging.warning("%s.... Package version count not available.", STG)
+
+def test_license_available(pkg):
+    """Check if license information is available for the package.
+
+    Args:
+        pkg: Package to check.
+    """
+    # Check for license information from various sources
+    # This heuristic computes is_license_available based on existing data
+    # without triggering network calls
+
+    license_available = False
+
+    # Check if license information exists from registry enrichment
+    # (This would be populated by registry enrichers if available)
+    if hasattr(pkg, 'license') and pkg.license:
+        license_available = True
+    elif hasattr(pkg, 'license_id') and pkg.license_id:
+        license_available = True
+    elif hasattr(pkg, 'license_url') and pkg.license_url:
+        license_available = True
+
+    # Store the result as a heuristic output
+    # This can be accessed later by policy evaluation
+    pkg.is_license_available = license_available
+
+    if license_available:
+        logging.info("%s.... license information available.", STG)
+    else:
+        logging.debug("%s.... license information not available.", STG)

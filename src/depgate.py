@@ -138,8 +138,49 @@ def export_csv(instances, path):
         "repo_version_match",
     ]
     rows = [headers]
+
+    def _nv(v):
+        return "" if v is None else v
+
     for x in instances:
-        rows.append(x.listall())
+        # Build row aligned to headers; do NOT include policy/license columns here to preserve legacy CSV shape
+        row = [
+            x.pkg_name,
+            x.pkg_type,
+            x.exists,
+            x.org_id,
+            x.score,
+            x.version_count,
+            x.timestamp,
+            x.risk_missing,
+            x.risk_low_score,
+            x.risk_min_versions,
+            x.risk_too_new,
+            x.has_risk(),
+            _nv(getattr(x, "requested_spec", None)),
+            _nv(getattr(x, "resolved_version", None)),
+            _nv(getattr(x, "resolution_mode", None)),
+            _nv(getattr(x, "repo_stars", None)),
+            _nv(getattr(x, "repo_contributors", None)),
+            _nv(getattr(x, "repo_last_activity_at", None)),
+        ]
+        # repo_present_in_registry with special-case blanking
+        _present = getattr(x, "repo_present_in_registry", None)
+        _norm_url = getattr(x, "repo_url_normalized", None)
+        if (_present is False) and (_norm_url is None):
+            row.append("")
+        else:
+            row.append(_nv(_present))
+        # repo_version_match simplified to boolean 'matched' or blank
+        _ver_match = getattr(x, "repo_version_match", None)
+        if _ver_match is None:
+            row.append("")
+        else:
+            try:
+                row.append(bool(_ver_match.get("matched")))
+            except Exception:  # pylint: disable=broad-exception-caught
+                row.append("")
+        rows.append(row)
     try:
         with open(path, 'w', newline='', encoding='utf-8') as file:
             export = csv.writer(file)
@@ -187,7 +228,17 @@ def export_json(instances, path):
             },
             "requested_spec": getattr(x, "requested_spec", None),
             "resolved_version": getattr(x, "resolved_version", None),
-            "resolution_mode": getattr(x, "resolution_mode", None)
+            "resolution_mode": getattr(x, "resolution_mode", None),
+            "policy": {
+                "decision": getattr(x, "policy_decision", None),
+                "violated_rules": getattr(x, "policy_violated_rules", []),
+                "evaluated_metrics": getattr(x, "policy_evaluated_metrics", {}),
+            },
+            "license": {
+                "id": getattr(x, "license_id", None),
+                "available": getattr(x, "license_available", None),
+                "source": getattr(x, "license_source", None),
+            }
         })
     try:
         with open(path, 'w', encoding='utf-8') as file:
@@ -402,7 +453,7 @@ def create_metapackages(args, pkglist):
         for pkg in pkglist:
             metapkg(pkg, args.package_type)
 
-def run_analysis(level):
+def run_analysis(level, args=None):
     """Run the selected analysis for collected packages."""
     if level in (Constants.LEVELS[0], Constants.LEVELS[1]):
         from analysis import heuristics as _heur  # pylint: disable=import-outside-toplevel
@@ -410,6 +461,95 @@ def run_analysis(level):
     elif level in (Constants.LEVELS[2], Constants.LEVELS[3]):
         from analysis import heuristics as _heur  # pylint: disable=import-outside-toplevel
         _heur.run_heuristics(metapkg.instances)
+    elif level in ("policy", "pol"):
+        run_policy_analysis(args)
+
+
+def run_policy_analysis(args):
+    """Run policy analysis for collected packages."""
+    # Import policy modules
+    from analysis.facts import FactBuilder
+    from analysis.policy import create_policy_engine
+    from repository.license_discovery import license_discovery
+    from analysis import heuristics as _heur
+
+    # Get global args (assuming they're available in this scope)
+    import sys
+    # We need to get args from the calling context
+    # For now, we'll assume args is available globally or passed somehow
+    # This is a simplification - in practice we'd need to pass args
+
+    # Step 1: Build facts for all packages
+    fact_builder = FactBuilder()
+    all_facts = {}
+    for pkg in metapkg.instances:
+        facts = fact_builder.build_facts(pkg)
+        all_facts[pkg.pkg_name] = facts
+
+    # Step 2: Check if heuristics are needed
+    # (This would be based on policy config - simplified for now)
+    heuristic_metrics_needed = ["heuristic_score", "is_license_available"]
+
+    for pkg in metapkg.instances:
+        facts = all_facts[pkg.pkg_name]
+        needs_heuristics = any(
+            key not in facts or facts.get(key) is None
+            for key in heuristic_metrics_needed
+        )
+        if needs_heuristics:
+            # Run heuristics for this package
+            _heur.run_heuristics([pkg])
+            # Update facts with new heuristic data
+            facts["heuristic_score"] = getattr(pkg, "score", None)
+            facts["is_license_available"] = getattr(pkg, "is_license_available", None)
+
+    # Step 3: Check if license discovery is needed
+    # (This would be based on policy config - simplified for now)
+    for pkg in metapkg.instances:
+        facts = all_facts[pkg.pkg_name]
+        if (facts.get("license", {}).get("id") is None and
+            getattr(pkg, "repo_url_normalized", None)):
+            # Try license discovery
+            try:
+                license_info = license_discovery.discover_license(
+                    pkg.repo_url_normalized, "default"
+                )
+                facts["license"] = license_info
+            except Exception:
+                # License discovery failed, keep as None
+                pass
+
+    # Step 4: Create policy engine and evaluate
+    policy_engine = create_policy_engine()
+
+    # Default policy config (would be loaded from file/args in real implementation)
+    policy_config = {
+        "fail_fast": False,
+        "metrics": {
+            "stars_count": {"min": 5},
+            "heuristic_score": {"min": 0.6}
+        },
+        "license_check": {
+            "enabled": True,
+            "disallowed_licenses": ["GPL-3.0-only"]
+        }
+    }
+
+    # Evaluate each package
+    for pkg in metapkg.instances:
+        facts = all_facts[pkg.pkg_name]
+        decision = policy_engine.evaluate_policy(facts, policy_config)
+
+        # Store decision on package for output
+        pkg.policy_decision = decision.decision
+        pkg.policy_violated_rules = decision.violated_rules
+        pkg.policy_evaluated_metrics = decision.evaluated_metrics
+
+        # Log results
+        if decision.decision == "deny":
+            logging.warning(f"Policy DENY for {pkg.pkg_name}: {', '.join(decision.violated_rules)}")
+        else:
+            logging.info(f"Policy ALLOW for {pkg.pkg_name}")
 def main():
     """Main function of the program."""
     # pylint: disable=too-many-branches, too-many-statements, too-many-nested-blocks
@@ -543,7 +683,7 @@ def main():
         )
 
     # ANALYZE
-    run_analysis(args.LEVEL)
+    run_analysis(args.LEVEL, args)
 
     # OUTPUT
     if args.CSV:

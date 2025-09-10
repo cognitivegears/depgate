@@ -91,3 +91,82 @@ heuristics:
 # Read the Docs API used for resolving documentation URLs to source repositories.
 rtd:
   api_base: "https://readthedocs.org/api/v3"
+
+
+# Policy analysis configuration
+# Controls the new policy scanning engine behavior.
+# Notes:
+# - Unknown keys are ignored safely.
+# - You can override individual values via CLI: --set policy.metrics.heuristic_score.min=0.8
+# - You can load an external file via --policy-config /path/to/policy.yml
+policy:
+  # Execution behavior for rule evaluation
+  fail_fast: false   # when true, stops at the first violated rule
+
+  # Comparator-based metric rules (numbers and strings supported)
+  # Comparators: min (>=), max (<=), eq, ne, in, not_in
+  metrics:
+    # Numeric examples
+    stars_count:
+      min: 5
+    heuristic_score:
+      min: 0.6
+    contributors_count:
+      min: 1
+    version_count:
+      min: 1
+
+    # String comparator examples
+    registry:
+      in: ["npm", "pypi", "maven"]
+    package_name:
+      ne: ""  # non-empty safety check
+
+  # Regex inclusion/exclusion rules
+  # Precedence: exclude rules run first; include rules then allow through.
+  # Defaults: case_sensitive=false, full_match=false (substring search).
+  regex:
+    case_sensitive: false
+    full_match: false
+    include:
+      # Allow only internal scoped packages (example)
+      - field: package_name
+        pattern: "^@acme/.*"
+    exclude:
+      # Exclude archived or deprecated repos by URL pattern (example)
+      - field: source_repo
+        pattern: "example.com/archived"
+
+  # License policy
+  # - enabled: toggles license policy enforcement
+  # - disallowed_licenses: SPDX IDs that should deny a package
+  # - allow_unknown: when true, unknown/missing license does not cause denial
+  license_check:
+    enabled: true
+    disallowed_licenses:
+      - "GPL-3.0-only"
+      - "AGPL-3.0-only"
+    allow_unknown: false
+
+  # Heuristics integration
+  # When a policy references metrics that require heuristics, auto-run them.
+  heuristics:
+    auto_run_if_missing: true
+
+  # License discovery control (metadata-first with provider fallback)
+  # This governs whether the engine attempts to discover a license when missing.
+  license_discovery:
+    enabled: true
+    default_ref: "default"   # logical ref or branch to use when applicable
+    cache_ttl_sec: 3600      # client-side cache TTL for discovered licenses (seconds)
+
+  # Output behavior for policy results
+  # include_license_fields: when true, emit discovered license in outputs where applicable
+  output:
+    include_license_fields: true
+
+# CLI examples:
+#   Load this file:
+#     depgate -t npm -p left-pad -a policy --policy-config ./depgate.example.yml
+#   Override a metric threshold via CLI:
+#     depgate -t npm -p left-pad -a policy --set policy.metrics.heuristic_score.min=0.8

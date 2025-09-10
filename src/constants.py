@@ -9,7 +9,7 @@ from typing import Any, Dict, Optional
 try:
     import yaml  # type: ignore
 except Exception:  # pylint: disable=broad-exception-caught
-    yaml = None  # type: ignore[assignment]
+    yaml = None  # type: ignore[assignment]  # pylint: disable=invalid-name
 
 
 class ExitCodes(Enum):
@@ -36,6 +36,7 @@ class PackageManagers(Enum):
     PYPI = "pypi"
     MAVEN = "maven"
 
+
 class DefaultHeuristics(Enum):
     """Default heuristics for the program.
 
@@ -47,6 +48,7 @@ class DefaultHeuristics(Enum):
     NEW_DAYS_THRESHOLD = 2
     SCORE_THRESHOLD = 0.6
     RISKY_THRESHOLD = 0.15
+
 
 class Constants:  # pylint: disable=too-few-public-methods
     """General constants used in the project.
@@ -62,7 +64,7 @@ class Constants:  # pylint: disable=too-few-public-methods
         PackageManagers.PYPI.value,
         PackageManagers.MAVEN.value,
     ]
-    LEVELS = ["compare", "comp", "heuristics", "heur"]
+    LEVELS = ["compare", "comp", "heuristics", "heur", "policy", "pol"]
     REQUIREMENTS_FILE = "requirements.txt"
     PACKAGE_JSON_FILE = "package.json"
     POM_XML_FILE = "pom.xml"
@@ -108,184 +110,280 @@ class Constants:  # pylint: disable=too-few-public-methods
     # Runtime copy that may be overridden via YAML configuration
     HEURISTICS_WEIGHTS = dict(HEURISTICS_WEIGHTS_DEFAULT)
 
+
 # ----------------------------
 # YAML configuration overrides
 # ----------------------------
 
 def _first_existing(paths: list[str]) -> Optional[str]:
-   """Return first existing file path from list or None."""
-   for p in paths:
-       if p and os.path.isfile(os.path.expanduser(p)):
-           return os.path.expanduser(p)
-   return None
+    """Return first existing file path from list or None."""
+    for p in paths:
+        if p and os.path.isfile(os.path.expanduser(p)):
+            return os.path.expanduser(p)
+    return None
+
 
 def _candidate_config_paths() -> list[str]:
-   """Compute candidate config paths in priority order."""
-   paths: list[str] = []
-   # Highest priority: explicit env override
-   env_path = os.environ.get("DEPGATE_CONFIG")
-   if env_path:
-       paths.append(env_path)
+    """Compute candidate config paths in priority order."""
+    paths: list[str] = []
+    # Highest priority: explicit env override
+    env_path = os.environ.get("DEPGATE_CONFIG")
+    if env_path:
+        paths.append(env_path)
 
-   # Current directory
-   paths.extend([
-       "./depgate.yml",
-       "./.depgate.yml",
-   ])
+    # Current directory
+    paths.extend(
+        [
+            "./depgate.yml",
+            "./.depgate.yml",
+        ]
+    )
 
-   # XDG base (Linux/Unix)
-   xdg = os.environ.get("XDG_CONFIG_HOME")
-   if xdg:
-       paths.append(os.path.join(xdg, "depgate", "depgate.yml"))
-   else:
-       paths.append(os.path.join(os.path.expanduser("~"), ".config", "depgate", "depgate.yml"))
+    # XDG base (Linux/Unix)
+    xdg = os.environ.get("XDG_CONFIG_HOME")
+    if xdg:
+        paths.append(os.path.join(xdg, "depgate", "depgate.yml"))
+    else:
+        paths.append(
+            os.path.join(
+                os.path.expanduser("~"),
+                ".config",
+                "depgate",
+                "depgate.yml",
+            )
+        )
 
-   # macOS Application Support
-   if platform.system().lower() == "darwin":
-       paths.append(os.path.join(os.path.expanduser("~"), "Library", "Application Support", "depgate", "depgate.yml"))
+    # macOS Application Support
+    if platform.system().lower() == "darwin":
+        paths.append(
+            os.path.join(
+                os.path.expanduser("~"),
+                "Library",
+                "Application Support",
+                "depgate",
+                "depgate.yml",
+            )
+        )
 
-   # Windows APPDATA
-   if os.name == "nt":
-       appdata = os.environ.get("APPDATA")
-       if appdata:
-           paths.append(os.path.join(appdata, "depgate", "depgate.yml"))
+    # Windows APPDATA
+    if os.name == "nt":
+        appdata = os.environ.get("APPDATA")
+        if appdata:
+            paths.append(os.path.join(appdata, "depgate", "depgate.yml"))
 
-   return paths
+    return paths
+
 
 def _load_yaml_config() -> Dict[str, Any]:
-   """Load YAML config from first existing candidate path; returns {} when not found or YAML unavailable."""
-   if yaml is None:  # PyYAML not installed
-       return {}
-   cfg_path = _first_existing(_candidate_config_paths())
-   if not cfg_path:
-       return {}
-   try:
-       with open(cfg_path, "r", encoding="utf-8") as fh:
-           data = yaml.safe_load(fh) or {}
-           if isinstance(data, dict):
-               return data
-           return {}
-   except Exception:  # pylint: disable=broad-exception-caught
-       return {}
+    """Load YAML config from first existing candidate path; returns {} when not found or YAML unavailable."""
+    if yaml is None:  # PyYAML not installed
+        return {}
+    cfg_path = _first_existing(_candidate_config_paths())
+    if not cfg_path:
+        return {}
+    try:
+        with open(cfg_path, "r", encoding="utf-8") as fh:
+            data = yaml.safe_load(fh) or {}
+            if isinstance(data, dict):
+                return data
+            return {}
+    except Exception:  # pylint: disable=broad-exception-caught
+        return {}
 
-def _apply_config_overrides(cfg: Dict[str, Any]) -> None:
-   """Apply selected overrides from YAML config onto Constants."""
-   http = cfg.get("http", {}) or {}
-   registry = cfg.get("registry", {}) or {}
-   provider = cfg.get("provider", {}) or {}
-   rtd = cfg.get("rtd", {}) or {}
 
-   # HTTP settings
-   try:
-       Constants.REQUEST_TIMEOUT = int(http.get("request_timeout", Constants.REQUEST_TIMEOUT))  # type: ignore[attr-defined]
-   except Exception:  # pylint: disable=broad-exception-caught
-       pass
-   try:
-       Constants.HTTP_RETRY_MAX = int(http.get("retry_max", Constants.HTTP_RETRY_MAX))  # type: ignore[attr-defined]
-   except Exception:  # pylint: disable=broad-exception-caught
-       pass
-   try:
-       Constants.HTTP_RETRY_BASE_DELAY_SEC = float(http.get("retry_base_delay_sec", Constants.HTTP_RETRY_BASE_DELAY_SEC))  # type: ignore[attr-defined]
-   except Exception:  # pylint: disable=broad-exception-caught
-       pass
-   try:
-       Constants.HTTP_CACHE_TTL_SEC = int(http.get("cache_ttl_sec", Constants.HTTP_CACHE_TTL_SEC))  # type: ignore[attr-defined]
-   except Exception:  # pylint: disable=broad-exception-caught
-       pass
+def _apply_config_overrides(cfg: Dict[str, Any]) -> None:  # pylint: disable=too-many-locals, too-many-branches, too-many-statements
+    """Apply selected overrides from YAML config onto Constants."""
+    http = cfg.get("http", {}) or {}
+    registry = cfg.get("registry", {}) or {}
+    provider = cfg.get("provider", {}) or {}
+    rtd = cfg.get("rtd", {}) or {}
 
-   # Registry URLs
-   Constants.REGISTRY_URL_PYPI = registry.get("pypi_base_url", Constants.REGISTRY_URL_PYPI)  # type: ignore[attr-defined]
-   Constants.REGISTRY_URL_NPM = registry.get("npm_base_url", Constants.REGISTRY_URL_NPM)  # type: ignore[attr-defined]
-   Constants.REGISTRY_URL_NPM_STATS = registry.get("npm_stats_url", Constants.REGISTRY_URL_NPM_STATS)  # type: ignore[attr-defined]
-   Constants.REGISTRY_URL_MAVEN = registry.get("maven_search_url", Constants.REGISTRY_URL_MAVEN)  # type: ignore[attr-defined]
+    # HTTP settings
+    try:
+        Constants.REQUEST_TIMEOUT = int(  # type: ignore[attr-defined]
+            http.get("request_timeout", Constants.REQUEST_TIMEOUT)
+        )
+    except Exception:  # pylint: disable=broad-exception-caught
+        pass
+    try:
+        Constants.HTTP_RETRY_MAX = int(  # type: ignore[attr-defined]
+            http.get("retry_max", Constants.HTTP_RETRY_MAX)
+        )
+    except Exception:  # pylint: disable=broad-exception-caught
+        pass
+    try:
+        Constants.HTTP_RETRY_BASE_DELAY_SEC = float(  # type: ignore[attr-defined]
+            http.get("retry_base_delay_sec", Constants.HTTP_RETRY_BASE_DELAY_SEC)
+        )
+    except Exception:  # pylint: disable=broad-exception-caught
+        pass
+    try:
+        Constants.HTTP_CACHE_TTL_SEC = int(  # type: ignore[attr-defined]
+            http.get("cache_ttl_sec", Constants.HTTP_CACHE_TTL_SEC)
+        )
+    except Exception:  # pylint: disable=broad-exception-caught
+        pass
 
-   # Provider URLs and paging
-   Constants.GITHUB_API_BASE = provider.get("github_api_base", Constants.GITHUB_API_BASE)  # type: ignore[attr-defined]
-   Constants.GITLAB_API_BASE = provider.get("gitlab_api_base", Constants.GITLAB_API_BASE)  # type: ignore[attr-defined]
-   try:
-       Constants.REPO_API_PER_PAGE = int(provider.get("per_page", Constants.REPO_API_PER_PAGE))  # type: ignore[attr-defined]
-   except Exception:  # pylint: disable=broad-exception-caught
-       pass
+    # Registry URLs
+    Constants.REGISTRY_URL_PYPI = registry.get(  # type: ignore[attr-defined]
+        "pypi_base_url", Constants.REGISTRY_URL_PYPI
+    )
+    Constants.REGISTRY_URL_NPM = registry.get(  # type: ignore[attr-defined]
+        "npm_base_url", Constants.REGISTRY_URL_NPM
+    )
+    Constants.REGISTRY_URL_NPM_STATS = registry.get(  # type: ignore[attr-defined]
+        "npm_stats_url", Constants.REGISTRY_URL_NPM_STATS
+    )
+    Constants.REGISTRY_URL_MAVEN = registry.get(  # type: ignore[attr-defined]
+        "maven_search_url", Constants.REGISTRY_URL_MAVEN
+    )
 
-   # Heuristics weights (optional)
-   heuristics = cfg.get("heuristics", {}) or {}
-   weights_cfg = heuristics.get("weights", {}) or {}
-   if isinstance(weights_cfg, dict):
-       merged = dict(Constants.HEURISTICS_WEIGHTS_DEFAULT)  # type: ignore[attr-defined]
-       for key, default_val in Constants.HEURISTICS_WEIGHTS_DEFAULT.items():  # type: ignore[attr-defined]
-           try:
-               if key in weights_cfg:
-                   val = float(weights_cfg.get(key, default_val))
-                   if val >= 0.0:
-                       merged[key] = val
-           except Exception:  # pylint: disable=broad-exception-caught
-               # ignore invalid entries; keep default
-               pass
-       Constants.HEURISTICS_WEIGHTS = merged  # type: ignore[attr-defined]
+    # Provider URLs and paging
+    Constants.GITHUB_API_BASE = provider.get(  # type: ignore[attr-defined]
+        "github_api_base", Constants.GITHUB_API_BASE
+    )
+    Constants.GITLAB_API_BASE = provider.get(  # type: ignore[attr-defined]
+        "gitlab_api_base", Constants.GITLAB_API_BASE
+    )
+    try:
+        Constants.REPO_API_PER_PAGE = int(  # type: ignore[attr-defined]
+            provider.get("per_page", Constants.REPO_API_PER_PAGE)
+        )
+    except Exception:  # pylint: disable=broad-exception-caught
+        pass
 
-   # HTTP rate policy configuration
-   rate_policy_cfg = http.get("rate_policy", {}) or {}
-   default_cfg = rate_policy_cfg.get("default", {}) or {}
-   per_service_cfg = rate_policy_cfg.get("per_service", {}) or {}
+    # Heuristics weights (optional)
+    heuristics = cfg.get("heuristics", {}) or {}
+    weights_cfg = heuristics.get("weights", {}) or {}
+    if isinstance(weights_cfg, dict):
+        merged = dict(Constants.HEURISTICS_WEIGHTS_DEFAULT)  # type: ignore[attr-defined]
+        for key, default_val in Constants.HEURISTICS_WEIGHTS_DEFAULT.items():  # type: ignore[attr-defined]
+            try:
+                if key in weights_cfg:
+                    val = float(weights_cfg.get(key, default_val))
+                    if val >= 0.0:
+                        merged[key] = val
+            except Exception:  # pylint: disable=broad-exception-caught
+                # ignore invalid entries; keep default
+                pass
+        Constants.HEURISTICS_WEIGHTS = merged  # type: ignore[attr-defined]
 
-   # Apply default policy overrides
-   try:
-       Constants.HTTP_RATE_POLICY_DEFAULT_MAX_RETRIES = int(default_cfg.get("max_retries", Constants.HTTP_RATE_POLICY_DEFAULT_MAX_RETRIES))  # type: ignore[attr-defined]
-   except Exception:  # pylint: disable=broad-exception-caught
-       pass
-   try:
-       Constants.HTTP_RATE_POLICY_DEFAULT_INITIAL_BACKOFF_SEC = float(default_cfg.get("initial_backoff_sec", Constants.HTTP_RATE_POLICY_DEFAULT_INITIAL_BACKOFF_SEC))  # type: ignore[attr-defined]
-   except Exception:  # pylint: disable=broad-exception-caught
-       pass
-   try:
-       Constants.HTTP_RATE_POLICY_DEFAULT_MULTIPLIER = float(default_cfg.get("multiplier", Constants.HTTP_RATE_POLICY_DEFAULT_MULTIPLIER))  # type: ignore[attr-defined]
-   except Exception:  # pylint: disable=broad-exception-caught
-       pass
-   try:
-       Constants.HTTP_RATE_POLICY_DEFAULT_JITTER_PCT = float(default_cfg.get("jitter_pct", Constants.HTTP_RATE_POLICY_DEFAULT_JITTER_PCT))  # type: ignore[attr-defined]
-   except Exception:  # pylint: disable=broad-exception-caught
-       pass
-   try:
-       Constants.HTTP_RATE_POLICY_DEFAULT_MAX_BACKOFF_SEC = float(default_cfg.get("max_backoff_sec", Constants.HTTP_RATE_POLICY_DEFAULT_MAX_BACKOFF_SEC))  # type: ignore[attr-defined]
-   except Exception:  # pylint: disable=broad-exception-caught
-       pass
-   try:
-       Constants.HTTP_RATE_POLICY_DEFAULT_TOTAL_RETRY_TIME_CAP_SEC = float(default_cfg.get("total_retry_time_cap_sec", Constants.HTTP_RATE_POLICY_DEFAULT_TOTAL_RETRY_TIME_CAP_SEC))  # type: ignore[attr-defined]
-   except Exception:  # pylint: disable=broad-exception-caught
-       pass
-   try:
-       Constants.HTTP_RATE_POLICY_DEFAULT_STRATEGY = str(default_cfg.get("strategy", Constants.HTTP_RATE_POLICY_DEFAULT_STRATEGY))  # type: ignore[attr-defined]
-   except Exception:  # pylint: disable=broad-exception-caught
-       pass
-   try:
-       Constants.HTTP_RATE_POLICY_DEFAULT_RESPECT_RETRY_AFTER = bool(default_cfg.get("respect_retry_after", Constants.HTTP_RATE_POLICY_DEFAULT_RESPECT_RETRY_AFTER))  # type: ignore[attr-defined]
-   except Exception:  # pylint: disable=broad-exception-caught
-       pass
-   try:
-       Constants.HTTP_RATE_POLICY_DEFAULT_RESPECT_RESET_HEADERS = bool(default_cfg.get("respect_reset_headers", Constants.HTTP_RATE_POLICY_DEFAULT_RESPECT_RESET_HEADERS))  # type: ignore[attr-defined]
-   except Exception:  # pylint: disable=broad-exception-caught
-       pass
-   try:
-       Constants.HTTP_RATE_POLICY_DEFAULT_ALLOW_NON_IDEMPOTENT_RETRY = bool(default_cfg.get("allow_non_idempotent_retry", Constants.HTTP_RATE_POLICY_DEFAULT_ALLOW_NON_IDEMPOTENT_RETRY))  # type: ignore[attr-defined]
-   except Exception:  # pylint: disable=broad-exception-caught
-       pass
+    # HTTP rate policy configuration
+    rate_policy_cfg = http.get("rate_policy", {}) or {}
+    default_cfg = rate_policy_cfg.get("default", {}) or {}
+    per_service_cfg = rate_policy_cfg.get("per_service", {}) or {}
 
-   # Apply per-service overrides
-   if isinstance(per_service_cfg, dict):
-       merged_per_service = {}
-       for host, service_config in per_service_cfg.items():
-           if isinstance(service_config, dict):
-               merged_per_service[host] = service_config
-       Constants.HTTP_RATE_POLICY_PER_SERVICE = merged_per_service  # type: ignore[attr-defined]
+    # Apply default policy overrides
+    try:
+        Constants.HTTP_RATE_POLICY_DEFAULT_MAX_RETRIES = int(  # type: ignore[attr-defined]
+            default_cfg.get(
+                "max_retries",
+                Constants.HTTP_RATE_POLICY_DEFAULT_MAX_RETRIES,
+            )
+        )
+    except Exception:  # pylint: disable=broad-exception-caught
+        pass
+    try:
+        Constants.HTTP_RATE_POLICY_DEFAULT_INITIAL_BACKOFF_SEC = float(  # type: ignore[attr-defined]
+            default_cfg.get(
+                "initial_backoff_sec",
+                Constants.HTTP_RATE_POLICY_DEFAULT_INITIAL_BACKOFF_SEC,
+            )
+        )
+    except Exception:  # pylint: disable=broad-exception-caught
+        pass
+    try:
+        Constants.HTTP_RATE_POLICY_DEFAULT_MULTIPLIER = float(  # type: ignore[attr-defined]
+            default_cfg.get(
+                "multiplier",
+                Constants.HTTP_RATE_POLICY_DEFAULT_MULTIPLIER,
+            )
+        )
+    except Exception:  # pylint: disable=broad-exception-caught
+        pass
+    try:
+        Constants.HTTP_RATE_POLICY_DEFAULT_JITTER_PCT = float(  # type: ignore[attr-defined]
+            default_cfg.get(
+                "jitter_pct",
+                Constants.HTTP_RATE_POLICY_DEFAULT_JITTER_PCT,
+            )
+        )
+    except Exception:  # pylint: disable=broad-exception-caught
+        pass
+    try:
+        Constants.HTTP_RATE_POLICY_DEFAULT_MAX_BACKOFF_SEC = float(  # type: ignore[attr-defined]
+            default_cfg.get(
+                "max_backoff_sec",
+                Constants.HTTP_RATE_POLICY_DEFAULT_MAX_BACKOFF_SEC,
+            )
+        )
+    except Exception:  # pylint: disable=broad-exception-caught
+        pass
+    try:
+        Constants.HTTP_RATE_POLICY_DEFAULT_TOTAL_RETRY_TIME_CAP_SEC = float(  # type: ignore[attr-defined]
+            default_cfg.get(
+                "total_retry_time_cap_sec",
+                Constants.HTTP_RATE_POLICY_DEFAULT_TOTAL_RETRY_TIME_CAP_SEC,
+            )
+        )
+    except Exception:  # pylint: disable=broad-exception-caught
+        pass
+    try:
+        Constants.HTTP_RATE_POLICY_DEFAULT_STRATEGY = str(  # type: ignore[attr-defined]
+            default_cfg.get(
+                "strategy",
+                Constants.HTTP_RATE_POLICY_DEFAULT_STRATEGY,
+            )
+        )
+    except Exception:  # pylint: disable=broad-exception-caught
+        pass
+    try:
+        Constants.HTTP_RATE_POLICY_DEFAULT_RESPECT_RETRY_AFTER = bool(  # type: ignore[attr-defined]
+            default_cfg.get(
+                "respect_retry_after",
+                Constants.HTTP_RATE_POLICY_DEFAULT_RESPECT_RETRY_AFTER,
+            )
+        )
+    except Exception:  # pylint: disable=broad-exception-caught
+        pass
+    try:
+        Constants.HTTP_RATE_POLICY_DEFAULT_RESPECT_RESET_HEADERS = bool(  # type: ignore[attr-defined]
+            default_cfg.get(
+                "respect_reset_headers",
+                Constants.HTTP_RATE_POLICY_DEFAULT_RESPECT_RESET_HEADERS,
+            )
+        )
+    except Exception:  # pylint: disable=broad-exception-caught
+        pass
+    try:
+        Constants.HTTP_RATE_POLICY_DEFAULT_ALLOW_NON_IDEMPOTENT_RETRY = bool(  # type: ignore[attr-defined]
+            default_cfg.get(
+                "allow_non_idempotent_retry",
+                Constants.HTTP_RATE_POLICY_DEFAULT_ALLOW_NON_IDEMPOTENT_RETRY,
+            )
+        )
+    except Exception:  # pylint: disable=broad-exception-caught
+        pass
 
-   # RTD
-   Constants.READTHEDOCS_API_BASE = rtd.get("api_base", Constants.READTHEDOCS_API_BASE)  # type: ignore[attr-defined]
+    # Apply per-service overrides
+    if isinstance(per_service_cfg, dict):
+        merged_per_service: Dict[str, Any] = {}
+        for host, service_config in per_service_cfg.items():
+            if isinstance(service_config, dict):
+                merged_per_service[host] = service_config
+        Constants.HTTP_RATE_POLICY_PER_SERVICE = merged_per_service  # type: ignore[attr-defined]
+
+    # RTD
+    Constants.READTHEDOCS_API_BASE = rtd.get(  # type: ignore[attr-defined]
+        "api_base", Constants.READTHEDOCS_API_BASE
+    )
+
 
 # Attempt to load and apply YAML configuration on import (no-op if unavailable)
 try:
-   _cfg = _load_yaml_config()
-   if _cfg:
-       _apply_config_overrides(_cfg)
+    _cfg = _load_yaml_config()
+    if _cfg:
+        _apply_config_overrides(_cfg)
 except Exception:  # pylint: disable=broad-exception-caught
-   # Never fail import due to config issues
-   pass
+    # Never fail import due to config issues
+    pass

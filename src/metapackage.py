@@ -72,21 +72,26 @@ class MetaPackage:  # pylint: disable=too-many-instance-attributes, too-many-pub
             list: List of all the attributes of the class.
         """
         def nv(v):
-            return "" if v is None else v
+            """Normalize value for CSV: empty for None, stringify numbers/bools."""
+            if v is None:
+                return ""
+            if isinstance(v, bool):
+                return "True" if v else "False"
+            return str(v)
 
         lister = []
-        lister.append(self._pkg_name)
-        lister.append(self._pkg_type)
-        lister.append(self._exists)
-        lister.append(self._org_id)
-        lister.append(self._score)
-        lister.append(self._version_count)
-        lister.append(self._timestamp)
-        lister.append(self._risk_missing)
-        lister.append(self._risk_low_score)
-        lister.append(self._risk_min_versions)
-        lister.append(self._risk_too_new)
-        lister.append(self.has_risk())
+        lister.append(nv(self._pkg_name))
+        lister.append(nv(self._pkg_type))
+        lister.append(nv(self._exists))
+        lister.append(nv(self._org_id))
+        lister.append(nv(self._score))
+        lister.append(nv(self._version_count))
+        lister.append(nv(self._timestamp))
+        lister.append(nv(self._risk_missing))
+        lister.append(nv(self._risk_low_score))
+        lister.append(nv(self._risk_min_versions))
+        lister.append(nv(self._risk_too_new))
+        lister.append(nv(self.has_risk()))
 
         # Version resolution info (empty string for missing) — placed before repo_* to keep repo_* as last five columns.
         lister.append(nv(self._requested_spec))
@@ -107,9 +112,18 @@ class MetaPackage:  # pylint: disable=too-many-instance-attributes, too-many-pub
             lister.append("")
         else:
             try:
-                lister.append(bool(self._repo_version_match.get('matched')))
+                lister.append(nv(bool(self._repo_version_match.get('matched'))))
             except Exception:  # pylint: disable=broad-exception-caught
                 lister.append("")
+
+        # Policy columns
+        lister.append(nv(getattr(self, "policy_decision", None)))
+        lister.append(";".join(getattr(self, "policy_violated_rules", [])))
+
+        # License columns
+        lister.append(nv(getattr(self, "license_id", None)))
+        lister.append(nv(getattr(self, "license_available", None)))
+        lister.append(nv(getattr(self, "license_source", None)))
 
         return lister
 

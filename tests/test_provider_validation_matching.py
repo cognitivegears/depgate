@@ -10,10 +10,25 @@ from repository.url_normalize import RepoRef
 class MockProviderClient:
     """Mock provider client for testing."""
 
-    def __init__(self, repo_info=None, releases=None, tags=None, contributors=None):
-        self.repo_info = repo_info or {"stars": 100, "last_activity_at": "2023-01-01T00:00:00Z"}
-        self.releases = releases or []
-        self.tags = tags or []
+    _DEFAULT = object()
+
+    def __init__(self, repo_info=_DEFAULT, releases=_DEFAULT, tags=_DEFAULT, contributors=None):
+        # Differentiate between omitted args (use defaults) and explicit None (preserve None)
+        if repo_info is self._DEFAULT:
+            self.repo_info = {"stars": 100, "last_activity_at": "2023-01-01T00:00:00Z"}
+        else:
+            self.repo_info = repo_info
+
+        if releases is self._DEFAULT:
+            self.releases = []
+        else:
+            self.releases = releases
+
+        if tags is self._DEFAULT:
+            self.tags = []
+        else:
+            self.tags = tags
+
         self.contributors = contributors
 
     def get_repo_info(self, owner, repo):

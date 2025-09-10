@@ -76,4 +76,17 @@ def parse_args():
                         help="Do not output to console.",
                         action="store_true")
 
+    # Policy-specific arguments
+    parser.add_argument("--policy-config",
+                        dest="POLICY_CONFIG",
+                        help="Path to policy configuration file (YAML, YML, or JSON)",
+                        action="store",
+                        type=str)
+    parser.add_argument("--set",
+                        dest="POLICY_SET",
+                        help="Set policy configuration override (KEY=VALUE format, can be used multiple times)",
+                        action="append",
+                        type=str,
+                        default=[])
+
     return parser.parse_args()

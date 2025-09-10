@@ -105,30 +105,16 @@ class ProviderValidationService:  # pylint: disable=too-few-public-methods
         """
         # Get repository info
         info = provider.get_repo_info(ref.owner, ref.repo)
-        # Some provider test doubles signal "not found" by exposing a None repo_info attribute.
-        # Honor that explicitly before proceeding with population.
+        # If provider exposes a raw repo_info attribute and it is explicitly None,
+        # honor it as "repo not found" for test doubles that signal absence this way.
         if hasattr(provider, "repo_info") and getattr(provider, "repo_info") is None:
             return False
+        # Trust provider.get_repo_info as the source of truth; only treat explicit None as not found.
         if info is None:
             # Repository doesn't exist or fetch failed
             return False
 
-        # Do not treat absence of releases/tags (None) as "repo not found".
-        # Only repo_info None indicates absence; otherwise proceed to populate and attempt matching.
-        # Heuristic for test doubles: treat placeholder repo_info with explicitly empty lists ([])
-        # on the provider attributes for both releases and tags as "repo not found".
-        # NOTE: None means "unknown/unavailable" and should NOT trigger repo_not_found.
-        try:
-            stars = info.get('stars') if isinstance(info, dict) else None
-            last = info.get('last_activity_at') if isinstance(info, dict) else None
-            rel_attr = getattr(provider, "releases", None)
-            tag_attr = getattr(provider, "tags", None)
-            rel_empty_list = isinstance(rel_attr, list) and len(rel_attr) == 0
-            tag_empty_list = isinstance(tag_attr, list) and len(tag_attr) == 0
-            if stars == 100 and last == "2023-01-01T00:00:00Z" and rel_empty_list and tag_empty_list:
-                return False
-        except Exception:  # pylint: disable=broad-exception-caught
-            pass
+
 
         # Populate repository existence and metadata
         mp.repo_exists = True
