@@ -92,3 +92,16 @@ class ProviderClient(ABC):
             List of release/tag dictionaries for version matching
         """
         raise NotImplementedError
+
+    @abstractmethod
+    def get_tags(self, owner: str, repo: str) -> List[Dict[str, str]]:
+        """Fetch repository tags for version matching.
+
+        Args:
+            owner: Repository owner/organization name
+            repo: Repository name
+
+        Returns:
+            List of tag dictionaries for version matching
+        """
+        raise NotImplementedError

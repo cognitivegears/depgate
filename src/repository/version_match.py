@@ -190,29 +190,45 @@ class VersionMatcher:
         return None
 
     def _get_version_from_artifact(self, artifact: Dict[str, Any]) -> str:
-        """Extract version string from artifact dict.
+        """Extract version-like token from artifact dict.
 
-        Handles different formats from GitHub/GitLab APIs.
+        Robustly handles:
+        - tag_name/name like 'v1.2.3', '1.2.3'
+        - monorepo tags like 'react-router@1.2.3'
+        - hyphen/underscore suffixed forms like 'react-router-v1.2.3' or 'react-router-1.2.3'
+        - Git refs like 'refs/tags/v1.2.3' or 'refs/tags/react-router@1.2.3'
         """
-        # Prefer tag name over display name; then explicit version; finally ref (e.g., refs/tags/vX.Y.Z)
+        def _extract_semverish(s: str) -> str:
+            s = s.strip()
+            # Collapse refs/tags/... to terminal segment
+            if '/' in s and s.startswith("refs/"):
+                s = s.split('/')[-1]
+            # Split monorepo form package@version
+            if '@' in s:
+                tail = s.rsplit('@', 1)[1]
+                if any(ch.isdigit() for ch in tail):
+                    s = tail
+            # Try to pull a trailing version-ish token (optional 'v' + 2-4 dot parts + optional pre/build)
+            m = re.search(r'v?(\d+(?:\.\d+){1,3}(?:[-+][0-9A-Za-z.\-]+)?)$', s)
+            if m:
+                return m.group(1)  # return without leading 'v' to favor exact equality
+            return s
+
+        # Prefer tag_name over display name; then explicit version; finally ref
         v = artifact.get('tag_name')
         if v:
-            return str(v)
+            return _extract_semverish(str(v))
 
         v = artifact.get('name')
         if v:
-            return str(v)
+            return _extract_semverish(str(v))
 
         v = artifact.get('version')
         if v:
-            return str(v)
+            return _extract_semverish(str(v))
 
         v = artifact.get('ref')
         if v:
-            s = str(v)
-            # Extract terminal segment from refs/tags/<name> or similar refs
-            if '/' in s:
-                s = s.split('/')[-1]
-            return s
+            return _extract_semverish(str(v))
 
         return ""

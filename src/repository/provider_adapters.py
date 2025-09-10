@@ -75,6 +75,10 @@ class GitHubProviderAdapter(ProviderClient):
         tags = self.client.get_tags(owner, repo)
         return tags or []
 
+    def get_tags(self, owner: str, repo: str) -> List[Dict[str, str]]:
+        """Fetch repository tags for version matching."""
+        return self.client.get_tags(owner, repo) or []
+
 
 class GitLabProviderAdapter(ProviderClient):
     """Adapter for GitLab repositories implementing ProviderClient interface."""
@@ -138,3 +142,7 @@ class GitLabProviderAdapter(ProviderClient):
         # Fallback: use tags when releases are unavailable to enable version matching
         tags = self.client.get_tags(owner, repo)
         return tags or []
+
+    def get_tags(self, owner: str, repo: str) -> List[Dict[str, str]]:
+        """Fetch project tags for version matching."""
+        return self.client.get_tags(owner, repo) or []

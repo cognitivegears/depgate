@@ -60,49 +60,72 @@ class ProviderValidationService:  # pylint: disable=too-few-public-methods
         if contributors is not None:
             mp.repo_contributors = contributors
 
-        # Get releases or tags and attempt version matching
-        artifacts = []
+        # Attempt version matching across releases, then fall back to tags if no match
+        m = matcher or VersionMatcher()
+
+        release_result = None
         try:
             releases = provider.get_releases(ref.owner, ref.repo)
-            if releases:
-                artifacts = releases
         except Exception:
-            artifacts = []
+            releases = None
 
-        # Fallback to tags when releases are empty or unavailable
-        if not artifacts:
-            get_tags = getattr(provider, "get_tags", None)
+        if releases:
+            artifacts_list: List[Dict[str, Any]] = releases if isinstance(releases, list) else []
+            if not artifacts_list:
+                try:
+                    artifacts_list = list(releases)  # type: ignore[arg-type]
+                except Exception:
+                    artifacts_list = []
+            release_result = m.find_match(version, artifacts_list)
+            # Maintain backward compatibility: artifact should only contain name field
+            if (
+                release_result
+                and isinstance(release_result, dict)
+                and release_result.get('artifact')
+                and isinstance(release_result['artifact'], dict)
+            ):
+                simplified_artifact = {'name': release_result.get('tag_or_release', '')}
+                release_result = release_result.copy()
+                release_result['artifact'] = simplified_artifact
+
+        # If no match from releases (or none available), try tags even when releases exist
+        tag_result = None
+        get_tags = getattr(provider, "get_tags", None)
+        if (not release_result) or (not release_result.get('matched', False)):
             if callable(get_tags):
                 try:
                     tags = get_tags(ref.owner, ref.repo)
                     if tags:
-                        artifacts = tags
+                        artifacts_list: List[Dict[str, Any]] = tags if isinstance(tags, list) else []
+                        if not artifacts_list:
+                            try:
+                                artifacts_list = list(tags)  # type: ignore[arg-type]
+                            except Exception:
+                                artifacts_list = []
+                        tag_result = m.find_match(version, artifacts_list)
+                        # Maintain backward compatibility: artifact should only contain name field
+                        if (
+                            tag_result
+                            and isinstance(tag_result, dict)
+                            and tag_result.get('artifact')
+                            and isinstance(tag_result['artifact'], dict)
+                        ):
+                            simplified_artifact = {'name': tag_result.get('tag_or_release', '')}
+                            tag_result = tag_result.copy()
+                            tag_result['artifact'] = simplified_artifact
                 except Exception:
                     pass
 
-        if artifacts:
-            # Ensure correct typing for matcher
-            artifacts_list: List[Dict[str, Any]] = artifacts if isinstance(artifacts, list) else []
-            if not artifacts_list:
-                try:
-                    artifacts_list = list(artifacts)  # type: ignore[arg-type]
-                except Exception:
-                    artifacts_list = []
-            m = matcher or VersionMatcher()
-            match_result = m.find_match(version, artifacts_list)
-            # Maintain backward compatibility: artifact should only contain name field
-            if (
-                match_result
-                and isinstance(match_result, dict)
-                and match_result.get('artifact')
-                and isinstance(match_result['artifact'], dict)
-            ):
-                # Create simplified artifact with just the name for backward compatibility
-                simplified_artifact = {
-                    'name': match_result.get('tag_or_release', '')
-                }
-                match_result = match_result.copy()
-                match_result['artifact'] = simplified_artifact
-            mp.repo_version_match = match_result
+        # Choose final result: prefer a matched release, else matched tag, else last attempted result
+        final_result = None
+        if release_result and release_result.get('matched', False):
+            final_result = release_result
+        elif tag_result:
+            final_result = tag_result
+        elif release_result:
+            final_result = release_result
+
+        if final_result is not None:
+            mp.repo_version_match = final_result
 
         return True
