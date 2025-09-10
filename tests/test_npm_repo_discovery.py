@@ -552,4 +552,75 @@ class TestEnrichWithRepo:
         assert mp.repo_errors is not None
         assert len(mp.repo_errors) == 1
         assert mp.repo_errors[0]['error_type'] == 'network'
+        assert mp.repo_errors[0]['error_type'] == 'network'
+        assert 'API rate limited' in mp.repo_errors[0]['message']
+
+    @patch('registry.npm.normalize_repo_url')
+    @patch('registry.npm.GitHubClient')
+    def test_enrich_with_repo_exact_mode_unsatisfiable_version(self, mock_github_client, mock_normalize):
+        """Test enrichment guard for exact mode with unsatisfiable version."""
+        # Setup mocks
+        mock_repo_ref = MagicMock()
+        mock_repo_ref.normalized_url = 'https://github.com/owner/repo'
+        mock_repo_ref.host = 'github'
+        mock_repo_ref.owner = 'owner'
+        mock_repo_ref.repo = 'repo'
+        mock_normalize.return_value = mock_repo_ref
+
+        mock_client = MagicMock()
+        mock_client.get_repo.return_value = {
+            'stargazers_count': 1000,
+            'pushed_at': '2023-01-01T00:00:00Z'
+        }
+        mock_client.get_contributors_count.return_value = 50
+        mock_client.get_releases.return_value = [
+            {'name': 'v1.0.0', 'tag_name': 'v1.0.0'}
+        ]
+        mock_client.get_tags.return_value = [
+            {'name': 'v1.0.0', 'tag_name': 'v1.0.0'}
+        ]
+        mock_github_client.return_value = mock_client
+
+        with patch('registry.npm.VersionMatcher') as mock_matcher_class:
+            mock_matcher = MagicMock()
+            # Matcher should receive empty string when version is unsatisfiable
+            mock_matcher.find_match.return_value = {
+                'matched': False,
+                'match_type': None,
+                'artifact': None,
+                'tag_or_release': None
+            }
+            mock_matcher_class.return_value = mock_matcher
+
+            # Create MetaPackage with exact mode and no resolved version
+            mp = MetaPackage('testpackage')
+            mp.resolution_mode = 'exact'
+            mp.resolved_version = None  # Version not resolved
+
+            packument = {
+                'dist-tags': {'latest': '1.0.0'},
+                'versions': {
+                    '1.0.0': {
+                        'repository': 'git+https://github.com/owner/repo.git'
+                    }
+                }
+            }
+
+            # Call function
+            _enrich_with_repo(mp, packument)
+
+            # Assertions
+            assert mp.repo_present_in_registry is True
+            assert mp.repo_resolved is True
+            assert mp.repo_exists is True
+            assert mp.repo_stars == 1000
+            assert mp.repo_version_match == {
+                'matched': False,
+                'match_type': None,
+                'artifact': None,
+                'tag_or_release': None
+            }
+
+            # Verify that matcher was called with empty string (not None)
+            mock_matcher.find_match.assert_called_once_with('', mock_client.get_releases.return_value)
         assert 'API rate limited' in mp.repo_errors[0]['message']

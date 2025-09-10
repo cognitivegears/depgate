@@ -43,7 +43,7 @@ class TestVersionMatcher:
         result = matcher.find_match("v1.0.0", artifacts)
         assert result["matched"] is True
         assert result["match_type"] == "exact"
-        assert result["tag_or_release"] == "v1.0.0"
+        assert result["tag_or_release"] == "1.0.0"
 
     def test_find_match_v_prefix(self):
         """Test v-prefix version match."""
@@ -143,22 +143,70 @@ class TestVersionMatcher:
         """Test version extraction from different artifact formats."""
         matcher = VersionMatcher()
 
-        # Test name field
+        # Test name field - normalized to bare version
         artifact1 = {"name": "v1.0.0"}
-        assert matcher._get_version_from_artifact(artifact1) == "v1.0.0"
+        assert matcher._get_version_from_artifact(artifact1) == "1.0.0"
 
-        # Test tag_name field
+        # Test tag_name field - normalized to bare version
         artifact2 = {"tag_name": "v1.0.0"}
-        assert matcher._get_version_from_artifact(artifact2) == "v1.0.0"
+        assert matcher._get_version_from_artifact(artifact2) == "1.0.0"
 
         # Test version field
         artifact3 = {"version": "1.0.0"}
         assert matcher._get_version_from_artifact(artifact3) == "1.0.0"
 
-        # Test ref field
+        # Test ref field - normalized to bare version
         artifact4 = {"ref": "refs/tags/v1.0.0"}
-        assert matcher._get_version_from_artifact(artifact4) == "refs/tags/v1.0.0"
+        assert matcher._get_version_from_artifact(artifact4) == "1.0.0"
+
+        # Test monorepo tag format
+        artifact5 = {"tag_name": "react-router@7.8.2"}
+        assert matcher._get_version_from_artifact(artifact5) == "7.8.2"
+
+        # Test hyphen form
+        artifact6 = {"name": "react-router-7.8.2"}
+        assert matcher._get_version_from_artifact(artifact6) == "7.8.2"
+
+        # Test underscore form
+        artifact7 = {"name": "react_router_7.8.2"}
+        assert matcher._get_version_from_artifact(artifact7) == "7.8.2"
+
+        # Test ref with monorepo
+        artifact8 = {"ref": "refs/tags/react-router@7.8.2"}
+        assert matcher._get_version_from_artifact(artifact8) == "7.8.2"
 
         # Test empty artifact
-        artifact5 = {}
-        assert matcher._get_version_from_artifact(artifact5) == ""
+        artifact9 = {}
+        assert matcher._get_version_from_artifact(artifact9) == ""
+
+    def test_find_match_monorepo_artifacts(self):
+        """Test matching with monorepo-style artifact names."""
+        matcher = VersionMatcher()
+        artifacts = [
+            {"name": "react-router@7.8.2", "tag_name": "react-router@7.8.2"},
+            {"name": "react-router-7.8.2", "tag_name": "react-router-7.8.2"},
+            {"name": "react_router_7.8.2", "tag_name": "react_router_7.8.2"}
+        ]
+
+        result = matcher.find_match("7.8.2", artifacts)
+        assert result["matched"] is True
+        assert result["match_type"] == "exact"
+        assert result["tag_or_release"] == "7.8.2"
+
+    def test_find_match_normalized_v_prefix(self):
+        """Test that v-prefix artifacts are normalized for matching."""
+        matcher = VersionMatcher()
+        artifacts = [
+            {"name": "v1.0.0", "tag_name": "v1.0.0"}
+        ]
+
+        # Should match both "1.0.0" and "v1.0.0" queries
+        result1 = matcher.find_match("1.0.0", artifacts)
+        assert result1["matched"] is True
+        assert result1["match_type"] == "exact"
+        assert result1["tag_or_release"] == "1.0.0"
+
+        result2 = matcher.find_match("v1.0.0", artifacts)
+        assert result2["matched"] is True
+        assert result2["match_type"] == "exact"
+        assert result2["tag_or_release"] == "1.0.0"

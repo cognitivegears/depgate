@@ -221,4 +221,39 @@ class TestNpmVersionResolver:
         req = create_request("nonexistent-package")
         candidates = resolver.fetch_candidates(req)
 
-        assert candidates == []
+    @patch('src.versioning.resolvers.npm.get_json')
+    def test_latest_mode_excludes_prereleases(self, mock_get_json, resolver):
+        """Test latest mode excludes prerelease versions and selects highest stable."""
+        mock_get_json.return_value = (200, {}, {
+            "versions": {
+                "1.0.0": {},
+                "2.0.0-rc.1": {},
+                "1.9.9": {},
+                "2.0.0-beta.2": {}
+            }
+        })
+
+        req = create_request("lodash")  # No spec = latest
+        version, count, error = resolver.pick(req, ["1.0.0", "2.0.0-rc.1", "1.9.9", "2.0.0-beta.2"])
+
+        assert version == "1.9.9"  # Highest stable version
+        assert count == 4
+        assert error is None
+
+    @patch('src.versioning.resolvers.npm.get_json')
+    def test_latest_mode_only_prereleases(self, mock_get_json, resolver):
+        """Test latest mode when only prerelease versions are available."""
+        mock_get_json.return_value = (200, {}, {
+            "versions": {
+                "2.0.0-rc.1": {},
+                "2.0.0-beta.2": {},
+                "3.0.0-alpha.1": {}
+            }
+        })
+
+        req = create_request("lodash")  # No spec = latest
+        version, count, error = resolver.pick(req, ["2.0.0-rc.1", "2.0.0-beta.2", "3.0.0-alpha.1"])
+
+        assert version is None
+        assert count == 3
+        assert error == "No stable versions available"
