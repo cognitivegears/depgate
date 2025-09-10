@@ -16,14 +16,37 @@
 #
 # HTTP behavior
 http:
-  # Per-request timeout in seconds for provider and registry HTTP calls.
-  request_timeout: 30
-  # Maximum retry attempts on transient failures (>= 0). Keep modest for CI.
-  retry_max: 3
-  # Base delay (seconds) for exponential backoff with jitter between retries.
-  retry_base_delay_sec: 0.3
-  # In-memory cache TTL for HTTP GETs (seconds). Lower to refresh more often.
-  cache_ttl_sec: 300
+   # Per-request timeout in seconds for provider and registry HTTP calls.
+   request_timeout: 30
+   # Maximum retry attempts on transient failures (>= 0). Keep modest for CI.
+   retry_max: 3
+   # Base delay (seconds) for exponential backoff with jitter between retries.
+   retry_base_delay_sec: 0.3
+   # In-memory cache TTL for HTTP GETs (seconds). Lower to refresh more often.
+   cache_ttl_sec: 300
+
+   # Rate limiting and retry policy configuration
+   rate_policy:
+      # Default policy applied to all services (fail-fast to preserve existing behavior)
+      default:
+         max_retries: 0            # default fail-fast; zero retries
+         initial_backoff_sec: 0.5
+         multiplier: 2.0
+         jitter_pct: 0.2
+         max_backoff_sec: 60.0
+         total_retry_time_cap_sec: 120.0
+         strategy: "exponential_jitter"
+         respect_retry_after: true
+         respect_reset_headers: true
+         allow_non_idempotent_retry: false
+      # Per-service overrides (keyed by hostname)
+      per_service:
+         "api.github.com":
+            max_retries: 2
+            strategy: "exponential_jitter"
+         "gitlab.com":
+            max_retries: 2
+            strategy: "exponential_jitter"
 
 # Public registry endpoints. Override to point at mirrors or self-hosted registries.
 registry:
