@@ -9,7 +9,7 @@ Feature: NPM single package (compare and heuristics)
       | -t  | npm   |
       | -p  | <pkg> |
       | -a  | <level> |
-      | -j  | <json_path> |
+      | -o  | <json_path> |
     Then the process exits with code <exit_code>
     And the JSON output at "<json_path>" contains 1 record for "<pkg>" with:
       | field         | expected |
@@ -27,7 +27,7 @@ Feature: NPM single package (compare and heuristics)
       | -t  | npm   |
       | -p  | <pkg> |
       | -a  | heur  |
-      | -j  | <json_path> |
+      | -o  | <json_path> |
     Then the process exits with code 0
     And the JSON output at "<json_path>" record for "<pkg>" has risk flags:
       | field            | expected |

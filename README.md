@@ -36,12 +36,12 @@ From PyPI (after publishing):
 
 - Single package (npm): `depgate -t npm -p left-pad`
 - Scan a repo (Maven): `depgate -t maven -d ./tests`
-- Heuristics + JSON: `depgate -t pypi -a heur -j out.json`
+- Heuristics + JSON: `depgate -t pypi -a heur -o out.json`
 
 With uv during development:
 
 - `uv run depgate -t npm -d ./tests`
-- `uv run depgate -t pypi -a heur -j out.json`
+- `uv run depgate -t pypi -a heur -o out.json`
 
 ## Inputs and Scanning
 
@@ -93,18 +93,18 @@ See detailed design in [docs/repository-integration.md](docs/repository-integrat
 ## Output
 
 - Default: logs to stdout (respecting `--loglevel` and `--quiet`)
-- CSV: `-c, --csv <path>`
-  - Columns: `Package Name, Package Type, Exists on External, Org/Group ID, Score, Version Count, Timestamp, Risk: Missing, Risk: Low Score, Risk: Min Versions, Risk: Too New, Risk: Any Risks, [policy fields], [license fields]`
-- JSON: `-j, --json <path)`
-  - Array of objects with keys: `packageName, orgId, packageType, exists, score, versionCount, createdTimestamp, risk.{hasRisk,isMissing,hasLowScore,minVersions,isNew}, policy.{decision,violated_rules,evaluated_metrics}, license.{id,available,source}`
+- File export: `-o, --output <path>` and `-f, --format {json,csv}`
+  - If `--format` is omitted, inferred from `--output` extension (`.json` / `.csv`), otherwise defaults to JSON.
+  - CSV columns: `Package Name, Package Type, Exists on External, Org/Group ID, Score, Version Count, Timestamp, Risk: Missing, Risk: Low Score, Risk: Min Versions, Risk: Too New, Risk: Any Risks, [policy fields], [license fields]`
+  - JSON schema: objects with keys: `packageName, orgId, packageType, exists, score, versionCount, createdTimestamp, risk.{hasRisk,isMissing,hasLowScore,minVersions,isNew}, policy.{decision,violated_rules,evaluated_metrics}, license.{id,available,source}`
 
 ## CLI Options (summary)
 
 - `-t, --type {npm,pypi,maven}`: package manager
 - `-p/‑d/‑l`: input source (mutually exclusive)
 - `-a, --analysis {compare,comp,heuristics,heur,policy,pol}`: analysis level
-- `-c/‑j`: CSV/JSON export paths
-- Policy: `--policy-config <path>` (YAML/JSON/YML config file), `--set KEY=VALUE` (dot-path overrides)
+- Output: `-o, --output <path>` and `-f, --format {json,csv}`
+- Config: `-c, --config <path>` (YAML/JSON/YML), `--set KEY=VALUE` (dot-path overrides)
 - Logging: `--loglevel {DEBUG,INFO,WARNING,ERROR,CRITICAL}`, `--logfile <path>`, `-q, --quiet`
 - Scanning: `-r, --recursive` (for `--directory` scans)
 - CI: `--error-on-warnings` (non‑zero exit if risks detected)
@@ -167,7 +167,7 @@ Heuristics weights are non‑negative numbers expressing relative priority for e
 
 ## Policy Configuration
 
-The `policy` analysis level uses declarative configuration to evaluate allow/deny rules against package facts. Policy configuration can be provided via `--policy-config` (YAML/JSON/YML file) and overridden with `--set KEY=VALUE` options.
+The `policy` analysis level uses declarative configuration to evaluate allow/deny rules against package facts. Policy configuration can be provided via `-c, --config` (YAML/JSON/YML file) and overridden with `--set KEY=VALUE` options.
 
 ### Policy Configuration Schema
 

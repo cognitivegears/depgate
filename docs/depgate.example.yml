@@ -98,7 +98,7 @@ rtd:
 # Notes:
 # - Unknown keys are ignored safely.
 # - You can override individual values via CLI: --set policy.metrics.heuristic_score.min=0.8
-# - You can load an external file via --policy-config /path/to/policy.yml
+# - You can load an external file via --config /path/to/policy.yml
 policy:
   # Execution behavior for rule evaluation
   fail_fast: false   # when true, stops at the first violated rule
@@ -167,6 +167,6 @@ policy:
 
 # CLI examples:
 #   Load this file:
-#     depgate -t npm -p left-pad -a policy --policy-config ./depgate.example.yml
+#     depgate -t npm -p left-pad -a policy --config ./depgate.example.yml
 #   Override a metric threshold via CLI:
 #     depgate -t npm -p left-pad -a policy --set policy.metrics.heuristic_score.min=0.8

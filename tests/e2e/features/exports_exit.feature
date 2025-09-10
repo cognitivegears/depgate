@@ -9,7 +9,7 @@ Feature: Exports and exit codes
       | -t  | npm   |
       | -p  | shortver-pkg |
       | -a  | heur  |
-      | -j  | <json_path> |
+      | -o  | <json_path> |
       | --error-on-warnings | true |
     Then the process exits with code 3
     And the JSON output at "<json_path>" record for "shortver-pkg" has risk flags:

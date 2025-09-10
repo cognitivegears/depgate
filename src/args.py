@@ -36,15 +36,17 @@ def parse_args():
                             help="Name a single package.",
                             action="append", type=str)
 
-    output_group = parser.add_mutually_exclusive_group(required=False)
-    output_group.add_argument("-c", "--csv",
-        dest="CSV",
-        help="Export packages properties onto CSV file",
-                    action="store", type=str)
-    output_group.add_argument("-j", "--json",
-        dest="JSON",
-        help="Export packages properties onto JSON file",
-        action="store", type=str)
+    parser.add_argument("-o", "--output",
+                        dest="OUTPUT",
+                        help="Path to output file (JSON or CSV)",
+                        action="store",
+                        type=str)
+    parser.add_argument("-f", "--format",
+                        dest="OUTPUT_FORMAT",
+                        help="Output format (json or csv). If not specified, inferred from --output extension; defaults to json.",
+                        action="store",
+                        type=str.lower,
+                        choices=['json', 'csv'])
 
     parser.add_argument("-a", "--analysis",
         dest="LEVEL",
@@ -76,10 +78,10 @@ def parse_args():
                         help="Do not output to console.",
                         action="store_true")
 
-    # Policy-specific arguments
-    parser.add_argument("--policy-config",
-                        dest="POLICY_CONFIG",
-                        help="Path to policy configuration file (YAML, YML, or JSON)",
+    # Config file (general)
+    parser.add_argument("-c", "--config",
+                        dest="CONFIG",
+                        help="Path to configuration file (YAML, YML, or JSON)",
                         action="store",
                         type=str)
     parser.add_argument("--set",

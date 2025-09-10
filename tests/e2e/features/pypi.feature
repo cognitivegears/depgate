@@ -9,7 +9,7 @@ Feature: PyPI single package and requirements scan
       | -t  | pypi  |
       | -p  | <pkg> |
       | -a  | heur  |
-      | -j  | <json_path> |
+      | -o  | <json_path> |
     Then the process exits with code 0
     And the JSON output at "<json_path>" record for "<pkg>" has fields:
       | field            | expected |
@@ -36,7 +36,7 @@ Feature: PyPI single package and requirements scan
       | -t  | pypi  |
       | -d  | <tmp_dir> |
       | -a  | heur  |
-      | -j  | <json_path> |
+      | -o  | <json_path> |
     Then the process exits with code 0
     And the JSON output at "<json_path>" contains records for:
       | packageName |

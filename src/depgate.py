@@ -686,10 +686,22 @@ def main():
     run_analysis(args.LEVEL, args)
 
     # OUTPUT
-    if args.CSV:
-        export_csv(metapkg.instances, args.CSV)
-    if args.JSON:
-        export_json(metapkg.instances, args.JSON)
+    if getattr(args, "OUTPUT", None):
+        fmt = None
+        if getattr(args, "OUTPUT_FORMAT", None):
+            fmt = args.OUTPUT_FORMAT.lower()
+        else:
+            lower = args.OUTPUT.lower()
+            if lower.endswith(".json"):
+                fmt = "json"
+            elif lower.endswith(".csv"):
+                fmt = "csv"
+        if fmt is None:
+            fmt = "json"
+        if fmt == "csv":
+            export_csv(metapkg.instances, args.OUTPUT)
+        else:
+            export_json(metapkg.instances, args.OUTPUT)
 
     # Check if any package was not found
     has_risk = any(x.has_risk() for x in metapkg.instances)

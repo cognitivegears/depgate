@@ -17,7 +17,7 @@ Feature: NPM directory scan
       | -t  | npm   |
       | -d  | <tmp_dir> |
       | -a  | heur  |
-      | -j  | <json_path> |
+      | -o  | <json_path> |
     Then the process exits with code 0
     And the JSON output at "<json_path>" contains records for:
       | packageName |

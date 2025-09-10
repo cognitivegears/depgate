@@ -10,7 +10,7 @@ Feature: Maven single and pom scan
       | -t  | maven |
       | -l  | <list_file> |
       | -a  | heur  |
-      | -j  | <json_path> |
+      | -o  | <json_path> |
     Then the process exits with code 0
     And the JSON output at "<json_path>" contains 1 record for "<artifact>" with:
       | field            | expected |
@@ -42,7 +42,7 @@ Feature: Maven single and pom scan
       | -t  | maven |
       | -d  | <tmp_dir> |
       | -a  | heur  |
-      | -j  | <json_path> |
+      | -o  | <json_path> |
     Then the process exits with code 0
     And the JSON output at "<json_path>" contains records for:
       | packageName |
