@@ -66,6 +66,7 @@ tests/test_logging_utils_redaction.py
 tests/test_maven_repo_discovery.py
 tests/test_npm_repo_discovery.py
 tests/test_parse_tokens.py
+tests/test_provider_validation_matching.py
 tests/test_pypi_repo_discovery.py
 tests/test_repo_url_normalize.py
 tests/test_resolver_maven.py

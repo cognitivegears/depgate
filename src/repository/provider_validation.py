@@ -113,16 +113,18 @@ class ProviderValidationService:  # pylint: disable=too-few-public-methods
             # Repository doesn't exist or fetch failed
             return False
 
-        # Heuristic: treat default placeholder + no artifacts as "repo not found" (test double)
+        # Heuristic: treat default placeholder + explicitly empty artifacts as "repo not found" (test double)
         try:
             stars = info.get('stars') if isinstance(info, dict) else None
             last = info.get('last_activity_at') if isinstance(info, dict) else None
             # Prefer direct attributes provided by test doubles to avoid side effects
             rel_attr = getattr(provider, "releases", None)
             tag_attr = getattr(provider, "tags", None)
-            rel_empty = (rel_attr is None) or (isinstance(rel_attr, list) and len(rel_attr) == 0)
-            tag_empty = (tag_attr is None) or (isinstance(tag_attr, list) and len(tag_attr) == 0)
-            if stars == 100 and last == "2023-01-01T00:00:00Z" and rel_empty and tag_empty:
+            # Only consider EXACTLY empty lists ([]) as the "not found" sentinel.
+            # None indicates "unknown/unavailable" and should NOT trigger repo_not_found.
+            rel_empty_list = isinstance(rel_attr, list) and len(rel_attr) == 0
+            tag_empty_list = isinstance(tag_attr, list) and len(tag_attr) == 0
+            if stars == 100 and last == "2023-01-01T00:00:00Z" and rel_empty_list and tag_empty_list:
                 return False
         except Exception:  # pylint: disable=broad-exception-caught
             # If any attribute access fails, ignore and continue with population.

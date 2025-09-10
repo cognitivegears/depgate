@@ -1,6 +1,15 @@
 """Constants used in the project."""
 
 from enum import Enum
+import os
+import platform
+from typing import Any, Dict, Optional
+
+# Optional YAML support (config file). If unavailable, config loading is skipped gracefully.
+try:
+    import yaml  # type: ignore
+except Exception:  # pylint: disable=broad-exception-caught
+    yaml = None  # type: ignore[assignment]
 
 
 class ExitCodes(Enum):
@@ -71,3 +80,142 @@ class Constants:  # pylint: disable=too-few-public-methods
     HTTP_RETRY_MAX = 3
     HTTP_RETRY_BASE_DELAY_SEC = 0.3
     HTTP_CACHE_TTL_SEC = 300
+
+    # Heuristics weighting defaults (used by analysis.compute_final_score)
+    HEURISTICS_WEIGHTS_DEFAULT = {
+        "base_score": 0.30,
+        "repo_version_match": 0.30,
+        "repo_stars": 0.15,
+        "repo_contributors": 0.10,
+        "repo_last_activity": 0.10,
+        "repo_present_in_registry": 0.05,
+    }
+    # Runtime copy that may be overridden via YAML configuration
+    HEURISTICS_WEIGHTS = dict(HEURISTICS_WEIGHTS_DEFAULT)
+
+# ----------------------------
+# YAML configuration overrides
+# ----------------------------
+
+def _first_existing(paths: list[str]) -> Optional[str]:
+   """Return first existing file path from list or None."""
+   for p in paths:
+       if p and os.path.isfile(os.path.expanduser(p)):
+           return os.path.expanduser(p)
+   return None
+
+def _candidate_config_paths() -> list[str]:
+   """Compute candidate config paths in priority order."""
+   paths: list[str] = []
+   # Highest priority: explicit env override
+   env_path = os.environ.get("DEPGATE_CONFIG")
+   if env_path:
+       paths.append(env_path)
+
+   # Current directory
+   paths.extend([
+       "./depgate.yml",
+       "./.depgate.yml",
+   ])
+
+   # XDG base (Linux/Unix)
+   xdg = os.environ.get("XDG_CONFIG_HOME")
+   if xdg:
+       paths.append(os.path.join(xdg, "depgate", "depgate.yml"))
+   else:
+       paths.append(os.path.join(os.path.expanduser("~"), ".config", "depgate", "depgate.yml"))
+
+   # macOS Application Support
+   if platform.system().lower() == "darwin":
+       paths.append(os.path.join(os.path.expanduser("~"), "Library", "Application Support", "depgate", "depgate.yml"))
+
+   # Windows APPDATA
+   if os.name == "nt":
+       appdata = os.environ.get("APPDATA")
+       if appdata:
+           paths.append(os.path.join(appdata, "depgate", "depgate.yml"))
+
+   return paths
+
+def _load_yaml_config() -> Dict[str, Any]:
+   """Load YAML config from first existing candidate path; returns {} when not found or YAML unavailable."""
+   if yaml is None:  # PyYAML not installed
+       return {}
+   cfg_path = _first_existing(_candidate_config_paths())
+   if not cfg_path:
+       return {}
+   try:
+       with open(cfg_path, "r", encoding="utf-8") as fh:
+           data = yaml.safe_load(fh) or {}
+           if isinstance(data, dict):
+               return data
+           return {}
+   except Exception:  # pylint: disable=broad-exception-caught
+       return {}
+
+def _apply_config_overrides(cfg: Dict[str, Any]) -> None:
+   """Apply selected overrides from YAML config onto Constants."""
+   http = cfg.get("http", {}) or {}
+   registry = cfg.get("registry", {}) or {}
+   provider = cfg.get("provider", {}) or {}
+   rtd = cfg.get("rtd", {}) or {}
+
+   # HTTP settings
+   try:
+       Constants.REQUEST_TIMEOUT = int(http.get("request_timeout", Constants.REQUEST_TIMEOUT))  # type: ignore[attr-defined]
+   except Exception:  # pylint: disable=broad-exception-caught
+       pass
+   try:
+       Constants.HTTP_RETRY_MAX = int(http.get("retry_max", Constants.HTTP_RETRY_MAX))  # type: ignore[attr-defined]
+   except Exception:  # pylint: disable=broad-exception-caught
+       pass
+   try:
+       Constants.HTTP_RETRY_BASE_DELAY_SEC = float(http.get("retry_base_delay_sec", Constants.HTTP_RETRY_BASE_DELAY_SEC))  # type: ignore[attr-defined]
+   except Exception:  # pylint: disable=broad-exception-caught
+       pass
+   try:
+       Constants.HTTP_CACHE_TTL_SEC = int(http.get("cache_ttl_sec", Constants.HTTP_CACHE_TTL_SEC))  # type: ignore[attr-defined]
+   except Exception:  # pylint: disable=broad-exception-caught
+       pass
+
+   # Registry URLs
+   Constants.REGISTRY_URL_PYPI = registry.get("pypi_base_url", Constants.REGISTRY_URL_PYPI)  # type: ignore[attr-defined]
+   Constants.REGISTRY_URL_NPM = registry.get("npm_base_url", Constants.REGISTRY_URL_NPM)  # type: ignore[attr-defined]
+   Constants.REGISTRY_URL_NPM_STATS = registry.get("npm_stats_url", Constants.REGISTRY_URL_NPM_STATS)  # type: ignore[attr-defined]
+   Constants.REGISTRY_URL_MAVEN = registry.get("maven_search_url", Constants.REGISTRY_URL_MAVEN)  # type: ignore[attr-defined]
+
+   # Provider URLs and paging
+   Constants.GITHUB_API_BASE = provider.get("github_api_base", Constants.GITHUB_API_BASE)  # type: ignore[attr-defined]
+   Constants.GITLAB_API_BASE = provider.get("gitlab_api_base", Constants.GITLAB_API_BASE)  # type: ignore[attr-defined]
+   try:
+       Constants.REPO_API_PER_PAGE = int(provider.get("per_page", Constants.REPO_API_PER_PAGE))  # type: ignore[attr-defined]
+   except Exception:  # pylint: disable=broad-exception-caught
+       pass
+
+   # Heuristics weights (optional)
+   heuristics = cfg.get("heuristics", {}) or {}
+   weights_cfg = heuristics.get("weights", {}) or {}
+   if isinstance(weights_cfg, dict):
+       merged = dict(Constants.HEURISTICS_WEIGHTS_DEFAULT)  # type: ignore[attr-defined]
+       for key, default_val in Constants.HEURISTICS_WEIGHTS_DEFAULT.items():  # type: ignore[attr-defined]
+           try:
+               if key in weights_cfg:
+                   val = float(weights_cfg.get(key, default_val))
+                   if val >= 0.0:
+                       merged[key] = val
+           except Exception:  # pylint: disable=broad-exception-caught
+               # ignore invalid entries; keep default
+               pass
+       Constants.HEURISTICS_WEIGHTS = merged  # type: ignore[attr-defined]
+
+   # RTD
+   Constants.READTHEDOCS_API_BASE = rtd.get("api_base", Constants.READTHEDOCS_API_BASE)  # type: ignore[attr-defined]
+
+# Attempt to load and apply YAML configuration on import (no-op if unavailable)
+try:
+   _cfg = _load_yaml_config()
+   if _cfg:
+       _apply_config_overrides(_cfg)
+except Exception:  # pylint: disable=broad-exception-caught
+   # Never fail import due to config issues
+   pass

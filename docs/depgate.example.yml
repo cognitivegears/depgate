@@ -1,0 +1,70 @@
+# DepGate configuration example (YAML)
+#
+# Usage:
+# - Copy or rename this file to one of the supported locations:
+#   1) Absolute path via environment variable: DEPGATE_CONFIG=/absolute/path/depgate.yml
+#   2) Project root: ./depgate.yml (or ./.depgate.yml)
+#   3) XDG config: $XDG_CONFIG_HOME/depgate/depgate.yml or ~/.config/depgate/depgate.yml
+#   4) macOS: ~/Library/Application Support/depgate/depgate.yml
+#   5) Windows: %APPDATA%\depgate\depgate.yml
+# - Only keys you specify will override built-in defaults; others remain unchanged.
+# - Unknown keys are ignored safely.
+#
+# Authentication (not in YAML):
+# - To raise API rate limits, export environment variables:
+#   GITHUB_TOKEN and/or GITLAB_TOKEN (tokens are not read from this config file).
+#
+# HTTP behavior
+http:
+  # Per-request timeout in seconds for provider and registry HTTP calls.
+  request_timeout: 30
+  # Maximum retry attempts on transient failures (>= 0). Keep modest for CI.
+  retry_max: 3
+  # Base delay (seconds) for exponential backoff with jitter between retries.
+  retry_base_delay_sec: 0.3
+  # In-memory cache TTL for HTTP GETs (seconds). Lower to refresh more often.
+  cache_ttl_sec: 300
+
+# Public registry endpoints. Override to point at mirrors or self-hosted registries.
+registry:
+  # PyPI JSON API base URL (must end with a trailing slash).
+  pypi_base_url: "https://pypi.org/pypi/"
+  # npm packument base URL (must end with a trailing slash).
+  npm_base_url: "https://registry.npmjs.org/"
+  # npm package stats batch API endpoint.
+  npm_stats_url: "https://api.npms.io/v2/package/mget"
+  # Maven Central search API endpoint.
+  maven_search_url: "https://search.maven.org/solrsearch/select"
+
+# Provider (GitHub/GitLab) API endpoints and paging.
+provider:
+  # GitHub REST API base URL. Override for GitHub Enterprise Server (e.g., https://gh.example.com/api/v3).
+  github_api_base: "https://api.github.com"
+  # GitLab REST API base URL. Override for self-managed GitLab (e.g., https://gitlab.example.com/api/v4).
+  gitlab_api_base: "https://gitlab.com/api/v4"
+  # Default page size for provider list endpoints (releases/tags). Reasonable max is typically 100.
+  per_page: 100
+
+# Heuristics weighting: relative priorities for the normalized signals that form the final score.
+# Notes:
+# - Values must be non-negative numbers; they are re-normalized across metrics actually available for a package.
+# - Omitting a key uses the built-in default; unknown keys are ignored.
+# - See README “YAML configuration” for details.
+heuristics:
+  weights:
+    # Existing base score (0..1) present on the MetaPackage before repository signals.
+    base_score: 0.30
+    # Whether the published version matches a tag/release in the repository.
+    repo_version_match: 0.30
+    # Repository stars (log-scaled, saturates around ~1k stars).
+    repo_stars: 0.15
+    # Approximate contributors count (saturates around ~50).
+    repo_contributors: 0.10
+    # Recency of last activity (tiered thresholds).
+    repo_last_activity: 0.10
+    # Presence of a repository-like URL in registry metadata (treated as missing when only a non-repo homepage exists).
+    repo_present_in_registry: 0.05
+
+# Read the Docs API used for resolving documentation URLs to source repositories.
+rtd:
+  api_base: "https://readthedocs.org/api/v3"

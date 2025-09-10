@@ -258,24 +258,28 @@ def compute_final_score(mp):
     if norm['repo_present_in_registry'] == 0.0 and getattr(mp, 'repo_url_normalized', None) is None:
         norm['repo_present_in_registry'] = None
 
-    # Default weights
-    weights = {
+    # Configurable weights loaded from Constants (overridable via YAML)
+    weights = dict(getattr(Constants, "HEURISTICS_WEIGHTS", {
         'base_score': 0.30,
         'repo_version_match': 0.30,
         'repo_stars': 0.15,
         'repo_contributors': 0.10,
         'repo_last_activity': 0.10,
         'repo_present_in_registry': 0.05,
-    }
+    }))
 
     # Re-normalize weights to only those metrics that are present (norm != None)
     available = [k for k, v in norm.items() if v is not None]
-    total_w = sum(weights[k] for k in available) if available else 0.0
+    total_w = sum(weights.get(k, 0.0) for k in available) if available else 0.0
+    # Fallback to defaults if configured weights sum to 0 for available metrics
+    if total_w <= 0.0 and available:
+        fallback = dict(getattr(Constants, "HEURISTICS_WEIGHTS_DEFAULT", weights))
+        total_w = sum(fallback.get(k, 0.0) for k in available)
+        weights = fallback
     if total_w <= 0.0:
         breakdown = {k: {'raw': raw[k], 'normalized': v} for k, v in norm.items()}
         return 0.0, breakdown, {}
-
-    weights_used = {k: weights[k] / total_w for k in available}
+    weights_used = {k: (weights.get(k, 0.0) / total_w) for k in available}
 
     # Weighted sum ensures range [0,1] since each component is clamped and weights sum to 1
     final = 0.0
