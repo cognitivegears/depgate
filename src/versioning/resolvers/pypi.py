@@ -1,17 +1,16 @@
 """PyPI version resolver using PEP 440 versioning."""
 
-import json
 from typing import List, Optional, Tuple
 
 from packaging import version
-from packaging.specifiers import SpecifierSet
-import re
+from packaging.version import InvalidVersion
+from packaging.specifiers import SpecifierSet, InvalidSpecifier
 
 # Support being imported as either "src.versioning.resolvers.pypi" or "versioning.resolvers.pypi"
 try:
     from ...common.http_client import get_json
     from ...constants import Constants
-except Exception:  # ImportError or beyond-top-level when imported as "versioning..."
+except ImportError:
     from common.http_client import get_json
     from constants import Constants
 from ..models import Ecosystem, PackageRequest, ResolutionMode
@@ -81,34 +80,29 @@ class PyPIVersionResolver(VersionResolver):
         spec = req.requested_spec
         if spec.mode == ResolutionMode.EXACT:
             return self._pick_exact(spec.raw, candidates)
-        elif spec.mode == ResolutionMode.RANGE:
+        if spec.mode == ResolutionMode.RANGE:
             return self._pick_range(spec.raw, candidates, spec.include_prerelease)
-        else:
-            return None, len(candidates), "Unsupported resolution mode"
+        return None, len(candidates), "Unsupported resolution mode"
 
     def _pick_latest(self, candidates: List[str]) -> Tuple[Optional[str], int, Optional[str]]:
         """Pick the highest version from candidates."""
         if not candidates:
             return None, 0, "No versions available"
 
-        try:
-            # Parse and sort versions using packaging
-            parsed_versions = []
-            for v in candidates:
-                try:
-                    parsed_versions.append(version.Version(v))
-                except Exception:
-                    continue  # Skip invalid versions
+        # Parse and sort versions using packaging
+        parsed_versions = []
+        for v in candidates:
+            try:
+                parsed_versions.append(version.Version(v))
+            except InvalidVersion:
+                continue  # Skip invalid versions
 
-            if not parsed_versions:
-                return None, len(candidates), "No valid PEP 440 versions found"
+        if not parsed_versions:
+            return None, len(candidates), "No valid PEP 440 versions found"
 
-            # Sort and pick highest
-            parsed_versions.sort(reverse=True)
-            return str(parsed_versions[0]), len(candidates), None
-
-        except Exception as e:
-            return None, len(candidates), f"Version parsing error: {str(e)}"
+        # Sort and pick highest
+        parsed_versions.sort(reverse=True)
+        return str(parsed_versions[0]), len(candidates), None
 
     def _pick_exact(self, version_str: str, candidates: List[str]) -> Tuple[Optional[str], int, Optional[str]]:
         """Check if exact version exists in candidates."""
@@ -122,7 +116,7 @@ class PyPIVersionResolver(VersionResolver):
         """Apply PEP 440 specifier and pick highest matching version."""
         try:
             spec = SpecifierSet(spec_str)
-        except Exception as e:
+        except InvalidSpecifier as e:
             return None, len(candidates), f"Invalid PEP 440 spec: {str(e)}"
 
         matching_versions = []
@@ -134,7 +128,7 @@ class PyPIVersionResolver(VersionResolver):
                     continue
                 if ver in spec:
                     matching_versions.append(ver)
-            except Exception:
+            except InvalidVersion:
                 continue  # Skip invalid versions
 
         if not matching_versions:

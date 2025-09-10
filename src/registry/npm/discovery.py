@@ -3,7 +3,7 @@
 import logging
 from typing import Any, Dict, List, Tuple, Optional
 
-from common.logging_utils import extra_context, is_debug_enabled, Timer
+from common.logging_utils import extra_context, is_debug_enabled
 
 logger = logging.getLogger(__name__)
 

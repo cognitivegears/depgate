@@ -1,6 +1,6 @@
 """Version resolution service coordinating multiple ecosystem resolvers."""
 
-from typing import Dict, List, Sequence
+from typing import Dict, Sequence
 
 from .cache import TTLCache
 from .models import Ecosystem, PackageKey, PackageRequest, ResolutionMode, ResolutionResult

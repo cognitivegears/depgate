@@ -22,6 +22,89 @@ REPO_SCORE_MAX_STARS_CONTRIBUTORS = 4
 REPO_SCORE_CLAMP_MIN = -20
 REPO_SCORE_CLAMP_MAX = 30
 
+def _score_version_match(mp) -> int:
+    """Score version match: +positive if matched; -negative if repo exists but unmatched."""
+    vm = getattr(mp, "repo_version_match", None)
+    if not vm:
+        return 0
+    try:
+        if bool(vm.get("matched", False)):
+            return REPO_SCORE_VERSION_MATCH_POSITIVE
+        if getattr(mp, "repo_exists", None) is True:
+            return REPO_SCORE_VERSION_MATCH_NEGATIVE
+    except (AttributeError, TypeError):
+        return 0
+    return 0
+
+
+def _score_resolution(mp) -> int:
+    """Score repository resolution/existence signals."""
+    if not getattr(mp, "repo_resolved", False):
+        return 0
+    exists = getattr(mp, "repo_exists", None)
+    if exists is True:
+        return REPO_SCORE_RESOLVED_EXISTS_POSITIVE
+    if exists is False:
+        return REPO_SCORE_RESOLVED_NOT_EXISTS_NEGATIVE
+    if exists is None:
+        return REPO_SCORE_RESOLVED_UNKNOWN_POSITIVE
+    return 0
+
+
+def _score_presence(mp) -> int:
+    """Score presence-in-registry metadata."""
+    return REPO_SCORE_PRESENT_IN_REGISTRY if getattr(mp, "repo_present_in_registry", False) else 0
+
+
+def _score_activity(mp) -> int:
+    """Score last-activity recency."""
+    iso = getattr(mp, "repo_last_activity_at", None)
+    if not iso or not isinstance(iso, str):
+        return 0
+    try:
+        if iso.endswith("Z"):
+            activity_dt = datetime.fromisoformat(iso[:-1])
+        else:
+            activity_dt = datetime.fromisoformat(iso)
+        if activity_dt.tzinfo is None:
+            activity_dt = activity_dt.replace(tzinfo=timezone.utc)
+        now = datetime.now(timezone.utc)
+        days = (now - activity_dt).days
+        if days <= 90:
+            return REPO_SCORE_ACTIVITY_RECENT
+        if days <= 365:
+            return REPO_SCORE_ACTIVITY_MEDIUM
+        if days <= 730:
+            return REPO_SCORE_ACTIVITY_OLD
+        return REPO_SCORE_ACTIVITY_STALE
+    except (ValueError, AttributeError, TypeError):
+        return 0
+
+
+def _score_engagement(mp) -> int:
+    """Score stars and contributors on a log scale (bounded)."""
+    total = 0
+    stars = getattr(mp, "repo_stars", None)
+    if stars is not None:
+        try:
+            total += min(
+                REPO_SCORE_MAX_STARS_CONTRIBUTORS,
+                math.floor(math.log10(max(1, stars)) + 1),
+            )
+        except (ValueError, TypeError):
+            pass
+    contrib = getattr(mp, "repo_contributors", None)
+    if contrib is not None:
+        try:
+            total += min(
+                REPO_SCORE_MAX_STARS_CONTRIBUTORS,
+                math.floor(math.log10(max(1, contrib)) + 1),
+            )
+        except (ValueError, TypeError):
+            pass
+    return total
+
+
 def compute_repo_signals_score(mp):
     """Compute repository signals score contribution.
 
@@ -31,79 +114,20 @@ def compute_repo_signals_score(mp):
     Returns:
         float: Repository signals score contribution, clamped to [-20, +30]
     """
-    score = 0
-
-    # Version match scoring
-    if mp.repo_version_match:
-        if mp.repo_version_match.get('matched', False):
-            score += REPO_SCORE_VERSION_MATCH_POSITIVE
-        elif mp.repo_exists is True:
-            # Repo exists but no version match found after checking
-            score += REPO_SCORE_VERSION_MATCH_NEGATIVE
-
-    # Repository resolution and existence scoring
-    if mp.repo_resolved:
-        if mp.repo_exists is True:
-            score += REPO_SCORE_RESOLVED_EXISTS_POSITIVE
-        elif mp.repo_exists is False:
-            score += REPO_SCORE_RESOLVED_NOT_EXISTS_NEGATIVE
-        elif mp.repo_exists is None:
-            score += REPO_SCORE_RESOLVED_UNKNOWN_POSITIVE
-
-    # Present in registry scoring
-    if mp.repo_present_in_registry:
-        score += REPO_SCORE_PRESENT_IN_REGISTRY
-
-    # Last activity recency scoring
-    if mp.repo_last_activity_at:
-        try:
-            # Parse ISO 8601 timestamp
-            if isinstance(mp.repo_last_activity_at, str):
-                # Handle different ISO 8601 formats
-                if mp.repo_last_activity_at.endswith('Z'):
-                    activity_dt = datetime.fromisoformat(mp.repo_last_activity_at[:-1])
-                else:
-                    activity_dt = datetime.fromisoformat(mp.repo_last_activity_at)
-
-                # Ensure timezone awareness
-                if activity_dt.tzinfo is None:
-                    activity_dt = activity_dt.replace(tzinfo=timezone.utc)
-
-                now = datetime.now(timezone.utc)
-                days_since_activity = (now - activity_dt).days
-
-                if days_since_activity <= 90:
-                    score += REPO_SCORE_ACTIVITY_RECENT
-                elif days_since_activity <= 365:
-                    score += REPO_SCORE_ACTIVITY_MEDIUM
-                elif days_since_activity <= 730:
-                    score += REPO_SCORE_ACTIVITY_OLD
-                else:
-                    score += REPO_SCORE_ACTIVITY_STALE
-        except (ValueError, AttributeError):
-            # If parsing fails, treat as unknown (0 points)
-            pass
-
-    # Stars scoring (log scale)
-    if mp.repo_stars is not None:
-        stars_score = min(REPO_SCORE_MAX_STARS_CONTRIBUTORS,
-                         math.floor(math.log10(max(1, mp.repo_stars)) + 1))
-        score += stars_score
-
-    # Contributors scoring (log scale)
-    if mp.repo_contributors is not None:
-        contributors_score = min(REPO_SCORE_MAX_STARS_CONTRIBUTORS,
-                                math.floor(math.log10(max(1, mp.repo_contributors)) + 1))
-        score += contributors_score
-
-    # Clamp the final score
+    score = (
+        _score_version_match(mp)
+        + _score_resolution(mp)
+        + _score_presence(mp)
+        + _score_activity(mp)
+        + _score_engagement(mp)
+    )
     return max(REPO_SCORE_CLAMP_MIN, min(REPO_SCORE_CLAMP_MAX, score))
 
 def _clamp01(value):
     """Clamp a numeric value into [0.0, 1.0]."""
     try:
         v = float(value)
-    except Exception:
+    except (ValueError, TypeError):
         return 0.0
     return 0.0 if v < 0.0 else 1.0 if v > 1.0 else v
 
@@ -113,7 +137,7 @@ def _norm_base_score(base):
         return None
     try:
         return _clamp01(float(base))
-    except Exception:
+    except (ValueError, TypeError):
         return None
 
 def _norm_repo_stars(stars):
@@ -126,7 +150,7 @@ def _norm_repo_stars(stars):
             s = 0.0
         # Matches design: min(1.0, log10(stars+1)/3.0) — ~1.0 around 1k stars
         return min(1.0, max(0.0, math.log10(s + 1.0) / 3.0))
-    except Exception:
+    except (ValueError, TypeError):
         return None
 
 def _norm_repo_contributors(contrib):
@@ -138,7 +162,7 @@ def _norm_repo_contributors(contrib):
         if c < 0:
             c = 0.0
         return min(1.0, max(0.0, c / 50.0))
-    except Exception:
+    except (ValueError, TypeError):
         return None
 
 def _parse_iso_to_days(iso_ts):
@@ -153,7 +177,7 @@ def _parse_iso_to_days(iso_ts):
                 dt = dt.replace(tzinfo=timezone.utc)
             now = datetime.now(timezone.utc)
             return (now - dt).days
-    except Exception:
+    except (ValueError, TypeError):
         return None
     return None
 
@@ -184,7 +208,7 @@ def _norm_version_match(vm):
         return None
     try:
         return 1.0 if bool(vm.get('matched', False)) else 0.0
-    except Exception:
+    except (AttributeError, TypeError):
         return None
 
 def compute_final_score(mp):
@@ -248,7 +272,7 @@ def compute_final_score(mp):
     available = [k for k, v in norm.items() if v is not None]
     total_w = sum(weights[k] for k in available) if available else 0.0
     if total_w <= 0.0:
-        breakdown = {k: {'raw': raw[k], 'normalized': norm[k]} for k in norm.keys()}
+        breakdown = {k: {'raw': raw[k], 'normalized': v} for k, v in norm.items()}
         return 0.0, breakdown, {}
 
     weights_used = {k: weights[k] / total_w for k in available}
@@ -262,7 +286,7 @@ def compute_final_score(mp):
         final += float(val) * weights_used[k]
     final = _clamp01(final)
 
-    breakdown = {k: {'raw': raw[k], 'normalized': norm[k]} for k in norm.keys()}
+    breakdown = {k: {'raw': raw[k], 'normalized': v} for k, v in norm.items()}
     return final, breakdown, weights_used
 
 def run_min_analysis(pkgs):
@@ -316,9 +340,9 @@ def run_heuristics(pkgs):
                     try:
                         _matched = bool(x.repo_version_match.get('matched', False))
                         logging.info("%s.... repository version match: %s.", STG, "yes" if _matched else "no")
-                    except Exception:
+                    except (AttributeError, TypeError):
                         logging.info("%s.... repository version match: unavailable.", STG)
-            except Exception:
+            except (ValueError, TypeError):
                 # Do not break analysis on logging issues
                 pass
             test_score(x)

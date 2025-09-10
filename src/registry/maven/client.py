@@ -10,10 +10,9 @@ import xml.etree.ElementTree as ET
 from typing import List
 
 from constants import ExitCodes, Constants
-import common.http_client as http_client
-from common.logging_utils import extra_context, is_debug_enabled, Timer, safe_url, redact
+from common import http_client
+from common.logging_utils import extra_context, is_debug_enabled, Timer, safe_url
 
-from .enrich import _enrich_with_repo  # Not used here but kept for parity if needed later
 
 logger = logging.getLogger(__name__)
 

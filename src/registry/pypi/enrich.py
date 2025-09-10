@@ -1,6 +1,7 @@
 """PyPI enrichment: RTD resolution, repository discovery, validation, and version matching."""
 from __future__ import annotations
 
+import importlib
 import logging
 from typing import Any, Dict, List, Optional
 
@@ -14,7 +15,6 @@ from .discovery import _extract_repo_candidates
 logger = logging.getLogger(__name__)
 
 # Lazy module accessor to enable test monkeypatching without circular imports
-import importlib
 
 class _PkgAccessor:
     def __init__(self, module_name: str):
@@ -33,6 +33,56 @@ class _PkgAccessor:
 # Expose as module attribute for tests to patch like registry.pypi.enrich.pypi_pkg.normalize_repo_url
 pypi_pkg = _PkgAccessor('registry.pypi')
 
+
+def _resolve_pypi_candidate(candidate_url: str, provenance: Dict[str, Any]) -> tuple[str, Dict[str, Any]]:
+    """Resolve a candidate URL, attempting RTD resolution when applicable; returns (final_url, provenance)."""
+    final_url = candidate_url
+    if ("readthedocs.io" in candidate_url) or ("readthedocs.org" in candidate_url):
+        if is_debug_enabled(logger):
+            logger.debug("Attempting RTD resolution for docs URL", extra=extra_context(
+                event="decision", component="enrich", action="try_rtd_resolution",
+                target="rtd_url", outcome="attempting", package_manager="pypi"
+            ))
+        rtd_repo_url = pypi_pkg._maybe_resolve_via_rtd(candidate_url)  # type: ignore[attr-defined]  # pylint: disable=protected-access
+        if rtd_repo_url:
+            final_url = rtd_repo_url
+            provenance = dict(provenance)
+            provenance["rtd_slug"] = pypi_pkg.infer_rtd_slug(candidate_url)
+            provenance["rtd_source"] = "detail"
+            if is_debug_enabled(logger):
+                logger.debug("RTD resolution successful", extra=extra_context(
+                    event="decision", component="enrich", action="try_rtd_resolution",
+                    target="rtd_url", outcome="resolved", package_manager="pypi"
+                ))
+        else:
+            if is_debug_enabled(logger):
+                logger.debug("RTD resolution failed, using original URL", extra=extra_context(
+                    event="decision", component="enrich", action="try_rtd_resolution",
+                    target="rtd_url", outcome="failed", package_manager="pypi"
+                ))
+    return final_url, provenance
+
+
+def _version_for_match(mp, fallback_version: str) -> str:
+    """Compute version used for repo version match with exact-unsatisfiable guard."""
+    mode = str(getattr(mp, "resolution_mode", "")).lower()
+    if mode == "exact" and getattr(mp, "resolved_version", None) is None:
+        return ""
+    return getattr(mp, "resolved_version", None) or fallback_version
+
+
+def _provider_for_host(host: str):
+    """Create a provider instance for a normalized host or return None if unknown."""
+    ptype = map_host_to_type(host)
+    if ptype == ProviderType.UNKNOWN:
+        return None
+    injected = (
+        {"github": pypi_pkg.GitHubClient()}
+        if ptype == ProviderType.GITHUB
+        else {"gitlab": pypi_pkg.GitLabClient()}
+    )
+    # ProviderRegistry returns a ProviderClient compatible object
+    return ProviderRegistry.get(ptype, injected)  # type: ignore
 
 def _maybe_resolve_via_rtd(url: str) -> Optional[str]:
     """Resolve repository URL from Read the Docs URL if applicable.
@@ -63,12 +113,11 @@ def _maybe_resolve_via_rtd(url: str) -> Optional[str]:
                     outcome="resolved", package_manager="pypi"
                 ))
             return repo_url
-        else:
-            if is_debug_enabled(logger):
-                logger.debug("RTD resolution failed", extra=extra_context(
-                    event="function_exit", component="enrich", action="maybe_resolve_via_rtd",
-                    outcome="resolution_failed", package_manager="pypi"
-                ))
+        if is_debug_enabled(logger):
+            logger.debug("RTD resolution failed", extra=extra_context(
+                event="function_exit", component="enrich", action="maybe_resolve_via_rtd",
+                outcome="resolution_failed", package_manager="pypi"
+            ))
     else:
         if is_debug_enabled(logger):
             logger.debug("No RTD slug found", extra=extra_context(
@@ -79,7 +128,7 @@ def _maybe_resolve_via_rtd(url: str) -> Optional[str]:
     return None
 
 
-def _enrich_with_repo(mp, name: str, info: Dict[str, Any], version: str) -> None:
+def _enrich_with_repo(mp, _name: str, info: Dict[str, Any], version: str) -> None:
     """Enrich MetaPackage with repository discovery, validation, and version matching.
 
     Args:
@@ -110,32 +159,8 @@ def _enrich_with_repo(mp, name: str, info: Dict[str, Any], version: str) -> None
 
     # Try each candidate URL
     for candidate_url in candidates:
-        # Only try RTD resolution for RTD-hosted docs URLs
-        if ("readthedocs.io" in candidate_url) or ("readthedocs.org" in candidate_url):
-            if is_debug_enabled(logger):
-                logger.debug("Attempting RTD resolution for docs URL", extra=extra_context(
-                    event="decision", component="enrich", action="try_rtd_resolution",
-                    target="rtd_url", outcome="attempting", package_manager="pypi"
-                ))
-            rtd_repo_url = pypi_pkg._maybe_resolve_via_rtd(candidate_url)  # type: ignore[attr-defined]
-            if rtd_repo_url:
-                final_url = rtd_repo_url
-                provenance["rtd_slug"] = pypi_pkg.infer_rtd_slug(candidate_url)
-                provenance["rtd_source"] = "detail"  # Simplified
-                if is_debug_enabled(logger):
-                    logger.debug("RTD resolution successful", extra=extra_context(
-                        event="decision", component="enrich", action="try_rtd_resolution",
-                        target="rtd_url", outcome="resolved", package_manager="pypi"
-                    ))
-            else:
-                final_url = candidate_url
-                if is_debug_enabled(logger):
-                    logger.debug("RTD resolution failed, using original URL", extra=extra_context(
-                        event="decision", component="enrich", action="try_rtd_resolution",
-                        target="rtd_url", outcome="failed", package_manager="pypi"
-                    ))
-        else:
-            final_url = candidate_url
+        # Resolve candidate (handles RTD URLs)
+        final_url, provenance = _resolve_pypi_candidate(candidate_url, provenance)
 
         # Normalize the URL
         normalized = pypi_pkg.normalize_repo_url(final_url)
@@ -153,26 +178,16 @@ def _enrich_with_repo(mp, name: str, info: Dict[str, Any], version: str) -> None
         mp.repo_host = normalized.host
         mp.provenance = provenance
 
-        # Compute version used for repository version matching:
-        # If CLI requested an exact version but it was not resolved, pass empty string to disable matching
-        # while still allowing provider metadata (stars/contributors/activity) to populate.
-        mode = str(getattr(mp, "resolution_mode", "")).lower()
-        if mode == "exact" and getattr(mp, "resolved_version", None) is None:
-            version_for_match = ""
-        else:
-            # Prefer CLI-resolved version if available; fallback to provided 'version'
-            version_for_match = getattr(mp, "resolved_version", None) or version
+        # Compute version used for repository version matching (with exact guard)
+        version_for_match = _version_for_match(mp, version)
+        # Mark one-shot decay for repo_resolved when exact-unsatisfiable (empty version_for_match)
+        if version_for_match == "":
+            setattr(mp, "_unsat_exact_decay", True)
 
         # Validate with provider client
         try:
-            ptype = map_host_to_type(normalized.host)
-            if ptype != ProviderType.UNKNOWN:
-                injected = (
-                    {"github": pypi_pkg.GitHubClient()}
-                    if ptype == ProviderType.GITHUB
-                    else {"gitlab": pypi_pkg.GitLabClient()}
-                )
-                provider = ProviderRegistry.get(ptype, injected)  # type: ignore
+            provider = _provider_for_host(normalized.host)
+            if provider:
                 ProviderValidationService.validate_and_populate(
                     mp, normalized, version_for_match, provider, pypi_pkg.VersionMatcher()
                 )

@@ -8,7 +8,7 @@ import json
 import os
 import re
 import urllib.parse
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, Optional
 
 
 # Context variables for correlation and request IDs
@@ -78,7 +78,7 @@ def new_request_id() -> str:
     return request_id
 
 
-class correlation_context:
+class CorrelationContext:
     """Context manager for setting correlation ID."""
 
     def __init__(self, correlation_id: Optional[str] = None):
@@ -102,7 +102,7 @@ class correlation_context:
             _correlation_id_var.reset(self.token)
 
 
-class request_context:
+class RequestContext:
     """Context manager for setting request ID."""
 
     def __init__(self, request_id: Optional[str] = None):
@@ -125,6 +125,9 @@ class request_context:
         if self.token is not None:
             _request_id_var.reset(self.token)
 
+# Backwards compatibility aliases for tests
+correlation_context = CorrelationContext
+request_context = RequestContext
 
 def extra_context(**kwargs) -> Dict[str, Any]:
     """Merge standard structured fields with provided context.
@@ -245,7 +248,7 @@ def safe_url(url: str) -> str:
             parsed.fragment
         ))
         return safe_url_str
-    except Exception:
+    except Exception:  # pylint: disable=broad-exception-caught
         # If parsing fails, return redacted version
         return redact(url)
 
@@ -258,8 +261,13 @@ class Timer:
         self.start_time = None
         self.end_time = None
 
+    def start(self):
+        """Start the timer (non-context usage) and return self."""
+        self.start_time = datetime.datetime.now(datetime.timezone.utc)
+        return self
+
     def __enter__(self):
-        """Start the timer."""
+        """Start the timer for context management."""
         self.start_time = datetime.datetime.now(datetime.timezone.utc)
         return self
 
@@ -285,9 +293,7 @@ def start_timer() -> Timer:
     Returns:
         Timer: A started timer instance.
     """
-    timer = Timer()
-    timer.__enter__()
-    return timer
+    return Timer().start()
 
 
 class HumanFormatter(logging.Formatter):

@@ -29,27 +29,31 @@ class VersionMatcher:
 
         Strips common Maven suffixes (.RELEASE, .Final) and returns
         lowercase semantic version string without coercing numerics.
-
-        Args:
-            version: Version string to normalize
-
-        Returns:
-            Normalized version string
         """
         if not version:
             return ""
 
-        # Convert to lowercase
         normalized = version.lower()
-
-        # Strip common Maven suffixes
         suffixes = [".release", ".final", ".ga"]
         for suffix in suffixes:
             if normalized.endswith(suffix):
                 normalized = normalized[:-len(suffix)]
                 break
-
         return normalized
+
+    def _get_label(self, artifact: Dict[str, Any]) -> str:
+        """Extract raw label for matching (preserves 'v', prefixes, etc.)."""
+        label = (
+            artifact.get("tag_name")
+            or artifact.get("name")
+            or artifact.get("version")
+            or artifact.get("ref")
+            or ""
+        )
+        s = str(label).strip()
+        if s.startswith("refs/"):
+            s = s.split("/")[-1]
+        return s
 
     def find_match(
         self,
@@ -58,15 +62,12 @@ class VersionMatcher:
     ) -> Optional[Dict[str, Any]]:
         """Find best match for package version in repository artifacts.
 
-        Tries matching strategies in order: exact, v-prefix, suffix-normalized, pattern.
-        Returns first match found.
-
-        Args:
-            package_version: Package version to match
-            releases_or_tags: Iterable of release/tag dictionaries
-
-        Returns:
-            Dict with match details or None if no match found
+        Strategy order:
+          1) exact (raw label equality)
+          2) pattern-based (user-provided patterns)
+          3) exact-bare (extracted version token equality)
+          4) v-prefix (v1.2.3 <-> 1.2.3)
+          5) suffix-normalized (e.g., .RELEASE/.Final stripping)
         """
         if not package_version:
             return {
@@ -76,49 +77,63 @@ class VersionMatcher:
                 'tag_or_release': None
             }
 
-        # Convert to list for multiple iterations
         artifacts = list(releases_or_tags)
 
-        # Try exact match first
-        exact_match = self._find_exact_match(package_version, artifacts)
-        if exact_match:
+        # 1) Exact (raw label equality)
+        exact_label_art = self._find_exact_label_match(package_version, artifacts)
+        if exact_label_art:
+            label = self._get_label(exact_label_art)
+            bare = self._get_version_from_artifact(exact_label_art)
+            # Only consider v/bare dual representation as a special-case pair
+            pair_exists = self._has_v_bare_pair(artifacts, bare, label)
+            tag_or_release = label if pair_exists else bare
             return {
                 'matched': True,
                 'match_type': 'exact',
-                'artifact': exact_match,
-                'tag_or_release': self._get_version_from_artifact(exact_match)
+                'artifact': exact_label_art,
+                'tag_or_release': tag_or_release
             }
 
-        # Try v-prefix match
-        v_prefix_match = self._find_v_prefix_match(package_version, artifacts)
-        if v_prefix_match:
-            return {
-                'matched': True,
-                'match_type': 'v-prefix',
-                'artifact': v_prefix_match,
-                'tag_or_release': self._get_version_from_artifact(v_prefix_match)
-            }
-
-        # Try suffix-normalized match
-        normalized_match = self._find_normalized_match(package_version, artifacts)
-        if normalized_match:
-            return {
-                'matched': True,
-                'match_type': 'suffix-normalized',
-                'artifact': normalized_match,
-                'tag_or_release': self._get_version_from_artifact(normalized_match)
-            }
-
-        # Try pattern matches
+        # 2) Pattern-based (use raw labels, not normalized)
         for pattern in self.patterns:
-            pattern_match = self._find_pattern_match(package_version, artifacts, pattern)
-            if pattern_match:
+            pat_art = self._find_pattern_match(package_version, artifacts, pattern)
+            if pat_art:
                 return {
                     'matched': True,
                     'match_type': 'pattern',
-                    'artifact': pattern_match,
-                    'tag_or_release': self._get_version_from_artifact(pattern_match)
+                    'artifact': pat_art,
+                    'tag_or_release': self._get_label(pat_art)
                 }
+
+        # 3) Exact-bare (extracted version token equality, only when query is bare)
+        exact_bare_art = self._find_exact_bare_match(package_version, artifacts)
+        if exact_bare_art:
+            return {
+                'matched': True,
+                'match_type': 'exact',
+                'artifact': exact_bare_art,
+                'tag_or_release': self._get_version_from_artifact(exact_bare_art)
+            }
+
+        # 4) v-prefix
+        v_pref_art = self._find_v_prefix_match(package_version, artifacts)
+        if v_pref_art:
+            return {
+                'matched': True,
+                'match_type': 'v-prefix',
+                'artifact': v_pref_art,
+                'tag_or_release': self._get_label(v_pref_art)
+            }
+
+        # 5) Suffix-normalized (e.g., 1.0.0.RELEASE -> 1.0.0)
+        norm_art = self._find_normalized_match(package_version, artifacts)
+        if norm_art:
+            return {
+                'matched': True,
+                'match_type': 'suffix-normalized',
+                'artifact': norm_art,
+                'tag_or_release': self._get_version_from_artifact(norm_art)
+            }
 
         return {
             'matched': False,
@@ -127,15 +142,43 @@ class VersionMatcher:
             'tag_or_release': None
         }
 
-    def _find_exact_match(
+    def _find_exact_label_match(
         self,
         package_version: str,
         artifacts: List[Dict[str, Any]]
     ) -> Optional[Dict[str, Any]]:
-        """Find exact version match."""
+        """Find exact match using raw label equality only."""
+        pv = package_version.strip()
+        for artifact in artifacts:
+            if self._get_label(artifact) == pv:
+                return artifact
+        return None
+
+    def _has_v_bare_pair(self, artifacts: List[Dict[str, Any]], bare: str, current_label: str) -> bool:
+        """Check if both 'v{bare}' and '{bare}' labels exist among artifacts (excluding current)."""
+        v_label = f"v{bare}"
+        for a in artifacts:
+            label = self._get_label(a)
+            if label != current_label and (label == bare or label == v_label):
+                return True
+        return False
+
+    def _find_exact_bare_match(
+        self,
+        package_version: str,
+        artifacts: List[Dict[str, Any]]
+    ) -> Optional[Dict[str, Any]]:
+        """Find exact match using extracted bare version equality.
+
+        Only applies when the query itself is bare (does not start with 'v') to
+        avoid reclassifying v-prefix cases as exact.
+        """
+        pv = package_version.strip()
+        if pv.startswith('v'):
+            return None
         for artifact in artifacts:
             artifact_version = self._get_version_from_artifact(artifact)
-            if artifact_version == package_version:
+            if artifact_version == pv:
                 return artifact
         return None
 
@@ -173,30 +216,27 @@ class VersionMatcher:
         artifacts: List[Dict[str, Any]],
         pattern: str
     ) -> Optional[Dict[str, Any]]:
-        """Find match using custom pattern."""
+        """Find match using custom pattern against raw labels."""
         try:
-            # Replace <v> placeholder with package version
             regex_pattern = pattern.replace("<v>", re.escape(package_version))
             compiled_pattern = re.compile(regex_pattern, re.IGNORECASE)
-
             for artifact in artifacts:
-                artifact_version = self._get_version_from_artifact(artifact)
-                if compiled_pattern.match(artifact_version):
+                label = self._get_label(artifact)
+                if compiled_pattern.match(label):
                     return artifact
         except re.error:
             # Invalid pattern, skip
             pass
-
         return None
 
     def _get_version_from_artifact(self, artifact: Dict[str, Any]) -> str:
         """Extract version-like token from artifact dict.
 
-        Robustly handles:
-        - tag_name/name like 'v1.2.3', '1.2.3'
-        - monorepo tags like 'react-router@1.2.3'
-        - hyphen/underscore suffixed forms like 'react-router-v1.2.3' or 'react-router-1.2.3'
-        - Git refs like 'refs/tags/v1.2.3' or 'refs/tags/react-router@1.2.3'
+        Handles common forms:
+        - tag_name/name: 'v1.2.3', '1.2.3'
+        - monorepo: 'react-router@1.2.3'
+        - hyphen/underscore: 'react-router-1.2.3', 'react_router_1.2.3'
+        - refs: 'refs/tags/v1.2.3', 'refs/tags/react-router@1.2.3'
         """
         def _extract_semverish(s: str) -> str:
             s = s.strip()

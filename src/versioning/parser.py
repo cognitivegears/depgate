@@ -2,12 +2,14 @@
 
 from typing import Optional, Tuple
 
-from .errors import ParseError
 from .models import Ecosystem, PackageRequest, ResolutionMode, VersionSpec
 
 
 def tokenize_rightmost_colon(s: str) -> Tuple[str, Optional[str]]:
-    """Return (identifier, spec or None) using the rightmost-colon rule without ecosystem assumptions."""
+    """Return (identifier, spec or None) using the rightmost-colon rule.
+
+    Does not assume ecosystem-specific syntax.
+    """
     s = s.strip()
     if ':' not in s:
         return s, None
@@ -41,7 +43,10 @@ def _determine_include_prerelease(spec: str, ecosystem: Ecosystem) -> bool:
 
 
 def parse_cli_token(token: str, ecosystem: Ecosystem) -> PackageRequest:
-    """Parse a CLI/list token into a PackageRequest using rightmost-colon and ecosystem-aware normalization."""
+    """Parse a CLI/list token into a PackageRequest.
+
+    Uses rightmost-colon and ecosystem-aware normalization.
+    """
     # Special handling for Maven coordinates that contain colons naturally
     if ecosystem == Ecosystem.MAVEN:
         colon_count = token.count(':')
@@ -80,7 +85,10 @@ def parse_cli_token(token: str, ecosystem: Ecosystem) -> PackageRequest:
 
 
 def parse_manifest_entry(identifier: str, raw_spec: Optional[str], ecosystem: Ecosystem, source: str) -> PackageRequest:
-    """Construct a PackageRequest from manifest fields, preserving raw spec for logging while normalizing identifier and spec mode."""
+    """Construct a PackageRequest from manifest fields.
+
+    Preserves raw spec for logging while normalizing identifier and spec mode.
+    """
     identifier = _normalize_identifier(identifier, ecosystem)
 
     if raw_spec is None or raw_spec.strip() == '' or raw_spec.lower() == 'latest':

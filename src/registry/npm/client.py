@@ -9,13 +9,32 @@ import logging
 from datetime import datetime as dt
 
 from constants import ExitCodes, Constants
-from common.http_client import safe_get, safe_post
-from common.logging_utils import extra_context, is_debug_enabled, Timer, safe_url, redact
+from common.logging_utils import extra_context, is_debug_enabled, Timer, safe_url
 
-from .enrich import _enrich_with_repo
 import registry.npm as npm_pkg
+from .enrich import _enrich_with_repo
 
 logger = logging.getLogger(__name__)
+
+# Shared HTTP JSON headers and timestamp format for this module
+HEADERS_JSON = {"Accept": "application/json", "Content-Type": "application/json"}
+TIME_FORMAT_ISO = "%Y-%m-%dT%H:%M:%S.%fZ"
+
+def _log_http_pre(url: str, method: str, encode_brackets: bool = False) -> None:
+    """Debug-log outbound HTTP request for NPM client."""
+    target = safe_url(url)
+    if encode_brackets:
+        target = target.replace("[REDACTED]", "%5BREDACTED%5D")
+    logger.debug(
+        "HTTP request",
+        extra=extra_context(
+            event="http_request",
+            component="client",
+            action=method,
+            target=target,
+            package_manager="npm",
+        ),
+    )
 
 
 def get_package_details(pkg, url: str) -> None:
@@ -80,7 +99,7 @@ def get_package_details(pkg, url: str) -> None:
         )
         pkg.exists = False
         return
-    elif res.status_code >= 200 and res.status_code < 300:
+    if res.status_code >= 200 and res.status_code < 300:
         if is_debug_enabled(logger):
             logger.debug(
                 "HTTP response ok",
@@ -131,30 +150,22 @@ def recv_pkg_info(
         url (str, optional): NPM Url. Defaults to Constants.REGISTRY_URL_NPM_STATS.
     """
     logging.info("npm checker engaged.")
-    pkg_list = []
-    for pkg in pkgs:
-        pkg_list.append(pkg.pkg_name)
-        if should_fetch_details:
-            get_package_details(pkg, details_url)
-    payload = "[" + ",".join(f'"{w}"' for w in pkg_list) + "]"  # list->payload conv
-    headers = {"Accept": "application/json", "Content-Type": "application/json"}
 
-    # Pre-call DEBUG log
-    safe_target_stats = safe_url(url).replace("[REDACTED]", "%5BREDACTED%5D")
-    logger.debug(
-        "HTTP request",
-        extra=extra_context(
-            event="http_request",
-            component="client",
-            action="POST",
-            target=safe_target_stats,
-            package_manager="npm"
-        )
-    )
+    if should_fetch_details:
+        for pkg in pkgs:
+            get_package_details(pkg, details_url)
+
+    # Pre-call DEBUG log via helper (encode brackets for log consistency)
+    _log_http_pre(url, "POST", encode_brackets=True)
 
     with Timer() as timer:
         try:
-            res = npm_pkg.safe_post(url, context="npm", data=payload, headers=headers)
+            res = npm_pkg.safe_post(
+                url,
+                context="npm",
+                data="[" + ",".join(f'"{p.pkg_name}"' for p in pkgs) + "]",
+                headers=HEADERS_JSON,
+            )
         except SystemExit:
             # safe_post calls sys.exit on errors, so we need to catch and re-raise as exception
             logger.error(
@@ -164,12 +175,10 @@ def recv_pkg_info(
                     event="http_error",
                     outcome="exception",
                     target=safe_url(url),
-                    package_manager="npm"
-                )
+                    package_manager="npm",
+                ),
             )
             raise
-
-    duration_ms = timer.duration_ms()
 
     if res.status_code == 200:
         if is_debug_enabled(logger):
@@ -179,9 +188,9 @@ def recv_pkg_info(
                     event="http_response",
                     outcome="success",
                     status_code=res.status_code,
-                    duration_ms=duration_ms,
-                    package_manager="npm"
-                )
+                    duration_ms=timer.duration_ms(),
+                    package_manager="npm",
+                ),
             )
     else:
         logger.warning(
@@ -190,27 +199,32 @@ def recv_pkg_info(
                 event="http_response",
                 outcome="handled_non_2xx",
                 status_code=res.status_code,
-                duration_ms=duration_ms,
+                duration_ms=timer.duration_ms(),
                 target=safe_url(url),
-                package_manager="npm"
-            )
+                package_manager="npm",
+            ),
         )
         logging.error("Unexpected status code (%s)", res.status_code)
         sys.exit(ExitCodes.CONNECTION_ERROR.value)
 
     pkg_map = json.loads(res.text)
     for i in pkgs:
-        if i.pkg_name in pkg_map:
-            package_info = pkg_map[i.pkg_name]
+        info = pkg_map.get(i.pkg_name)
+        if info is not None:
             i.exists = True
-            i.score = package_info.get("score", {}).get("final", 0)
-            timex = package_info.get("collected", {}).get("metadata", {}).get("date", "")
-            fmtx = "%Y-%m-%dT%H:%M:%S.%fZ"
+            i.score = info.get("score", {}).get("final", 0)
             try:
-                unixtime = int(dt.timestamp(dt.strptime(timex, fmtx)) * 1000)
-                i.timestamp = unixtime
-            except ValueError as e:
-                logging.warning("Couldn't parse timestamp: %s", e)
+                i.timestamp = int(
+                    dt.timestamp(
+                        dt.strptime(
+                            info.get("collected", {}).get("metadata", {}).get("date", ""),
+                            TIME_FORMAT_ISO,
+                        )
+                    )
+                    * 1000
+                )
+            except ValueError:
+                logging.warning("Couldn't parse timestamp")
                 i.timestamp = 0
         else:
             i.exists = False

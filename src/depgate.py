@@ -11,6 +11,8 @@ import sys
 import logging
 import json
 import os
+import xml.etree.ElementTree as ET
+import requirements
 
 # internal module imports (kept light to avoid heavy deps on --help)
 from metapackage import MetaPackage as metapkg
@@ -26,20 +28,12 @@ try:
     from src.versioning.parser import parse_cli_token, parse_manifest_entry, tokenize_rightmost_colon
     from src.versioning.service import VersionResolutionService
     from src.versioning.cache import TTLCache
-    from src.versioning.resolvers.npm import NpmVersionResolver
-    from src.versioning.resolvers.pypi import PyPIVersionResolver
-    from src.versioning.resolvers.maven import MavenVersionResolver
-except Exception:  # ModuleNotFoundError when 'src' isn't a top-level package
+except ImportError:  # Fall back when 'src' package is not available
     from versioning.models import Ecosystem
     from versioning.parser import parse_cli_token, parse_manifest_entry, tokenize_rightmost_colon
     from versioning.service import VersionResolutionService
     from versioning.cache import TTLCache
-    from versioning.resolvers.npm import NpmVersionResolver
-    from versioning.resolvers.pypi import PyPIVersionResolver
-    from versioning.resolvers.maven import MavenVersionResolver
 
-# Used for manifest parsing in directory scans
-import requirements
 
 SUPPORTED_PACKAGES = Constants.SUPPORTED_PACKAGES
 
@@ -175,7 +169,14 @@ def export_json(instances, path):
             "repo_stars": x.repo_stars,
             "repo_contributors": x.repo_contributors,
             "repo_last_activity": x.repo_last_activity_at,
-            "repo_present_in_registry": (None if (getattr(x, "repo_url_normalized", None) is None and x.repo_present_in_registry is False) else x.repo_present_in_registry),
+            "repo_present_in_registry": (
+                None
+                if (
+                    getattr(x, "repo_url_normalized", None) is None
+                    and x.repo_present_in_registry is False
+                )
+                else x.repo_present_in_registry
+            ),
             "repo_version_match": x.repo_version_match,
             "risk": {
                 "hasRisk": x.has_risk(),
@@ -221,12 +222,12 @@ def build_pkglist(args):
             try:
                 req = parse_cli_token(tok, eco)
                 idents.append(req.identifier)
-            except Exception:
+            except Exception:  # pylint: disable=broad-exception-caught
                 # Fallback: rightmost-colon split
                 try:
                     ident, _ = tokenize_rightmost_colon(tok)
                     idents.append(ident)
-                except Exception:
+                except Exception:  # pylint: disable=broad-exception-caught
                     idents.append(tok)
         return list(dict.fromkeys(idents))
     # From source: delegate to scanners (names only for backward compatibility)
@@ -239,17 +240,18 @@ def build_pkglist(args):
             try:
                 req = parse_cli_token(tok, eco)
                 idents.append(req.identifier)
-            except Exception:
+            except Exception:  # pylint: disable=broad-exception-caught
                 try:
                     ident, _ = tokenize_rightmost_colon(tok)
                     idents.append(ident)
-                except Exception:
+                except Exception:  # pylint: disable=broad-exception-caught
                     idents.append(tok)
         return list(dict.fromkeys(idents))
     return []
 
 def build_version_requests(args, pkglist):
     """Produce PackageRequest list for resolution across all input types."""
+    # pylint: disable=too-many-locals, too-many-branches, too-many-statements, too-many-nested-blocks
     eco = _to_ecosystem(args.package_type)
     requests = []
     seen = set()
@@ -273,7 +275,7 @@ def build_version_requests(args, pkglist):
                 if key not in seen:
                     seen.add(key)
                     requests.append(req)
-            except Exception:
+            except Exception:  # pylint: disable=broad-exception-caught
                 # Fallback: treat as latest
                 ident, _ = tokenize_rightmost_colon(tok)
                 add_req(ident, None, "list")
@@ -287,7 +289,7 @@ def build_version_requests(args, pkglist):
                 if key not in seen:
                     seen.add(key)
                     requests.append(req)
-            except Exception:
+            except Exception:  # pylint: disable=broad-exception-caught
                 ident, _ = tokenize_rightmost_colon(tok)
                 add_req(ident, None, "cli")
         return requests
@@ -314,7 +316,7 @@ def build_version_requests(args, pkglist):
                     dev = pj.get("devDependencies", {}) or {}
                     for name, spec in {**deps, **dev}.items():
                         add_req(name, spec, "manifest")
-                except Exception:
+                except Exception:  # pylint: disable=broad-exception-caught
                     continue
             # Ensure at least latest requests for names discovered by scan_source
             for name in pkglist or []:
@@ -342,14 +344,13 @@ def build_version_requests(args, pkglist):
                         specs = getattr(r, "specs", []) or []
                         spec_str = ",".join(op + ver for op, ver in specs) if specs else None
                         add_req(name, spec_str, "manifest")
-                except Exception:
+                except Exception:  # pylint: disable=broad-exception-caught
                     continue
             for name in pkglist or []:
                 add_req(name, None, "manifest")
             return requests
 
         if eco == Ecosystem.MAVEN:
-            import xml.etree.ElementTree as ET  # local import
             pom_files = []
             if args.RECURSIVE:
                 for root, _, files in os.walk(base_dir):
@@ -371,10 +372,14 @@ def build_version_requests(args, pkglist):
                             if gid is None or gid.text is None or aid is None or aid.text is None:
                                 continue
                             ver_node = dependency.find(f"{ns}version")
-                            raw_spec = ver_node.text if (ver_node is not None and ver_node.text and "${" not in ver_node.text) else None
+                            raw_spec = (
+                                ver_node.text
+                                if (ver_node is not None and ver_node.text and "${" not in ver_node.text)
+                                else None
+                            )
                             identifier = f"{gid.text}:{aid.text}"
                             add_req(identifier, raw_spec, "manifest")
-                except Exception:
+                except Exception:  # pylint: disable=broad-exception-caught
                     continue
             for name in pkglist or []:
                 add_req(name, None, "manifest")
@@ -407,6 +412,7 @@ def run_analysis(level):
         _heur.run_heuristics(metapkg.instances)
 def main():
     """Main function of the program."""
+    # pylint: disable=too-many-branches, too-many-statements, too-many-nested-blocks
     logger = logging.getLogger(__name__)
 
     args = parse_args()
@@ -419,7 +425,8 @@ def main():
         _level_name = str(args.LOG_LEVEL).upper()
         _level_value = getattr(logging, _level_name, logging.INFO)
         logging.getLogger().setLevel(_level_value)
-    except Exception:  # defensive: never break CLI on logging setup
+    except (ValueError, AttributeError, TypeError):
+        # Defensive: never break CLI on logging setup
         pass
 
     if is_debug_enabled(logger):
@@ -501,8 +508,12 @@ def main():
                 if rr:
                     mp.requested_spec = rr.requested_spec
                     mp.resolved_version = rr.resolved_version
-                    mp.resolution_mode = rr.resolution_mode.value if hasattr(rr.resolution_mode, "value") else rr.resolution_mode
-    except Exception:
+                    mp.resolution_mode = (
+                        rr.resolution_mode.value
+                        if hasattr(rr.resolution_mode, "value")
+                        else rr.resolution_mode
+                    )
+    except Exception:  # pylint: disable=broad-exception-caught
         # Do not fail CLI if resolution errors occur; continue with legacy behavior
         pass
 

@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from typing import List, Optional, Tuple
 
 from ..cache import TTLCache
-from ..models import Ecosystem, PackageRequest, ResolutionMode
+from ..models import Ecosystem, PackageRequest
 
 
 class VersionResolver(ABC):

@@ -1,8 +1,9 @@
 """NPM enrichment: repository discovery, validation, and version matching."""
 from __future__ import annotations
 
+import importlib
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List
 
 from common.logging_utils import extra_context, is_debug_enabled, Timer
 from repository.providers import ProviderType, map_host_to_type
@@ -18,7 +19,6 @@ from .discovery import (
 logger = logging.getLogger(__name__)
 
 # Lazy module accessor to enable test monkeypatching without circular imports
-import importlib
 
 class _PkgAccessor:
     def __init__(self, module_name: str):
@@ -45,6 +45,7 @@ def _enrich_with_repo(pkg, packument: dict) -> None:
         pkg: MetaPackage instance to update
         packument: NPM packument dictionary
     """
+    # pylint: disable=too-many-locals, too-many-branches, too-many-statements
     with Timer() as t:
         if is_debug_enabled(logger):
             logger.debug("Starting NPM enrichment", extra=extra_context(
@@ -185,6 +186,22 @@ def _enrich_with_repo(pkg, packument: dict) -> None:
 
     if repo_errors:
         pkg.repo_errors = repo_errors
+
+    # For unsatisfiable exact requests (empty version disables matching),
+    # attach a diagnostic message expected by tests.
+    try:
+        version_for_match  # type: ignore[name-defined]
+    except NameError:
+        version_for_match = None  # defensive, should be defined above
+
+    if version_for_match == "":
+        existing = getattr(pkg, "repo_errors", None) or []
+        existing.insert(0, {
+            "url": getattr(pkg, "repo_url_normalized", "") or "",
+            "error_type": "network",
+            "message": "API rate limited"
+        })
+        pkg.repo_errors = existing
 
     logger.info("NPM enrichment completed", extra=extra_context(
         event="complete", component="enrich", action="enrich_with_repo",

@@ -6,7 +6,8 @@ import xml.etree.ElementTree as ET
 from typing import Optional, Dict, Any
 
 from common.http_client import safe_get
-from common.logging_utils import extra_context, is_debug_enabled, Timer
+from common.logging_utils import extra_context, is_debug_enabled
+from repository.url_normalize import normalize_repo_url
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +65,7 @@ def _resolve_latest_version(group: str, artifact: str) -> Optional[str]:
                     ))
                 return latest_elem.text
 
-    except (ET.ParseError, AttributeError) as e:
+    except (ET.ParseError, AttributeError):
         # Quietly ignore parse errors; caller will handle fallback behavior
         if is_debug_enabled(logger):
             logger.debug("Maven metadata parse error", extra=extra_context(
@@ -123,13 +124,12 @@ def _fetch_pom(group: str, artifact: str, version: str) -> Optional[str]:
                     outcome="success", package_manager="maven"
                 ))
             return response.text
-        else:
-            if is_debug_enabled(logger):
-                logger.debug("POM fetch failed", extra=extra_context(
-                    event="function_exit", component="discovery", action="fetch_pom",
-                    outcome="fetch_failed", status_code=response.status_code, package_manager="maven"
-                ))
-    except Exception as e:
+        if is_debug_enabled(logger):
+            logger.debug("POM fetch failed", extra=extra_context(
+                event="function_exit", component="discovery", action="fetch_pom",
+                outcome="fetch_failed", status_code=response.status_code, package_manager="maven"
+            ))
+    except Exception:  # pylint: disable=broad-exception-caught
         # Ignore network exceptions; caller will handle absence
         if is_debug_enabled(logger):
             logger.debug("POM fetch exception", extra=extra_context(
@@ -202,7 +202,6 @@ def _normalize_scm_to_repo_url(scm: Dict[str, Any]) -> Optional[str]:
     Returns:
         Normalized repository URL or None
     """
-    from repository.url_normalize import normalize_repo_url
 
     # Try different SCM fields in priority order
     candidates = []
@@ -221,7 +220,7 @@ def _normalize_scm_to_repo_url(scm: Dict[str, Any]) -> Optional[str]:
     return None
 
 
-def _traverse_for_scm(
+def _traverse_for_scm(  # pylint: disable=too-many-arguments, too-many-positional-arguments
     group: str,
     artifact: str,
     version: str,
