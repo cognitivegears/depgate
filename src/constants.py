@@ -81,6 +81,21 @@ class Constants:  # pylint: disable=too-few-public-methods
     HTTP_RETRY_BASE_DELAY_SEC = 0.3
     HTTP_CACHE_TTL_SEC = 300
 
+    # HTTP rate limit and retry policy defaults (fail-fast to preserve existing behavior)
+    HTTP_RATE_POLICY_DEFAULT_MAX_RETRIES = 0
+    HTTP_RATE_POLICY_DEFAULT_INITIAL_BACKOFF_SEC = 0.5
+    HTTP_RATE_POLICY_DEFAULT_MULTIPLIER = 2.0
+    HTTP_RATE_POLICY_DEFAULT_JITTER_PCT = 0.2
+    HTTP_RATE_POLICY_DEFAULT_MAX_BACKOFF_SEC = 60.0
+    HTTP_RATE_POLICY_DEFAULT_TOTAL_RETRY_TIME_CAP_SEC = 120.0
+    HTTP_RATE_POLICY_DEFAULT_STRATEGY = "exponential_jitter"
+    HTTP_RATE_POLICY_DEFAULT_RESPECT_RETRY_AFTER = True
+    HTTP_RATE_POLICY_DEFAULT_RESPECT_RESET_HEADERS = True
+    HTTP_RATE_POLICY_DEFAULT_ALLOW_NON_IDEMPOTENT_RETRY = False
+
+    # Per-service overrides (empty by default)
+    HTTP_RATE_POLICY_PER_SERVICE = {}
+
     # Heuristics weighting defaults (used by analysis.compute_final_score)
     HEURISTICS_WEIGHTS_DEFAULT = {
         "base_score": 0.30,
@@ -207,6 +222,61 @@ def _apply_config_overrides(cfg: Dict[str, Any]) -> None:
                # ignore invalid entries; keep default
                pass
        Constants.HEURISTICS_WEIGHTS = merged  # type: ignore[attr-defined]
+
+   # HTTP rate policy configuration
+   rate_policy_cfg = http.get("rate_policy", {}) or {}
+   default_cfg = rate_policy_cfg.get("default", {}) or {}
+   per_service_cfg = rate_policy_cfg.get("per_service", {}) or {}
+
+   # Apply default policy overrides
+   try:
+       Constants.HTTP_RATE_POLICY_DEFAULT_MAX_RETRIES = int(default_cfg.get("max_retries", Constants.HTTP_RATE_POLICY_DEFAULT_MAX_RETRIES))  # type: ignore[attr-defined]
+   except Exception:  # pylint: disable=broad-exception-caught
+       pass
+   try:
+       Constants.HTTP_RATE_POLICY_DEFAULT_INITIAL_BACKOFF_SEC = float(default_cfg.get("initial_backoff_sec", Constants.HTTP_RATE_POLICY_DEFAULT_INITIAL_BACKOFF_SEC))  # type: ignore[attr-defined]
+   except Exception:  # pylint: disable=broad-exception-caught
+       pass
+   try:
+       Constants.HTTP_RATE_POLICY_DEFAULT_MULTIPLIER = float(default_cfg.get("multiplier", Constants.HTTP_RATE_POLICY_DEFAULT_MULTIPLIER))  # type: ignore[attr-defined]
+   except Exception:  # pylint: disable=broad-exception-caught
+       pass
+   try:
+       Constants.HTTP_RATE_POLICY_DEFAULT_JITTER_PCT = float(default_cfg.get("jitter_pct", Constants.HTTP_RATE_POLICY_DEFAULT_JITTER_PCT))  # type: ignore[attr-defined]
+   except Exception:  # pylint: disable=broad-exception-caught
+       pass
+   try:
+       Constants.HTTP_RATE_POLICY_DEFAULT_MAX_BACKOFF_SEC = float(default_cfg.get("max_backoff_sec", Constants.HTTP_RATE_POLICY_DEFAULT_MAX_BACKOFF_SEC))  # type: ignore[attr-defined]
+   except Exception:  # pylint: disable=broad-exception-caught
+       pass
+   try:
+       Constants.HTTP_RATE_POLICY_DEFAULT_TOTAL_RETRY_TIME_CAP_SEC = float(default_cfg.get("total_retry_time_cap_sec", Constants.HTTP_RATE_POLICY_DEFAULT_TOTAL_RETRY_TIME_CAP_SEC))  # type: ignore[attr-defined]
+   except Exception:  # pylint: disable=broad-exception-caught
+       pass
+   try:
+       Constants.HTTP_RATE_POLICY_DEFAULT_STRATEGY = str(default_cfg.get("strategy", Constants.HTTP_RATE_POLICY_DEFAULT_STRATEGY))  # type: ignore[attr-defined]
+   except Exception:  # pylint: disable=broad-exception-caught
+       pass
+   try:
+       Constants.HTTP_RATE_POLICY_DEFAULT_RESPECT_RETRY_AFTER = bool(default_cfg.get("respect_retry_after", Constants.HTTP_RATE_POLICY_DEFAULT_RESPECT_RETRY_AFTER))  # type: ignore[attr-defined]
+   except Exception:  # pylint: disable=broad-exception-caught
+       pass
+   try:
+       Constants.HTTP_RATE_POLICY_DEFAULT_RESPECT_RESET_HEADERS = bool(default_cfg.get("respect_reset_headers", Constants.HTTP_RATE_POLICY_DEFAULT_RESPECT_RESET_HEADERS))  # type: ignore[attr-defined]
+   except Exception:  # pylint: disable=broad-exception-caught
+       pass
+   try:
+       Constants.HTTP_RATE_POLICY_DEFAULT_ALLOW_NON_IDEMPOTENT_RETRY = bool(default_cfg.get("allow_non_idempotent_retry", Constants.HTTP_RATE_POLICY_DEFAULT_ALLOW_NON_IDEMPOTENT_RETRY))  # type: ignore[attr-defined]
+   except Exception:  # pylint: disable=broad-exception-caught
+       pass
+
+   # Apply per-service overrides
+   if isinstance(per_service_cfg, dict):
+       merged_per_service = {}
+       for host, service_config in per_service_cfg.items():
+           if isinstance(service_config, dict):
+               merged_per_service[host] = service_config
+       Constants.HTTP_RATE_POLICY_PER_SERVICE = merged_per_service  # type: ignore[attr-defined]
 
    # RTD
    Constants.READTHEDOCS_API_BASE = rtd.get("api_base", Constants.READTHEDOCS_API_BASE)  # type: ignore[attr-defined]
