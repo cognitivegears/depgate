@@ -41,6 +41,9 @@ npm_pkg = _PkgAccessor('registry.npm')
 def _enrich_with_repo(pkg, packument: dict) -> None:
     """Enrich MetaPackage with repository discovery, validation, and version matching.
 
+    Also populate license information from the NPM packument when present
+    so that heuristics can correctly log license availability.
+
     Args:
         pkg: MetaPackage instance to update
         packument: NPM packument dictionary
@@ -66,6 +69,99 @@ def _enrich_with_repo(pkg, packument: dict) -> None:
                 event="debug", component="enrich", action="enrich_with_repo",
                 outcome="version", package_manager="npm", duration_ms=t.duration_ms(), target = latest_version
             ))
+
+        # Populate license fields from packument if available
+        try:
+            versions = packument.get("versions", {}) or {}
+            vinfo = versions.get(latest_version, {}) or {}
+            # NPM license may be:
+            # - a string, e.g., "MIT"
+            # - an object with { "type": "MIT", "url": "..." }
+            # - an array "licenses": [ { "type": "...", "url": "..." }, ... ]
+            lic_id = None
+            lic_url = None
+            lic_src = None
+            lic_field = vinfo.get("license")
+            if isinstance(lic_field, str) and lic_field.strip():
+                lic_id = lic_field.strip()
+                lic_src = "npm_license"
+            elif isinstance(lic_field, dict):
+                tval = str(lic_field.get("type") or "").strip()
+                uval = str(lic_field.get("url") or "").strip()
+                if tval:
+                    lic_id = tval
+                    lic_src = "npm_license"
+                if uval:
+                    lic_url = uval
+                    if lic_src is None:
+                        lic_src = "npm_license"
+            # Older 'licenses' array form
+            if not lic_id:
+                lic_arr = vinfo.get("licenses")
+                if isinstance(lic_arr, list) and lic_arr:
+                    first = lic_arr[0] or {}
+                    if isinstance(first, dict):
+                        tval = str(first.get("type") or "").strip()
+                        uval = str(first.get("url") or "").strip()
+                        if tval:
+                            lic_id = tval
+                            lic_src = "npm_licenses"
+                        if uval and not lic_url:
+                            lic_url = uval
+                            if lic_src is None:
+                                lic_src = "npm_licenses"
+            # Commit onto MetaPackage
+            if lic_id or lic_url:
+                setattr(pkg, "license_id", lic_id)
+                setattr(pkg, "license_source", lic_src or "npm_metadata")
+                setattr(pkg, "license_available", True)
+                if lic_url:
+                    setattr(pkg, "license_url", lic_url)
+            else:
+                # Fallback to top-level packument license fields when version-level is missing
+                root_lic = packument.get("license")
+                root_lic_arr = packument.get("licenses")
+                lic_id2 = None
+                lic_url2 = None
+                lic_src2 = None
+                if isinstance(root_lic, str) and root_lic.strip():
+                    lic_id2 = root_lic.strip()
+                    lic_src2 = "npm_license_root"
+                elif isinstance(root_lic, dict):
+                    tval = str(root_lic.get("type") or "").strip()
+                    nval = str(root_lic.get("name") or "").strip()
+                    uval = str(root_lic.get("url") or "").strip()
+                    if tval:
+                        lic_id2 = tval
+                        lic_src2 = "npm_license_root"
+                    elif nval:
+                        lic_id2 = nval
+                        lic_src2 = "npm_license_root"
+                    if uval:
+                        lic_url2 = uval
+                        if lic_src2 is None:
+                            lic_src2 = "npm_license_root"
+                # Older 'licenses' array at root
+                if not lic_id2 and isinstance(root_lic_arr, list) and root_lic_arr:
+                    first = root_lic_arr[0] or {}
+                    if isinstance(first, dict):
+                        tval = str(first.get("type") or "").strip()
+                        uval = str(first.get("url") or "").strip()
+                        if tval:
+                            lic_id2 = tval
+                            lic_src2 = "npm_licenses_root"
+                        if uval and not lic_url2:
+                            lic_url2 = uval
+                            if lic_src2 is None:
+                                lic_src2 = "npm_licenses_root"
+                if lic_id2 or lic_url2:
+                    setattr(pkg, "license_id", lic_id2)
+                    setattr(pkg, "license_source", lic_src2 or "npm_metadata")
+                    setattr(pkg, "license_available", True)
+                    if lic_url2:
+                        setattr(pkg, "license_url", lic_url2)
+        except Exception:  # defensive: never fail enrichment on license parsing
+            pass
 
     # Get version info for latest
     versions = packument.get("versions", {})

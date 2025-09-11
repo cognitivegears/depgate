@@ -93,8 +93,13 @@ def check_against(check_type, level, check_list):
 
 
     if check_type == PackageManagers.NPM.value:
-        # Only fetch details for levels 1 and 2
-        should_fetch_details = level in (Constants.LEVELS[2], Constants.LEVELS[3])
+        # Fetch details for heuristics and policy levels (to enable repo enrichment)
+        should_fetch_details = level in (
+            Constants.LEVELS[2],  # heuristics
+            Constants.LEVELS[3],  # heur
+            Constants.LEVELS[4],  # policy
+            Constants.LEVELS[5],  # pol
+        )
         from registry import npm as _npm  # pylint: disable=import-outside-toplevel
         _npm.recv_pkg_info(check_list, should_fetch_details)
     elif check_type == PackageManagers.MAVEN.value:
