@@ -453,7 +453,15 @@ def create_metapackages(args, pkglist):
             metapkg(pkg, args.package_type)
     elif args.package_type == PackageManagers.MAVEN.value:
         for pkg in pkglist:  # format org_id:package_id
-            metapkg(pkg.split(':')[1], args.package_type, pkg.split(':')[0])
+            # Validate Maven coordinate "groupId:artifactId"
+            if not isinstance(pkg, str) or ":" not in pkg:
+                logging.error("Invalid Maven coordinate '%s'. Expected 'groupId:artifactId'.", pkg)
+                sys.exit(ExitCodes.FILE_ERROR.value)
+            parts = pkg.split(":")
+            if len(parts) != 2 or not parts[0].strip() or not parts[1].strip():
+                logging.error("Invalid Maven coordinate '%s'. Expected 'groupId:artifactId'.", pkg)
+                sys.exit(ExitCodes.FILE_ERROR.value)
+            metapkg(parts[1], args.package_type, parts[0])
     elif args.package_type == PackageManagers.PYPI.value:
         for pkg in pkglist:
             metapkg(pkg, args.package_type)
