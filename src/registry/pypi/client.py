@@ -8,11 +8,27 @@ import logging
 from datetime import datetime as dt
 from constants import ExitCodes, Constants
 from common.logging_utils import extra_context, is_debug_enabled, Timer, safe_url
+from packaging.requirements import Requirement
 
 import registry.pypi as pypi_pkg
 from .enrich import _enrich_with_repo, _enrich_with_license
 
 logger = logging.getLogger(__name__)
+
+def _sanitize_identifier(identifier: str) -> str:
+    """Return package name sans any version specifiers/extras/markers."""
+    try:
+        return Requirement(identifier).name
+    except Exception:
+        # Manual fallback for common separators and extras/markers
+        for sep in ["===", ">=", "<=", "==", "~=", "!=", ">", "<"]:
+            if sep in identifier:
+                return identifier.split(sep)[0]
+        if "[" in identifier:
+            return identifier.split("[", 1)[0]
+        if ";" in identifier:
+            return identifier.split(";", 1)[0]
+        return identifier
 
 # Shared HTTP JSON headers and timestamp format for this module
 HEADERS_JSON = {"Accept": "application/json", "Content-Type": "application/json"}
@@ -43,7 +59,9 @@ def recv_pkg_info(pkgs, url: str = Constants.REGISTRY_URL_PYPI) -> None:
     for x in pkgs:
         # Sleep to avoid rate limiting
         time.sleep(0.1)
-        fullurl = url + x.pkg_name + "/json"
+        name = getattr(x, "pkg_name", "")
+        sanitized = _sanitize_identifier(str(name)).strip()
+        fullurl = url + sanitized + "/json"
 
         # Pre-call DEBUG log via helper
         _log_http_pre(fullurl)

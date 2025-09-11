@@ -5,6 +5,7 @@ from typing import List, Optional, Tuple
 from packaging import version
 from packaging.version import InvalidVersion
 from packaging.specifiers import SpecifierSet, InvalidSpecifier
+from packaging.requirements import Requirement
 
 # Support being imported as either "src.versioning.resolvers.pypi" or "versioning.resolvers.pypi"
 try:
@@ -15,6 +16,20 @@ except ImportError:
     from constants import Constants
 from ..models import Ecosystem, PackageRequest, ResolutionMode
 from .base import VersionResolver
+
+
+def _sanitize_identifier(identifier: str) -> str:
+    """Return the package name without any version specifiers or extras."""
+    try:
+        # Use packaging.Requirement to parse and extract the name safely
+        return Requirement(identifier).name
+    except Exception:
+        # Fallback: split on common version specifier characters
+        for sep in [">=", "<=", ">", "<", "==", "~=", "!=", "==="]:
+            if sep in identifier:
+                return identifier.split(sep)[0]
+        # If no specifier found, return as‑is
+        return identifier
 
 
 class PyPIVersionResolver(VersionResolver):
@@ -40,7 +55,9 @@ class PyPIVersionResolver(VersionResolver):
             if cached is not None:
                 return cached
 
-        url = f"{Constants.REGISTRY_URL_PYPI}{req.identifier}/json"
+        # Ensure we strip any whitespace and version specifiers from the identifier
+        sanitized_name = _sanitize_identifier(req.identifier).strip()
+        url = f"{Constants.REGISTRY_URL_PYPI}{sanitized_name}/json"
         status_code, _, data = get_json(url)
 
         if status_code != 200 or not data:

@@ -4,14 +4,12 @@ from __future__ import annotations
 import json
 import os
 import sys
-import time
 import logging
 import xml.etree.ElementTree as ET
 from typing import List
 
 from constants import ExitCodes, Constants
 from common import http_client
-from common.http_client import robust_get
 from common.logging_utils import extra_context, is_debug_enabled, Timer, safe_url
 from .enrich import _enrich_with_repo
 
@@ -47,8 +45,10 @@ def recv_pkg_info(pkgs, url: str = Constants.REGISTRY_URL_MAVEN) -> None:
 
         with Timer() as timer:
             headers = {"Accept": "application/json", "Content-Type": "application/json"}
-            status_code, _, text = robust_get(url, params=payload, headers=headers)
+            response = http_client.safe_get(url, context="maven", params=payload, headers=headers)
 
+        status_code = response.status_code
+        text = response.text
         duration_ms = timer.duration_ms()
 
         if status_code == 200:

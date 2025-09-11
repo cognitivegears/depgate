@@ -20,6 +20,44 @@ from constants import Constants
 
 logger = logging.getLogger(__name__)
 
+# Helper sanitization for PyPI URL name segments
+def _sanitize_pypi_name_segment(name: str) -> str:
+    """Strip version specifiers/extras/markers from a PyPI package name segment."""
+    s = str(name).strip()
+    # Cut at first occurrence of any comparator/extras/marker tokens
+    cutpoints = []
+    for token in ("===", ">=", "<=", "==", "~=", "!=", ">", "<", "[", ";", " "):
+        idx = s.find(token)
+        if idx != -1:
+            cutpoints.append(idx)
+    if cutpoints:
+        s = s[: min(cutpoints)]
+    return s
+
+def _sanitize_pypi_url(url: str) -> str:
+    """If URL targets PyPI JSON API, ensure the name segment excludes version specifiers."""
+    try:
+        parsed = urlparse(url)
+        host = parsed.hostname or ""
+        if "pypi.org" not in host:
+            return url
+        parts = parsed.path.split("/")
+        # find 'pypi' segment
+        try:
+            i = parts.index("pypi")
+        except ValueError:
+            return url
+        if len(parts) > i + 1 and parts[i + 1]:
+            name_seg = parts[i + 1]
+            sanitized = _sanitize_pypi_name_segment(name_seg)
+            if sanitized != name_seg:
+                parts[i + 1] = sanitized
+                new_path = "/".join(parts)
+                return parsed._replace(path=new_path).geturl()
+        return url
+    except Exception:
+        return url
+
 # Per-service cooldown tracking
 _service_cooldowns: Dict[str, float] = {}
 _cooldown_lock = threading.Lock()
@@ -206,6 +244,14 @@ def request(
         RateLimitExhausted: When rate limit is exhausted
         RetryBudgetExceeded: When retry budget is exceeded
     """
+    # Sanitize known problematic URL patterns (e.g., PyPI /pypi/{name}/json with specifiers)
+    orig_url = url
+    try:
+        url = _sanitize_pypi_url(url)
+    except Exception:
+        # Defensive: never fail request due to sanitization
+        pass
+
     # Load policies
     default_policy, per_service_overrides = load_http_policy_from_constants()
 

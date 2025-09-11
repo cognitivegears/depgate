@@ -1,4 +1,5 @@
 """Module to represent a package."""
+import re
 from constants import PackageManagers
 
 class MetaPackage:  # pylint: disable=too-many-instance-attributes, too-many-public-methods
@@ -17,6 +18,29 @@ class MetaPackage:  # pylint: disable=too-many-instance-attributes, too-many-pub
         if pkgtype == PackageManagers.MAVEN.value and pkgorg is None and len(pkgname.split(':')) == 2:
             self._pkg_name = pkgname.split(':')[1]
             self._org_id = pkgname.split(':')[0]
+
+        # Sanitize PyPI package name early (strip version spec/extras; apply PEP 503 normalization)
+        if pkgtype == PackageManagers.PYPI.value:
+            try:
+                s = str(self._pkg_name).strip()
+                # Drop environment markers
+                s = s.split(';', 1)[0].strip()
+                # Remove extras portion
+                base = s.split('[', 1)[0].strip()
+                # Identify earliest comparator occurrence anywhere
+                tokens = ["===", ">=", "<=", "==", "~=", "!=", ">", "<", " "]
+                idxs = [i for tok in tokens for i in [s.find(tok)] if i != -1]
+                if idxs:
+                    cut = min(idxs)
+                    if cut >= 0:
+                        base = s[:cut].strip()
+                lowered = base.lower()
+                # PEP 503: replace runs of -, _, . with -
+                self._pkg_name = re.sub(r"[-_.]+", "-", lowered)
+            except Exception:
+                # Best-effort; keep original on failure
+                self._pkg_name = str(self._pkg_name)
+
         self._exists = None
         self._pkg_type = pkgtype
         self._score = None

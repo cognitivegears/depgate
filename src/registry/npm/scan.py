@@ -3,10 +3,21 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sys
-import logging
 from typing import List
+
+from common.logging_utils import (
+    log_discovered_files,
+    log_selection,
+    warn_multiple_lockfiles,
+    warn_missing_expected,
+    warn_orphan_lock_dep,
+    debug_dependency_line,
+    is_debug_enabled,
+)
+
 
 from constants import ExitCodes, Constants
 
@@ -26,10 +37,20 @@ def scan_source(dir_name: str, recursive: bool = False) -> List[str]:
         pkg_files: List[str] = []
         if recursive:
             for root, _, files in os.walk(dir_name):
+                if is_debug_enabled(logging.getLogger(__name__)):
+                    discovered = {"manifest": [], "lockfile": []}
+                    log_discovered_files(logging.getLogger(__name__), "npm", discovered)
                 if Constants.PACKAGE_JSON_FILE in files:
                     pkg_files.append(os.path.join(root, Constants.PACKAGE_JSON_FILE))
         else:
             path = os.path.join(dir_name, Constants.PACKAGE_JSON_FILE)
+            log_selection(
+                logging.getLogger(__name__),
+                "npm",
+                manifest=path if os.path.isfile(path) else None,
+                lockfile=None,
+                rationale="No lockfile support in current implementation",
+            )
             if os.path.isfile(path):
                 pkg_files.append(path)
             else:

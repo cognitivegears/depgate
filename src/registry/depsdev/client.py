@@ -90,8 +90,21 @@ class DepsDevClient:
         name = str(raw_name).strip()
         eco = DepsDevClient._eco_value(ecosystem)
         if eco == "pypi":
-            # PEP 503: replace runs of -, _, . with -
-            lowered = name.lower()
+            # Strip extras and version specifiers from name (PEP 508/440), then apply PEP 503 normalization.
+            # Drop environment markers
+            s = name.split(";", 1)[0].strip()
+            # Remove extras portion
+            base = s.split("[", 1)[0].strip()
+            # Identify first comparator after base
+            tokens = ["===", ">=", "<=", "==", "~=", "!=", ">", "<", " "]
+            first_idx = None
+            for tok in tokens:
+                idx = s.find(tok, len(base))
+                if idx != -1:
+                    first_idx = idx if first_idx is None else min(first_idx, idx)
+            if first_idx is not None and first_idx >= len(base):
+                base = s[:first_idx].strip()
+            lowered = base.lower()
             pep503 = re.sub(r"[-_.]+", "-", lowered)
             return urlquote(pep503, safe="")
         if eco == "maven":

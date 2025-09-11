@@ -6,49 +6,120 @@ import sys
 import logging
 from typing import List
 
-import requirements
+from common.logging_utils import (
+    log_discovered_files,
+    log_selection,
+    warn_multiple_lockfiles,
+    warn_missing_expected,
+    warn_orphan_lock_dep,
+    debug_dependency_line,
+    is_debug_enabled,
+)
 
 from constants import ExitCodes, Constants
 
 
 def scan_source(dir_name: str, recursive: bool = False) -> List[str]:
-    """Scan the source directory for requirements.txt files.
+    """Scan a directory for PyPI manifests and lockfiles, apply precedence rules,
+    and return the set of direct dependency names.
 
-    Args:
-        dir_name: Directory to scan.
-        recursive: Whether to recurse into subdirectories. Defaults to False.
+    The function discovers:
+      - Manifests: pyproject.toml (authoritative) and requirements.txt (fallback)
+      - Lockfiles: uv.lock, poetry.lock
+
+    Precedence:
+      * If pyproject.toml contains a [tool.uv] section → prefer uv.lock.
+      * Else if pyproject.toml contains a [tool.poetry] section → prefer poetry.lock.
+      * If both lockfiles exist without a tool section → prefer uv.lock and emit a warning.
+      * If both pyproject.toml and requirements.txt exist → use pyproject.toml as the
+        authoritative manifest (DEBUG‑log the selection). Use requirements.txt only when
+        pyproject.toml is missing.
+
+    Missing manifests result in a WARN and graceful exit (no exception).
 
     Returns:
-        List of unique requirement names discovered.
-
-    Exits:
-        ExitCodes.FILE_ERROR when the top-level requirements.txt is missing in non-recursive mode,
-        or when files cannot be read/parsed.
+        List of unique direct dependency names.
     """
-    current_path = ""
-    try:
-        logging.info("PyPI scanner engaged.")
-        req_files: List[str] = []
-        if recursive:
-            for root, _, files in os.walk(dir_name):
-                if Constants.REQUIREMENTS_FILE in files:
-                    req_files.append(os.path.join(root, Constants.REQUIREMENTS_FILE))
-        else:
-            current_path = os.path.join(dir_name, Constants.REQUIREMENTS_FILE)
-            if os.path.isfile(current_path):
-                req_files.append(current_path)
-            else:
-                logging.error("requirements.txt not found, unable to continue.")
-                sys.exit(ExitCodes.FILE_ERROR.value)
+    logger = logging.getLogger(__name__)
+    discovered = {"manifest": [], "lockfile": []}
+    direct_names: List[str] = []
 
-        all_requirements: List[str] = []
-        for req_path in req_files:
-            with open(req_path, "r", encoding="utf-8") as file:
-                body = file.read()
-            reqs = requirements.parse(body)
-            names = [getattr(x, "name", None) for x in list(reqs)]
-            all_requirements.extend([n for n in names if isinstance(n, str) and n])
-        return list(set(all_requirements))
-    except (FileNotFoundError, IOError) as e:
-        logging.error("Couldn't import from given path '%s', error: %s", current_path, e)
+    try:
+        logger.info("PyPI scanner engaged.")
+        # Discover files
+        for root, _, files in os.walk(dir_name):
+            if Constants.PYPROJECT_TOML_FILE in files:
+                discovered["manifest"].append(os.path.join(root, Constants.PYPROJECT_TOML_FILE))
+            if Constants.REQUIREMENTS_FILE in files:
+                discovered["manifest"].append(os.path.join(root, Constants.REQUIREMENTS_FILE))
+            if Constants.UV_LOCK_FILE in files:
+                discovered["lockfile"].append(os.path.join(root, Constants.UV_LOCK_FILE))
+            if Constants.POETRY_LOCK_FILE in files:
+                discovered["lockfile"].append(os.path.join(root, Constants.POETRY_LOCK_FILE))
+
+        # Log discovered files
+        if is_debug_enabled(logger):
+            log_discovered_files(logger, "pypi", discovered)
+
+        # Determine which manifest to use
+        manifest_path: str | None = None
+        lockfile_path: str | None = None
+        lockfile_rationale: str | None = None
+
+        pyproject_paths = [p for p in discovered["manifest"] if p.endswith(Constants.PYPROJECT_TOML_FILE)]
+        req_paths = [p for p in discovered["manifest"] if p.endswith(Constants.REQUIREMENTS_FILE)]
+
+        if pyproject_paths:
+            manifest_path = pyproject_paths[0]
+            from versioning.parser import parse_pyproject_tools
+            tools = parse_pyproject_tools(manifest_path)
+            if tools.get("tool_uv"):
+                uv_locks = [p for p in discovered["lockfile"] if p.endswith(Constants.UV_LOCK_FILE)]
+                if uv_locks:
+                    lockfile_path = uv_locks[0]
+                    lockfile_rationale = "pyproject.toml declares [tool.uv]; using uv.lock"
+                else:
+                    warn_missing_expected(logger, "pypi", [Constants.UV_LOCK_FILE])
+            elif tools.get("tool_poetry"):
+                poetry_locks = [p for p in discovered["lockfile"] if p.endswith(Constants.POETRY_LOCK_FILE)]
+                if poetry_locks:
+                    lockfile_path = poetry_locks[0]
+                    lockfile_rationale = "pyproject.toml declares [tool.poetry]; using poetry.lock"
+                else:
+                    warn_missing_expected(logger, "pypi", [Constants.POETRY_LOCK_FILE])
+            else:
+                uv_locks = [p for p in discovered["lockfile"] if p.endswith(Constants.UV_LOCK_FILE)]
+                poetry_locks = [p for p in discovered["lockfile"] if p.endswith(Constants.POETRY_LOCK_FILE)]
+                if uv_locks:
+                    lockfile_path = uv_locks[0]
+                    lockfile_rationale = "no tool section; preferring uv.lock"
+                elif poetry_locks:
+                    lockfile_path = poetry_locks[0]
+                    lockfile_rationale = "no tool section; using poetry.lock"
+                if uv_locks and poetry_locks:
+                    warn_multiple_lockfiles(logger, "pypi", uv_locks[0], poetry_locks)
+
+        elif req_paths:
+            manifest_path = req_paths[0]
+            lockfile_path = None
+        else:
+            warn_missing_expected(logger, "pypi", [Constants.PYPROJECT_TOML_FILE, Constants.REQUIREMENTS_FILE])
+            sys.exit(ExitCodes.FILE_ERROR.value)
+
+        # Log selection
+        log_selection(logger, "pypi", manifest_path, lockfile_path, lockfile_rationale or "no lockfile")
+
+        # Parse manifest to obtain direct dependencies
+        from versioning.parser import parse_pyproject_for_direct_pypi, parse_requirements_txt
+        direct_deps: dict = {}
+        if manifest_path and manifest_path.endswith(Constants.PYPROJECT_TOML_FILE):
+            direct_deps = parse_pyproject_for_direct_pypi(manifest_path)
+        elif manifest_path and manifest_path.endswith(Constants.REQUIREMENTS_FILE):
+            direct_deps = parse_requirements_txt(manifest_path)
+
+        direct_names = list(direct_deps.keys())
+        return direct_names
+
+    except Exception as e:
+        logger.error("Error during PyPI scan: %s", e)
         sys.exit(ExitCodes.FILE_ERROR.value)

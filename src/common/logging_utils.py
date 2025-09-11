@@ -429,3 +429,76 @@ def configure_logging():
 
     # Set root logger level
     root_logger.setLevel(log_level)
+
+
+# Enriched logging helpers (scaffolding)
+def log_discovered_files(logger, ecosystem, discovered) -> None:
+    """DEBUG: Log discovered manifests and lockfiles."""
+    try:
+        logger.debug(
+            "discovered_files ecosystem=%s manifests=%s lockfiles=%s",
+            ecosystem,
+            discovered.get("manifest"),
+            discovered.get("lockfile"),
+        )
+    except Exception:  # pylint: disable=broad-exception-caught
+        logger.debug("discovered_files ecosystem=%s", ecosystem)
+
+
+def log_selection(logger, ecosystem, manifest, lockfile, rationale: str) -> None:
+    """DEBUG: Log chosen manifest/lockfile and rationale."""
+    logger.debug(
+        "selection ecosystem=%s manifest=%s lockfile=%s rationale=%s",
+        ecosystem,
+        manifest,
+        lockfile,
+        rationale,
+    )
+
+
+def warn_multiple_lockfiles(logger, ecosystem, chosen, alternatives) -> None:
+    """WARN: Multiple lockfiles present; record chosen and alternatives."""
+    logger.warning(
+        "multiple_lockfiles ecosystem=%s chosen=%s alternatives=%s",
+        ecosystem,
+        chosen,
+        alternatives,
+    )
+
+
+def warn_missing_expected(logger, ecosystem, expected) -> None:
+    """WARN: Expected files missing."""
+    logger.warning(
+        "missing_expected_files ecosystem=%s expected=%s", ecosystem, expected
+    )
+
+
+def warn_orphan_lock_dep(logger, ecosystem, package, lockfile) -> None:
+    """WARN: Dependency in lockfile not reachable from any manifest root."""
+    logger.warning(
+        "orphan_lock_dependency ecosystem=%s package=%s lockfile=%s",
+        ecosystem,
+        package,
+        lockfile,
+    )
+
+
+def debug_dependency_line(logger, rec) -> None:
+    """DEBUG: Per-dependency summary line for classification output."""
+    try:
+        origins = ";".join(
+            f"{o.file_path}:{o.section}" for o in (getattr(rec, "source_files", []) or [])
+        )
+        logger.debug(
+            "dependency ecosystem=%s name=%s version=%s relation=%s requirement=%s scope=%s origin=%s lockfile=%s",
+            getattr(rec, "ecosystem", None),
+            getattr(rec, "name", None),
+            getattr(rec, "resolved_version", None),
+            getattr(getattr(rec, "relation", None), "value", None),
+            getattr(getattr(rec, "requirement", None), "value", None),
+            getattr(getattr(rec, "scope", None), "value", None),
+            origins,
+            getattr(rec, "lockfile", None),
+        )
+    except Exception:  # pylint: disable=broad-exception-caught
+        logger.debug("dependency name=%s", getattr(rec, "name", None))
