@@ -56,7 +56,8 @@ def parse_cli_token(token: str, ecosystem: Ecosystem) -> PackageRequest:
     """Parse a CLI/list token into a PackageRequest.
 
     Uses rightmost-colon and ecosystem-aware normalization.
-    Prefers PEP 508 parsing for PyPI tokens to strip version specifiers/extras.
+    For PyPI, support colon-delimited CLI spec (e.g., 'name:1.2.3') for backward-compat,
+    otherwise prefer PEP 508 parsing to strip extras/specifiers.
     """
     # Special handling for Maven coordinates that contain colons naturally
     if ecosystem == Ecosystem.MAVEN:
@@ -77,16 +78,20 @@ def parse_cli_token(token: str, ecosystem: Ecosystem) -> PackageRequest:
         identifier = _normalize_identifier(id_part, ecosystem)
     else:
         if ecosystem == Ecosystem.PYPI:
-            # Prefer robust PEP 508 parsing for PyPI tokens
-            try:
-                from packaging.requirements import Requirement  # lazy import
-                r = Requirement(str(token))
-                id_part = r.name
-                spec = str(r.specifier) if str(r.specifier) else None
-            except Exception:
-                # Fallback to heuristic splitter
-                name_part, pep_spec = _split_spec(str(token))
-                id_part, spec = name_part, pep_spec
+            # Support colon-delimited CLI spec first (backward-compat with tests)
+            if ":" in token:
+                id_part, spec = tokenize_rightmost_colon(token)
+            else:
+                # Prefer robust PEP 508 parsing for PyPI tokens
+                try:
+                    from packaging.requirements import Requirement  # lazy import
+                    r = Requirement(str(token))
+                    id_part = r.name
+                    spec = str(r.specifier) if str(r.specifier) else None
+                except Exception:
+                    # Fallback to heuristic splitter
+                    name_part, pep_spec = _split_spec(str(token))
+                    id_part, spec = name_part, pep_spec
             identifier = _normalize_identifier(id_part, ecosystem)
         else:
             # npm and others: only split rightmost colon (scoped npm names may include '/')

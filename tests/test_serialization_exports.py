@@ -79,3 +79,66 @@ def test_csv_with_values(tmp_path):
     # Present in registry and version match become True/False strings
     assert row[-2] == "True"
     assert row[-1] == "True"
+
+
+def test_json_includes_dependency_fields_defaults(tmp_path):
+    mp = make_pkg()
+    out = tmp_path / "out_dep.json"
+    export_json([mp], str(out))
+
+    data = json.loads(out.read_text(encoding="utf-8"))
+    rec = data[0]
+    assert "dependency_relation" in rec and rec["dependency_relation"] is None
+    assert "dependency_requirement" in rec and rec["dependency_requirement"] is None
+    assert "dependency_scope" in rec and rec["dependency_scope"] is None
+
+
+def test_csv_headers_include_dependency_fields(tmp_path):
+    mp = make_pkg()
+    out = tmp_path / "out_dep.csv"
+    export_csv([mp], str(out))
+
+    rows = list(csv.reader(out.open("r", encoding="utf-8")))
+    header = rows[0]
+    # New dependency columns present
+    assert "dependency_relation" in header
+    assert "dependency_requirement" in header
+    assert "dependency_scope" in header
+    # repo_* remain last five
+    assert header[-5:] == [
+        "repo_stars",
+        "repo_contributors",
+        "repo_last_activity",
+        "repo_present_in_registry",
+        "repo_version_match",
+    ]
+    # dependency columns appear before repo_stars
+    assert header.index("dependency_relation") < header.index("repo_stars")
+
+
+def test_json_and_csv_dependency_values(tmp_path):
+    mp = make_pkg()
+    mp.dependency_relation = "direct"
+    mp.dependency_requirement = "required"
+    mp.dependency_scope = "development"
+
+    # JSON
+    outj = tmp_path / "out_dep_values.json"
+    export_json([mp], str(outj))
+    rec = json.loads(outj.read_text(encoding="utf-8"))[0]
+    assert rec["dependency_relation"] == "direct"
+    assert rec["dependency_requirement"] == "required"
+    assert rec["dependency_scope"] == "development"
+
+    # CSV
+    outc = tmp_path / "out_dep_values.csv"
+    export_csv([mp], str(outc))
+    rows = list(csv.reader(outc.open("r", encoding="utf-8")))
+    header = rows[0]
+    row = rows[1]
+    i_rel = header.index("dependency_relation")
+    i_req = header.index("dependency_requirement")
+    i_sco = header.index("dependency_scope")
+    assert row[i_rel] == "direct"
+    assert row[i_req] == "required"
+    assert row[i_sco] == "development"

@@ -83,6 +83,11 @@ class MetaPackage:  # pylint: disable=too-many-instance-attributes, too-many-pub
         self._resolved_version = None
         self._resolution_mode = None
 
+        # Dependency classification fields
+        self._dependency_relation = None
+        self._dependency_requirement = None
+        self._dependency_scope = None
+
     def __repr__(self):
         return self._pkg_name
 
@@ -455,6 +460,34 @@ class MetaPackage:  # pylint: disable=too-many-instance-attributes, too-many-pub
     @version_count.setter
     def version_count(self, a):
         self._version_count = a
+
+    # Dependency classification
+    @property
+    def dependency_relation(self):
+        """Relation of this dependency to the root project (direct/transitive)."""
+        return self._dependency_relation
+
+    @dependency_relation.setter
+    def dependency_relation(self, value):
+        self._dependency_relation = value
+
+    @property
+    def dependency_requirement(self):
+        """Requirement type for this dependency (required/optional)."""
+        return self._dependency_requirement
+
+    @dependency_requirement.setter
+    def dependency_requirement(self, value):
+        self._dependency_requirement = value
+
+    @property
+    def dependency_scope(self):
+        """Scope for this dependency (normal/development/testing)."""
+        return self._dependency_scope
+
+    @dependency_scope.setter
+    def dependency_scope(self, value):
+        self._dependency_scope = value
 
     @property
     def timestamp(self):
