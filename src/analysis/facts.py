@@ -60,9 +60,9 @@ class FactBuilder:
             "release_found_in_source_registry": getattr(package, "repo_present_in_registry", None),
             "heuristic_score": getattr(package, "score", None),
             "license": {
-                "id": None,  # To be populated by license discovery
-                "available": None,
-                "source": None
+                "id": getattr(package, "license_id", None),
+                "available": getattr(package, "license_available", None),
+                "source": getattr(package, "license_source", None)
             }
         }
 

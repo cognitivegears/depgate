@@ -19,7 +19,7 @@ from common.http_client import safe_get  # noqa: F401
 
 # Public API re-exports
 from .discovery import _extract_repo_candidates  # noqa: F401
-from .enrich import _maybe_resolve_via_rtd, _enrich_with_repo  # noqa: F401
+from .enrich import _maybe_resolve_via_rtd, _enrich_with_repo, _enrich_with_license  # noqa: F401
 from .client import recv_pkg_info  # noqa: F401
 from .scan import scan_source  # noqa: F401
 
@@ -29,6 +29,7 @@ __all__ = [
     "_maybe_resolve_via_rtd",
     # Enrichment
     "_enrich_with_repo",
+    "_enrich_with_license",
     # Client/scan
     "recv_pkg_info",
     "scan_source",

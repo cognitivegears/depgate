@@ -33,6 +33,93 @@ class _PkgAccessor:
 # Expose as module attribute for tests to patch like registry.pypi.enrich.pypi_pkg.normalize_repo_url
 pypi_pkg = _PkgAccessor('registry.pypi')
 
+def _extract_license_from_info(info: Dict[str, Any]) -> tuple[Optional[str], Optional[str], Optional[str]]:
+    """Extract license information from PyPI info metadata.
+
+    Returns:
+        (license_id, license_source, license_url)
+    """
+    classifiers = info.get("classifiers", []) or []
+    license_id: Optional[str] = None
+    license_source: Optional[str] = None
+    license_url: Optional[str] = None
+
+    def _map_classifier(text: str) -> Optional[str]:
+        s = str(text).lower()
+        if "license ::" not in s:
+            return None
+        mapping = {
+            "mit license": "MIT",
+            "apache software license": "Apache-2.0",
+            "bsd license": "BSD-3-Clause",
+            "isc license": "ISC",
+            "mozilla public license 2.0": "MPL-2.0",
+            "gnu general public license v2": "GPL-2.0-only",
+            "gnu general public license v3": "GPL-3.0-only",
+            "gnu lesser general public license v2.1": "LGPL-2.1-only",
+            "gnu lesser general public license v3": "LGPL-3.0-only",
+        }
+        for key, spdx in mapping.items():
+            if key in s:
+                return spdx
+        return None
+
+    # Prefer Trove classifiers
+    for c in classifiers:
+        mapped = _map_classifier(c)
+        if mapped:
+            license_id = mapped
+            license_source = "pypi_classifiers"
+            break
+
+    # Fallback: info.license free text
+    if license_id is None:
+        raw = str(info.get("license") or "").strip()
+        if raw:
+            rl = raw.lower()
+            if raw.upper() == "MIT" or "mit" in rl:
+                license_id = "MIT"
+            elif "apache" in rl and ("2.0" in rl or "2" in rl):
+                license_id = "Apache-2.0"
+            elif rl.startswith("bsd") or "bsd license" in rl:
+                license_id = "BSD-3-Clause"
+            elif rl == "isc" or "isc license" in rl:
+                license_id = "ISC"
+            elif "mpl" in rl or "mozilla public license" in rl:
+                license_id = "MPL-2.0"
+            elif "lgpl" in rl and ("2.1" in rl or "2_1" in rl):
+                license_id = "LGPL-2.1-only"
+            elif "lgpl" in rl and "3" in rl:
+                license_id = "LGPL-3.0-only"
+            elif "gpl" in rl and "3" in rl:
+                license_id = "GPL-3.0-only"
+            elif "gpl" in rl and "2" in rl:
+                license_id = "GPL-2.0-only"
+            if license_id:
+                license_source = "pypi_license"
+
+    # Fallback: project_urls License link
+    project_urls = info.get("project_urls", {}) or {}
+    for key, url in project_urls.items():
+        if isinstance(key, str) and isinstance(url, str) and url:
+            if "license" in key.lower() or "licence" in key.lower():
+                license_url = url
+                if license_source is None and license_id is None:
+                    license_source = "pypi_project_urls"
+                break
+
+    return license_id, license_source, license_url
+
+
+def _enrich_with_license(mp, info: Dict[str, Any]) -> None:
+    """Populate MetaPackage license fields from PyPI info metadata."""
+    lic_id, lic_source, lic_url = _extract_license_from_info(info)
+    if lic_id or lic_url:
+        setattr(mp, "license_id", lic_id)
+        setattr(mp, "license_source", lic_source)
+        setattr(mp, "license_available", True)
+        if lic_url:
+            setattr(mp, "license_url", lic_url)
 
 def _resolve_pypi_candidate(candidate_url: str, provenance: Dict[str, Any]) -> tuple[str, Dict[str, Any]]:
     """Resolve a candidate URL, attempting RTD resolution when applicable; returns (final_url, provenance)."""

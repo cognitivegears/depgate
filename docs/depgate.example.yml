@@ -94,79 +94,54 @@ rtd:
 
 
 # Policy analysis configuration
-# Controls the new policy scanning engine behavior.
+# The engine accepts three top-level keys: 'fail_fast', 'metrics', and 'rules'.
 # Notes:
-# - Unknown keys are ignored safely.
-# - You can override individual values via CLI: --set policy.metrics.heuristic_score.min=0.8
-# - You can load an external file via --config /path/to/policy.yml
+# - Unknown keys are ignored safely by the global config loader.
+# - CLI currently does not auto-load 'policy' into the engine; this is a reference schema/sample.
 policy:
-  # Execution behavior for rule evaluation
-  fail_fast: false   # when true, stops at the first violated rule
+  # Execution behavior for rule evaluation (bool; default=false)
+  fail_fast: false  # when true, stops at the first violated rule
 
-  # Comparator-based metric rules (numbers and strings supported)
+  # Comparator-based metric rules
   # Comparators: min (>=), max (<=), eq, ne, in, not_in
   metrics:
-    # Numeric examples
-    stars_count:
-      min: 5
+    # Numeric metrics
     heuristic_score:
-      min: 0.6
+      min: 0.6     # float >= 0.0
+    stars_count:
+      min: 5       # integer >= 0
     contributors_count:
-      min: 1
+      min: 1       # integer >= 0
     version_count:
-      min: 1
+      min: 1       # integer >= 0
 
-    # String comparator examples
+    # String metrics
     registry:
-      in: ["npm", "pypi", "maven"]
+      in: ["npm", "pypi", "maven"]  # allowed registries
     package_name:
       ne: ""  # non-empty safety check
 
-  # Regex inclusion/exclusion rules
-  # Precedence: exclude rules run first; include rules then allow through.
-  # Defaults: case_sensitive=false, full_match=false (substring search).
-  regex:
-    case_sensitive: false
-    full_match: false
-    include:
-      # Allow only internal scoped packages (example)
-      - field: package_name
-        pattern: "^@acme/.*"
-    exclude:
-      # Exclude archived or deprecated repos by URL pattern (example)
-      - field: source_repo
-        pattern: "example.com/archived"
+  # Explicit rule list (evaluated in order); each rule must include a 'type'
+  rules:
+    # Regex rule (type=regex)
+    - type: regex
+      target: package_name          # dot-path into facts (default: package_name)
+      exclude:
+        - "-beta$"                  # exclusion patterns take precedence
+      include:
+        - "^@acme/"                 # optional inclusion patterns
+      case_sensitive: false         # default: true
+      full_match: false             # default: false (substring search)
 
-  # License policy
-  # - enabled: toggles license policy enforcement
-  # - disallowed_licenses: SPDX IDs that should deny a package
-  # - allow_unknown: when true, unknown/missing license does not cause denial
-  license_check:
-    enabled: true
-    disallowed_licenses:
-      - "GPL-3.0-only"
-      - "AGPL-3.0-only"
-    allow_unknown: false
-
-  # Heuristics integration
-  # When a policy references metrics that require heuristics, auto-run them.
-  heuristics:
-    auto_run_if_missing: true
-
-  # License discovery control (metadata-first with provider fallback)
-  # This governs whether the engine attempts to discover a license when missing.
-  license_discovery:
-    enabled: true
-    default_ref: "default"   # logical ref or branch to use when applicable
-    cache_ttl_sec: 3600      # client-side cache TTL for discovered licenses (seconds)
-
-  # Output behavior for policy results
-  # include_license_fields: when true, emit discovered license in outputs where applicable
-  output:
-    include_license_fields: true
+    # License rule (type=license)
+    - type: license
+      disallowed_licenses:
+        - "GPL-3.0-only"
+        - "AGPL-3.0-only"
+      allow_unknown: false          # when true, unknown/missing license does not deny
 
 # CLI examples:
-#   Load this file:
+#   Run policy analysis using internal defaults (no YAML loading for policy yet):
+#     depgate -t npm -p left-pad -a policy
+#   Load this file for other sections (http/registry/provider/heuristics):
 #     depgate -t npm -p left-pad -a policy --config ./depgate.example.yml
-#   Override a metric threshold via CLI:
-#     depgate -t npm -p left-pad -a policy --set policy.metrics.heuristic_score.min=0.8

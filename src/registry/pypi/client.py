@@ -10,7 +10,7 @@ from constants import ExitCodes, Constants
 from common.logging_utils import extra_context, is_debug_enabled, Timer, safe_url
 
 import registry.pypi as pypi_pkg
-from .enrich import _enrich_with_repo
+from .enrich import _enrich_with_repo, _enrich_with_license
 
 logger = logging.getLogger(__name__)
 
@@ -125,6 +125,9 @@ def recv_pkg_info(pkgs, url: str = Constants.REGISTRY_URL_PYPI) -> None:
                 x.timestamp = 0
 
             x.version_count = len(j.get("releases", {}))
+
+            # Enrich with license metadata from PyPI info
+            _enrich_with_license(x, j["info"])
 
             # Enrich with repository discovery and validation
             _enrich_with_repo(x, x.pkg_name, j["info"], latest)

@@ -522,18 +522,120 @@ def run_policy_analysis(args):
     # Step 4: Create policy engine and evaluate
     policy_engine = create_policy_engine()
 
-    # Default policy config (would be loaded from file/args in real implementation)
-    policy_config = {
-        "fail_fast": False,
-        "metrics": {
-            "stars_count": {"min": 5},
-            "heuristic_score": {"min": 0.6}
-        },
-        "license_check": {
-            "enabled": True,
-            "disallowed_licenses": ["GPL-3.0-only"]
+    # Load policy configuration with precedence:
+    # 1) CLI --set overrides (highest)
+    # 2) Explicit --config file or default YAML locations (policy section)
+    # 3) Built-in defaults (only when no user policy and no overrides)
+    def _load_policy_from_user_config(cli_args):
+        """Return policy dict from user config if available; otherwise None."""
+        cfg = {}
+        # Explicit --config path (supports YAML or JSON)
+        path = getattr(cli_args, "CONFIG", None)
+        if isinstance(path, str) and path.strip():
+            try:
+                with open(path, "r", encoding="utf-8") as fh:
+                    lower = path.lower()
+                    if lower.endswith(".json"):
+                        try:
+                            cfg = json.load(fh) or {}
+                        except Exception:
+                            cfg = {}
+                    else:
+                        try:
+                            import yaml as _yaml  # type: ignore
+                        except Exception:
+                            _yaml = None
+                        if _yaml is not None:
+                            try:
+                                cfg = _yaml.safe_load(fh) or {}
+                            except Exception:
+                                cfg = {}
+                        else:
+                            cfg = {}
+            except Exception:
+                cfg = {}
+        # Fallback: default YAML locations handled by constants
+        if not cfg:
+            try:
+                from constants import _load_yaml_config as _defaults_loader  # type: ignore
+                cfg = _defaults_loader() or {}
+            except Exception:
+                cfg = {}
+        if isinstance(cfg, dict):
+            pol = cfg.get("policy")
+            if isinstance(pol, dict):
+                return pol
+        return None
+
+    def _coerce_value(text):
+        """Best-effort convert string to JSON/number/bool, else raw string."""
+        s = str(text).strip()
+        try:
+            return json.loads(s)
+        except Exception:
+            sl = s.lower()
+            if sl == "true":
+                return True
+            if sl == "false":
+                return False
+            try:
+                if s.isdigit() or (s.startswith("-") and s[1:].isdigit()):
+                    return int(s)
+                return float(s)
+            except Exception:
+                return s
+
+    def _apply_dot_path(dct, dot_path, value):
+        parts = [p for p in dot_path.split(".") if p]
+        cur = dct
+        for key in parts[:-1]:
+            if key not in cur or not isinstance(cur.get(key), dict):
+                cur[key] = {}
+            cur = cur[key]
+        cur[parts[-1]] = value
+
+    def _collect_policy_overrides(pairs):
+        overrides = {}
+        if not pairs:
+            return overrides
+        for item in pairs:
+            if not isinstance(item, str) or "=" not in item:
+                continue
+            key, val = item.split("=", 1)
+            key = key.strip()
+            if key.startswith("policy."):
+                key = key[len("policy.") :]
+            _apply_dot_path(overrides, key, _coerce_value(val.strip()))
+        return overrides
+
+    user_policy = _load_policy_from_user_config(args)
+    overrides_present = bool(getattr(args, "POLICY_SET", None))
+
+    if user_policy is not None:
+        policy_config = dict(user_policy)  # shallow copy from user config
+    elif overrides_present:
+        # If overrides are provided but no user policy config exists, start from empty
+        policy_config = {}
+    else:
+        # Built-in fallback defaults
+        policy_config = {
+            "fail_fast": False,
+            "metrics": {
+                "stars_count": {"min": 5},
+                "heuristic_score": {"min": 0.6},
+            },
         }
-    }
+
+    if overrides_present:
+        ov = _collect_policy_overrides(getattr(args, "POLICY_SET", []))
+        # Deep merge overrides into base policy_config
+        def _deep_merge(dest, src):
+            for k, v in src.items():
+                if isinstance(v, dict) and isinstance(dest.get(k), dict):
+                    _deep_merge(dest[k], v)
+                else:
+                    dest[k] = v
+        _deep_merge(policy_config, ov)
 
     # Evaluate each package
     for pkg in metapkg.instances:
