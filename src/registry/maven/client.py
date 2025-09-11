@@ -11,7 +11,9 @@ from typing import List
 
 from constants import ExitCodes, Constants
 from common import http_client
+from common.http_client import robust_get
 from common.logging_utils import extra_context, is_debug_enabled, Timer, safe_url
+from .enrich import _enrich_with_repo
 
 
 logger = logging.getLogger(__name__)
@@ -44,35 +46,19 @@ def recv_pkg_info(pkgs, url: str = Constants.REGISTRY_URL_MAVEN) -> None:
         )
 
         with Timer() as timer:
-            try:
-                headers = {"Accept": "application/json", "Content-Type": "application/json"}
-                # Sleep to avoid rate limiting
-                time.sleep(0.1)
-                res = http_client.safe_get(url, context="maven", params=payload, headers=headers)
-            except SystemExit:
-                # safe_get calls sys.exit on errors, so we need to catch and re-raise as exception
-                logger.error(
-                    "HTTP error",
-                    exc_info=True,
-                    extra=extra_context(
-                        event="http_error",
-                        outcome="exception",
-                        target=safe_url(url),
-                        package_manager="maven"
-                    )
-                )
-                raise
+            headers = {"Accept": "application/json", "Content-Type": "application/json"}
+            status_code, _, text = robust_get(url, params=payload, headers=headers)
 
         duration_ms = timer.duration_ms()
 
-        if res.status_code == 200:
+        if status_code == 200:
             if is_debug_enabled(logger):
                 logger.debug(
                     "HTTP response ok",
                     extra=extra_context(
                         event="http_response",
                         outcome="success",
-                        status_code=res.status_code,
+                        status_code=status_code,
                         duration_ms=duration_ms,
                         package_manager="maven"
                     )
@@ -83,24 +69,62 @@ def recv_pkg_info(pkgs, url: str = Constants.REGISTRY_URL_MAVEN) -> None:
                 extra=extra_context(
                     event="http_response",
                     outcome="handled_non_2xx",
-                    status_code=res.status_code,
+                    status_code=status_code,
                     duration_ms=duration_ms,
                     target=safe_url(url),
                     package_manager="maven"
                 )
             )
 
-        j = json.loads(res.text)
+        try:
+            j = json.loads(text) if (status_code == 200 and text) else {}
+        except Exception:  # pylint: disable=broad-exception-caught
+            j = {}
         number_found = j.get("response", {}).get("numFound", 0)
         if number_found == 1:  # safety, can't have multiples
             x.exists = True
             x.timestamp = j.get("response", {}).get("docs", [{}])[0].get("timestamp", 0)
             x.version_count = j.get("response", {}).get("docs", [{}])[0].get("versionCount", 0)
+
+            # Invoke repository + deps.dev enrichment for Maven coordinates
+            try:
+                if is_debug_enabled(logger):
+                    logger.debug(
+                        "Invoking Maven enrichment (including deps.dev)",
+                        extra=extra_context(
+                            event="function_entry",
+                            component="client",
+                            action="invoke_enrich",
+                            package_manager="maven",
+                            target=f"{x.org_id}:{x.pkg_name}",
+                        ),
+                    )
+                # Version is optional; enrich will resolve latest if None
+                _enrich_with_repo(x, x.org_id, x.pkg_name, None)
+            except Exception:
+                # Defensive: never fail Maven client due to enrichment errors
+                pass
         elif number_found > 1:
             logging.warning("Multiple packages found, skipping")
             x.exists = False
         else:
             x.exists = False
+            # Fallback: attempt enrichment even when search is unavailable
+            try:
+                if is_debug_enabled(logger):
+                    logger.debug(
+                        "Invoking Maven enrichment without search result",
+                        extra=extra_context(
+                            event="function_entry",
+                            component="client",
+                            action="invoke_enrich_fallback",
+                            package_manager="maven",
+                            target=f"{x.org_id}:{x.pkg_name}",
+                        ),
+                    )
+                _enrich_with_repo(x, x.org_id, x.pkg_name, None)
+            except Exception:
+                pass
 
 
 def scan_source(dir_name: str, recursive: bool = False) -> List[str]:  # pylint: disable=too-many-locals

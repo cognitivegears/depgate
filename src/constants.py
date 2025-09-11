@@ -83,6 +83,14 @@ class Constants:  # pylint: disable=too-few-public-methods
     HTTP_RETRY_BASE_DELAY_SEC = 0.3
     HTTP_CACHE_TTL_SEC = 300
 
+    # deps.dev integration defaults
+    DEPSDEV_ENABLED: bool = True
+    DEPSDEV_BASE_URL = "https://api.deps.dev/v3"
+    DEPSDEV_MAX_CONCURRENCY = 4
+    DEPSDEV_CACHE_TTL_SEC = 86400
+    DEPSDEV_MAX_RESPONSE_BYTES = 1048576
+    DEPSDEV_STRICT_OVERRIDE: bool = False
+
     # HTTP rate limit and retry policy defaults (fail-fast to preserve existing behavior)
     HTTP_RATE_POLICY_DEFAULT_MAX_RETRIES = 0
     HTTP_RATE_POLICY_DEFAULT_INITIAL_BACKOFF_SEC = 0.5
@@ -373,10 +381,100 @@ def _apply_config_overrides(cfg: Dict[str, Any]) -> None:  # pylint: disable=too
                 merged_per_service[host] = service_config
         Constants.HTTP_RATE_POLICY_PER_SERVICE = merged_per_service  # type: ignore[attr-defined]
 
+    # deps.dev configuration
+    depsdev = cfg.get("depsdev", {}) or {}
+    try:
+        Constants.DEPSDEV_ENABLED = bool(  # type: ignore[attr-defined]
+            depsdev.get("enabled", Constants.DEPSDEV_ENABLED)
+        )
+    except Exception:  # pylint: disable=broad-exception-caught
+        pass
+    try:
+        base = depsdev.get("base_url", Constants.DEPSDEV_BASE_URL)
+        if isinstance(base, str) and base.strip():
+            Constants.DEPSDEV_BASE_URL = base  # type: ignore[attr-defined]
+    except Exception:  # pylint: disable=broad-exception-caught
+        pass
+    try:
+        Constants.DEPSDEV_CACHE_TTL_SEC = int(  # type: ignore[attr-defined]
+            depsdev.get("cache_ttl_sec", Constants.DEPSDEV_CACHE_TTL_SEC)
+        )
+    except Exception:  # pylint: disable=broad-exception-caught
+        pass
+    try:
+        Constants.DEPSDEV_MAX_CONCURRENCY = int(  # type: ignore[attr-defined]
+            depsdev.get("max_concurrency", Constants.DEPSDEV_MAX_CONCURRENCY)
+        )
+    except Exception:  # pylint: disable=broad-exception-caught
+        pass
+    try:
+        Constants.DEPSDEV_MAX_RESPONSE_BYTES = int(  # type: ignore[attr-defined]
+            depsdev.get("max_response_bytes", Constants.DEPSDEV_MAX_RESPONSE_BYTES)
+        )
+    except Exception:  # pylint: disable=broad-exception-caught
+        pass
+    try:
+        Constants.DEPSDEV_STRICT_OVERRIDE = bool(  # type: ignore[attr-defined]
+            depsdev.get("strict_override", Constants.DEPSDEV_STRICT_OVERRIDE)
+        )
+    except Exception:  # pylint: disable=broad-exception-caught
+        pass
+
     # RTD
     Constants.READTHEDOCS_API_BASE = rtd.get(  # type: ignore[attr-defined]
         "api_base", Constants.READTHEDOCS_API_BASE
     )
+
+
+def _parse_bool_env(value: str) -> Optional[bool]:
+    """Parse common boolean-like environment variable values."""
+    s = str(value).strip().lower()
+    if s in ("1", "true", "yes", "on"):
+        return True
+    if s in ("0", "false", "no", "off"):
+        return False
+    return None
+
+
+def _apply_env_overrides() -> None:
+    """Apply environment variable overrides for deps.dev integration."""
+    # Precedence model: env overrides YAML/defaults; CLI overrides env in main()
+    enabled = os.environ.get("DEPGATE_DEPSDEV_ENABLED")
+    if enabled is not None:
+        parsed = _parse_bool_env(enabled)
+        if parsed is not None:
+            Constants.DEPSDEV_ENABLED = parsed  # type: ignore[attr-defined]
+
+    base = os.environ.get("DEPGATE_DEPSDEV_BASE_URL")
+    if base:
+        Constants.DEPSDEV_BASE_URL = base  # type: ignore[attr-defined]
+
+    ttl = os.environ.get("DEPGATE_DEPSDEV_CACHE_TTL_SEC")
+    if ttl:
+        try:
+            Constants.DEPSDEV_CACHE_TTL_SEC = int(ttl)  # type: ignore[attr-defined]
+        except Exception:  # pylint: disable=broad-exception-caught
+            pass
+
+    conc = os.environ.get("DEPGATE_DEPSDEV_MAX_CONCURRENCY")
+    if conc:
+        try:
+            Constants.DEPSDEV_MAX_CONCURRENCY = int(conc)  # type: ignore[attr-defined]
+        except Exception:  # pylint: disable=broad-exception-caught
+            pass
+
+    max_bytes = os.environ.get("DEPGATE_DEPSDEV_MAX_RESPONSE_BYTES")
+    if max_bytes:
+        try:
+            Constants.DEPSDEV_MAX_RESPONSE_BYTES = int(max_bytes)  # type: ignore[attr-defined]
+        except Exception:  # pylint: disable=broad-exception-caught
+            pass
+
+    strict = os.environ.get("DEPGATE_DEPSDEV_STRICT_OVERRIDE")
+    if strict is not None:
+        parsed = _parse_bool_env(strict)
+        if parsed is not None:
+            Constants.DEPSDEV_STRICT_OVERRIDE = parsed  # type: ignore[attr-defined]
 
 
 # Attempt to load and apply YAML configuration on import (no-op if unavailable)
@@ -384,6 +482,11 @@ try:
     _cfg = _load_yaml_config()
     if _cfg:
         _apply_config_overrides(_cfg)
+    # Apply environment overrides regardless of YAML presence
+    try:
+        _apply_env_overrides()
+    except Exception:  # pylint: disable=broad-exception-caught
+        pass
 except Exception:  # pylint: disable=broad-exception-caught
     # Never fail import due to config issues
     pass

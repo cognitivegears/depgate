@@ -9,6 +9,7 @@ from common.logging_utils import extra_context, is_debug_enabled, Timer
 from repository.providers import ProviderType, map_host_to_type
 from repository.provider_registry import ProviderRegistry
 from repository.provider_validation import ProviderValidationService
+from registry.depsdev.enrich import enrich_metapackage as depsdev_enrich
 
 from .discovery import _extract_repo_candidates
 
@@ -290,6 +291,14 @@ def _enrich_with_repo(mp, _name: str, info: Dict[str, Any], version: str) -> Non
 
     if repo_errors:
         mp.repo_errors = repo_errors
+
+    # deps.dev enrichment (backfill-only; feature flag enforced inside function)
+    try:
+        deps_version = getattr(mp, "resolved_version", None) or version
+        depsdev_enrich(mp, "pypi", getattr(mp, "pkg_name", None) or "", deps_version)
+    except Exception:
+        # Defensive: never fail PyPI enrichment due to deps.dev issues
+        pass
 
     logger.info("PyPI enrichment completed", extra=extra_context(
         event="complete", component="enrich", action="enrich_with_repo",

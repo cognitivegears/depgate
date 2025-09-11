@@ -96,35 +96,41 @@ class MavenVersionResolver(VersionResolver):
         return None, len(candidates), "Unsupported resolution mode"
 
     def _pick_latest(self, candidates: List[str]) -> Tuple[Optional[str], int, Optional[str]]:
-        """Pick the highest stable (non-SNAPSHOT) version from candidates."""
+        """Pick the highest stable (non-SNAPSHOT) version from candidates.
+
+        Preserve the original Maven version string when returning, rather than
+        the normalized PEP 440 string from packaging.Version. This avoids
+        converting values like '6.0.0-RC2' into '6.0.0rc2', which can break
+        downstream lookups (e.g., deps.dev expects Maven-style version text).
+        """
         if not candidates:
             return None, 0, "No versions available"
 
         stable_versions = [v for v in candidates if not v.endswith("-SNAPSHOT")]
 
         if not stable_versions:
-            # If no stable versions, pick highest SNAPSHOT
+            # If no stable versions, pick highest SNAPSHOT, returning original string
             try:
-                parsed_versions = [version.Version(v) for v in candidates]
-                parsed_versions.sort(reverse=True)
-                return str(parsed_versions[0]), len(candidates), None
+                pairs = [(version.Version(v), v) for v in candidates]
+                pairs.sort(key=lambda p: p[0], reverse=True)
+                return pairs[0][1], len(candidates), None
             except InvalidVersion as e:
                 return None, len(candidates), f"Version parsing error: {str(e)}"
 
-        # Parse and sort stable versions
-        parsed_versions = []
+        # Parse and sort stable versions with mapping back to original strings
+        pairs: List[Tuple[version.Version, str]] = []
         for v in stable_versions:
             try:
-                parsed_versions.append(version.Version(v))
+                pairs.append((version.Version(v), v))
             except InvalidVersion:
                 continue  # Skip invalid versions
 
-        if not parsed_versions:
+        if not pairs:
             return None, len(candidates), "No valid Maven versions found"
 
-        # Sort and pick highest
-        parsed_versions.sort(reverse=True)
-        return str(parsed_versions[0]), len(candidates), None
+        # Sort and pick highest, returning the original string form
+        pairs.sort(key=lambda p: p[0], reverse=True)
+        return pairs[0][1], len(candidates), None
 
     def _pick_exact(self, version_str: str, candidates: List[str]) -> Tuple[Optional[str], int, Optional[str]]:
         """Check if exact version exists in candidates."""

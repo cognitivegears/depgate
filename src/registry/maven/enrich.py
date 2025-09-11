@@ -9,11 +9,13 @@ from common.logging_utils import extra_context, is_debug_enabled, Timer
 from repository.providers import ProviderType, map_host_to_type
 from repository.provider_registry import ProviderRegistry
 from repository.provider_validation import ProviderValidationService
+from registry.depsdev.enrich import enrich_metapackage as depsdev_enrich
 
 from .discovery import (
     _normalize_scm_to_repo_url,
     _fetch_pom,
     _url_fallback_from_pom,
+    _parse_license_from_pom,
 )
 
 logger = logging.getLogger(__name__)
@@ -181,6 +183,11 @@ def _enrich_with_repo(mp, group: str, artifact: str, version: Optional[str]) -> 
                 provenance = mp.provenance or {}
                 provenance["maven_metadata.release"] = version
                 mp.provenance = provenance
+                # Expose resolved version so downstream enrichment (deps.dev) can use it
+                try:
+                    setattr(mp, "resolved_version", version)
+                except Exception:  # pylint: disable=broad-exception-caught
+                    pass
                 if is_debug_enabled(logger):
                     logger.debug(
                         "Resolved latest version from Maven metadata",
@@ -237,6 +244,50 @@ def _enrich_with_repo(mp, group: str, artifact: str, version: Optional[str]) -> 
 
     if repo_errors:
         mp.repo_errors = repo_errors
+
+    # deps.dev enrichment (backfill-only; feature flag enforced inside function)
+    try:
+        deps_name = f"{group}:{artifact}"
+        deps_version = getattr(mp, "resolved_version", None) or version
+        depsdev_enrich(mp, "maven", deps_name, deps_version)
+    except Exception:
+        # Defensive: never fail Maven enrichment due to deps.dev issues
+        pass
+
+    # Fallback: parse license from POM if still missing after deps.dev
+    try:
+        lic_present = getattr(mp, "license_id", None)
+        if not isinstance(lic_present, str) or not lic_present.strip():
+            pom_xml = _fetch_pom(group, artifact, version)
+            if pom_xml:
+                lic = _parse_license_from_pom(pom_xml)
+                lic_name = ""
+                lic_url = ""
+                if isinstance(lic, dict):
+                    if isinstance(lic.get("name"), str):
+                        lic_name = lic.get("name", "").strip()
+                    if isinstance(lic.get("url"), str):
+                        lic_url = lic.get("url", "").strip()
+                if lic_name or lic_url:
+                    if lic_name:
+                        setattr(mp, "license_id", lic_name)
+                    setattr(mp, "license_source", "maven_pom")
+                    setattr(mp, "license_available", True)
+                    try:
+                        setattr(mp, "is_license_available", True)
+                    except Exception:  # pylint: disable=broad-exception-caught
+                        pass
+                    # Record in provenance
+                    prov = getattr(mp, "provenance", None) or {}
+                    pom_prov = prov.get("maven_pom", {})
+                    if not isinstance(pom_prov, dict):
+                        pom_prov = {}
+                    pom_prov["license"] = {"name": lic_name or None, "url": lic_url or None}
+                    prov["maven_pom"] = pom_prov
+                    mp.provenance = prov
+    except Exception:  # pylint: disable=broad-exception-caught
+        # Never fail enrichment if license parsing fails
+        pass
 
     logger.info("Maven enrichment completed", extra=extra_context(
         event="complete", component="enrich", action="enrich_with_repo",

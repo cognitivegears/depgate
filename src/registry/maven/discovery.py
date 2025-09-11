@@ -192,6 +192,41 @@ def _parse_scm_from_pom(pom_xml: str) -> Dict[str, Any]:
 
     return result
 
+def _parse_license_from_pom(pom_xml: str) -> Dict[str, Any]:
+    """Parse license information from POM XML.
+
+    Args:
+        pom_xml: POM XML content as string
+
+    Returns:
+        Dict with keys 'name' and 'url' when found (values may be None).
+    """
+    result: Dict[str, Any] = {"name": None, "url": None}
+    try:
+        root = ET.fromstring(pom_xml)
+        ns = ".//{http://maven.apache.org/POM/4.0.0}"
+        licenses_elem = root.find(f"{ns}licenses")
+        if licenses_elem is not None:
+            # Use the first license entry if multiple are present
+            lic_elem = licenses_elem.find(f"{ns}license")
+            if lic_elem is not None:
+                name_elem = lic_elem.find(f"{ns}name")
+                url_elem = lic_elem.find(f"{ns}url")
+
+                if name_elem is not None and isinstance(name_elem.text, str):
+                    val = name_elem.text.strip()
+                    if val:
+                        result["name"] = val
+
+                if url_elem is not None and isinstance(url_elem.text, str):
+                    val = url_elem.text.strip()
+                    if val:
+                        result["url"] = val
+    except (ET.ParseError, AttributeError):
+        # Ignore parse errors; caller will handle absence gracefully
+        pass
+
+    return result
 
 def _normalize_scm_to_repo_url(scm: Dict[str, Any]) -> Optional[str]:
     """Normalize SCM connection strings to repository URL.

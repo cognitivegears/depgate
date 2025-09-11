@@ -91,4 +91,34 @@ def parse_args():
                         type=str,
                         default=[])
 
+    # deps.dev feature flags and tunables (CLI has highest precedence)
+    parser.add_argument("--depsdev-disable",
+                        dest="DEPSDEV_DISABLE",
+                        help="Disable deps.dev enrichment (feature flag; defaults to enabled)",
+                        action="store_true")
+    parser.add_argument("--depsdev-base-url",
+                        dest="DEPSDEV_BASE_URL",
+                        help="Override deps.dev base API URL (default: https://api.deps.dev/v3)",
+                        action="store",
+                        type=str)
+    parser.add_argument("--depsdev-cache-ttl",
+                        dest="DEPSDEV_CACHE_TTL",
+                        help="deps.dev cache TTL in seconds (default: 86400)",
+                        action="store",
+                        type=int)
+    parser.add_argument("--depsdev-max-concurrency",
+                        dest="DEPSDEV_MAX_CONCURRENCY",
+                        help="Maximum concurrent deps.dev requests (default: 4)",
+                        action="store",
+                        type=int)
+    parser.add_argument("--depsdev-max-response-bytes",
+                        dest="DEPSDEV_MAX_RESPONSE_BYTES",
+                        help="Maximum allowed deps.dev response size in bytes (default: 1048576)",
+                        action="store",
+                        type=int)
+    parser.add_argument("--depsdev-strict-override",
+                        dest="DEPSDEV_STRICT_OVERRIDE",
+                        help="Override existing values with deps.dev values (off by default; backfill-only when off)",
+                        action="store_true")
+
     return parser.parse_args()

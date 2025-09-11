@@ -9,6 +9,7 @@ from common.logging_utils import extra_context, is_debug_enabled, Timer
 from repository.providers import ProviderType, map_host_to_type
 from repository.provider_registry import ProviderRegistry
 from repository.provider_validation import ProviderValidationService
+from registry.depsdev.enrich import enrich_metapackage as depsdev_enrich
 
 from .discovery import (
     _extract_latest_version,
@@ -298,6 +299,14 @@ def _enrich_with_repo(pkg, packument: dict) -> None:
             "message": "API rate limited"
         })
         pkg.repo_errors = existing
+
+    # deps.dev enrichment (backfill-only; feature flag enforced inside function)
+    try:
+        deps_version = getattr(pkg, "resolved_version", None) or latest_version
+        depsdev_enrich(pkg, "npm", pkg.pkg_name, deps_version)
+    except Exception:
+        # Defensive: never fail NPM enrichment due to deps.dev issues
+        pass
 
     logger.info("NPM enrichment completed", extra=extra_context(
         event="complete", component="enrich", action="enrich_with_repo",

@@ -684,6 +684,24 @@ def main():
         # Defensive: never break CLI on logging setup
         pass
 
+    # Apply CLI overrides for deps.dev feature and tunables (CLI has highest precedence)
+    try:
+        if getattr(args, "DEPSDEV_DISABLE", False):
+            Constants.DEPSDEV_ENABLED = False  # type: ignore[attr-defined]
+        if getattr(args, "DEPSDEV_BASE_URL", None):
+            Constants.DEPSDEV_BASE_URL = args.DEPSDEV_BASE_URL  # type: ignore[attr-defined]
+        if getattr(args, "DEPSDEV_CACHE_TTL", None) is not None:
+            Constants.DEPSDEV_CACHE_TTL_SEC = int(args.DEPSDEV_CACHE_TTL)  # type: ignore[attr-defined]
+        if getattr(args, "DEPSDEV_MAX_CONCURRENCY", None) is not None:
+            Constants.DEPSDEV_MAX_CONCURRENCY = int(args.DEPSDEV_MAX_CONCURRENCY)  # type: ignore[attr-defined]
+        if getattr(args, "DEPSDEV_MAX_RESPONSE_BYTES", None) is not None:
+            Constants.DEPSDEV_MAX_RESPONSE_BYTES = int(args.DEPSDEV_MAX_RESPONSE_BYTES)  # type: ignore[attr-defined]
+        if getattr(args, "DEPSDEV_STRICT_OVERRIDE", False):
+            Constants.DEPSDEV_STRICT_OVERRIDE = True  # type: ignore[attr-defined]
+    except Exception:
+        # Defensive: never break CLI on config overrides
+        pass
+
     if is_debug_enabled(logger):
         logger.debug(
             "CLI start",
