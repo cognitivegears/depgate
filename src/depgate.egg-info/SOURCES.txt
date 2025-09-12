@@ -16,6 +16,7 @@ src/analysis/__init__.py
 src/analysis/analysis_runner.py
 src/analysis/facts.py
 src/analysis/heuristics.py
+src/analysis/linked.py
 src/analysis/policy.py
 src/analysis/policy_comparators.py
 src/analysis/policy_rules.py
@@ -72,6 +73,7 @@ src/versioning/resolvers/base.py
 src/versioning/resolvers/maven.py
 src/versioning/resolvers/npm.py
 src/versioning/resolvers/pypi.py
+tests/test_cli_actions.py
 tests/test_client_logging.py
 tests/test_depsdev_client_unit.py
 tests/test_depsdev_enrich_unit.py
@@ -85,6 +87,7 @@ tests/test_http_client_wrapped_unit.py
 tests/test_http_metrics_unit.py
 tests/test_http_policy_unit.py
 tests/test_license_discovery.py
+tests/test_linked_analysis.py
 tests/test_logging_integration_e2e.py
 tests/test_logging_utils_formatters.py
 tests/test_logging_utils_redaction.py
