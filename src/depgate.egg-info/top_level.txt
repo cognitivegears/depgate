@@ -1,5 +1,10 @@
 analysis
 args
+cli_build
+cli_classify
+cli_config
+cli_io
+cli_registry
 common
 constants
 depgate
