@@ -30,6 +30,14 @@ def run_analysis(level: str, args, instances: Sequence[object]) -> None:
         _heur.run_heuristics(instances)
         return
 
+    if level == "linked":
+        try:
+            from analysis.linked import run_linked  # pylint: disable=import-outside-toplevel
+            run_linked(args, instances)
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            logging.getLogger(__name__).error("Linked analysis error: %s", exc)
+        return
+
     if level in ("policy", "pol"):
         try:
             from analysis.policy_runner import (  # pylint: disable=import-outside-toplevel

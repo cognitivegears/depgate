@@ -140,6 +140,15 @@ class ProviderValidationService:  # pylint: disable=too-few-public-methods
             tag_artifacts = _to_artifacts_list(_safe_get_tags(provider, ref.owner, ref.repo))
             tag_result = _match_version(m, version, tag_artifacts) if tag_artifacts else None
 
+        # Record match sources for downstream (non-breaking diagnostics)
+        try:
+            setattr(mp, "_version_match_release_matched", bool(release_result and isinstance(release_result, dict) and release_result.get("matched", False)))
+            setattr(mp, "_version_match_tag_matched", bool(tag_result and isinstance(tag_result, dict) and tag_result.get("matched", False)))
+            _src = "release" if getattr(mp, "_version_match_release_matched", False) else ("tag" if getattr(mp, "_version_match_tag_matched", False) else None)
+            setattr(mp, "_repo_version_match_source", _src)
+        except Exception:  # pylint: disable=broad-exception-caught
+            pass
+
         # Choose final result
         final_result = _choose_final_result(release_result, tag_result)
         if final_result is None:

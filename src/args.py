@@ -50,7 +50,7 @@ def parse_args():
 
     parser.add_argument("-a", "--analysis",
         dest="LEVEL",
-        help="Required analysis level - compare (comp), heuristics (heur) (default: compare)",
+        help="Required analysis level - compare (comp), heuristics (heur), policy (pol), linked (linked) (default: compare)",
                     action="store", default="compare", type=str,
                     choices=Constants.LEVELS)
     parser.add_argument("--loglevel",

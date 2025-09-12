@@ -130,7 +130,7 @@ def export_json(instances, path):
     """
     data = []
     for x in instances:
-        data.append({
+        entry = {
             "packageName": x.pkg_name,
             "orgId": x.org_id,
             "packageType": x.pkg_type,
@@ -173,7 +173,14 @@ def export_json(instances, path):
                 "available": getattr(x, "license_available", None),
                 "source": getattr(x, "license_source", None),
             }
-        })
+        }
+        # Conditionally include linked-analysis fields without altering legacy outputs
+        if getattr(x, "_linked_mode", False):
+            entry["repositoryUrl"] = getattr(x, "repo_url_normalized", None)
+            entry["tagMatch"] = bool(getattr(x, "_linked_tag_match", False))
+            entry["releaseMatch"] = bool(getattr(x, "_linked_release_match", False))
+            entry["linked"] = bool(getattr(x, "linked", False))
+        data.append(entry)
     try:
         with open(path, 'w', encoding='utf-8') as file:
             json.dump(data, file, ensure_ascii=False, indent=4)

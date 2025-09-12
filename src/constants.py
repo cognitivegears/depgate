@@ -64,7 +64,7 @@ class Constants:  # pylint: disable=too-few-public-methods
         PackageManagers.PYPI.value,
         PackageManagers.MAVEN.value,
     ]
-    LEVELS = ["compare", "comp", "heuristics", "heur", "policy", "pol"]
+    LEVELS = ["compare", "comp", "heuristics", "heur", "policy", "pol", "linked"]
     REQUIREMENTS_FILE = "requirements.txt"
     PACKAGE_JSON_FILE = "package.json"
     POM_XML_FILE = "pom.xml"

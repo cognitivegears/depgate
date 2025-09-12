@@ -296,6 +296,23 @@ def apply_version_resolution(args, pkglist):
 
 def determine_exit_code(args):
     """Determine final exit code based on risk and warning flags."""
+    # Linked analysis has dedicated semantics: all packages must pass linkage checks.
+    try:
+        level = getattr(args, "LEVEL", None)
+    except Exception:  # pylint: disable=broad-exception-caught
+        level = None
+
+    if level == "linked":
+        any_fail = False
+        found = False
+        for x in metapkg.instances:
+            if getattr(x, "_linked_mode", False):
+                found = True
+                if not bool(getattr(x, "linked", False)):
+                    any_fail = True
+        # For linked analysis, exit 0 only when all packages are linked; otherwise 1.
+        sys.exit(ExitCodes.SUCCESS.value if not any_fail else ExitCodes.FILE_ERROR.value)
+
     has_risk = any(x.has_risk() for x in metapkg.instances)
     if has_risk:
         logging.warning("One or more packages have identified risks.")
