@@ -34,15 +34,15 @@ From PyPI (after publishing):
 
 ## Quick Start
 
-- Single package (npm): `depgate -t npm -p left-pad`
-- Scan a repo (Maven): `depgate -t maven -d ./tests`
-- Heuristics + JSON: `depgate -t pypi -a heur -o out.json`
-- Linked verification: `depgate -t npm -p left-pad -a linked -o out.json`
+- Single package (npm): `depgate scan -t npm -p left-pad`
+- Scan a repo (Maven): `depgate scan -t maven -d ./tests`
+- Heuristics + JSON: `depgate scan -t pypi -a heur -o out.json`
+- Linked verification: `depgate scan -t npm -p left-pad -a linked -o out.json`
 
 With uv during development:
 
-- `uv run depgate -t npm -d ./tests`
-- `uv run depgate -t pypi -a heur -o out.json`
+- `uv run depgate scan -t npm -d ./tests`
+- `uv run depgate scan -t pypi -a heur -o out.json`
 
 ## Inputs and Scanning
 
@@ -80,9 +80,9 @@ Behavior and outputs:
   - `linked`: overall per‑package linkage result (boolean)
 
 Examples:
-- npm: `depgate -t npm -p left-pad -a linked -o out.json`
-- pypi: `depgate -t pypi -p requests -a linked -o out.json`
-- maven: `depgate -t maven -p org.apache.commons:commons-lang3 -a linked -o out.json`
+- npm: `depgate scan -t npm -p left-pad -a linked -o out.json`
+- pypi: `depgate scan -t pypi -p requests -a linked -o out.json`
+- maven: `depgate scan -t maven -p org.apache.commons:commons-lang3 -a linked -o out.json`
 
 ## Repository discovery & version validation
 
@@ -215,13 +215,13 @@ policy:
 
 ```bash
 # Override specific metric constraints
-depgate -t npm -p left-pad -a policy --set policy.metrics.heuristic_score.min=0.8
+depgate scan -t npm -p left-pad -a policy --set policy.metrics.heuristic_score.min=0.8
 
 # Disable license checking
-depgate -t npm -p left-pad -a policy --set policy.license_check.enabled=false
+depgate scan -t npm -p left-pad -a policy --set policy.license_check.enabled=false
 
 # Change fail_fast behavior
-depgate -t npm -p left-pad -a policy --set policy.fail_fast=true
+depgate scan -t npm -p left-pad -a policy --set policy.fail_fast=true
 ```
 
 ### Implicit Heuristics Trigger

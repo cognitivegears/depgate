@@ -142,6 +142,6 @@ policy:
 
 # CLI examples:
 #   Run policy analysis using internal defaults (no YAML loading for policy yet):
-#     depgate -t npm -p left-pad -a policy
+#     depgate scan -t npm -p left-pad -a policy
 #   Load this file for other sections (http/registry/provider/heuristics):
-#     depgate -t npm -p left-pad -a policy --config ./depgate.example.yml
+#     depgate scan -t npm -p left-pad -a policy --config ./depgate.example.yml

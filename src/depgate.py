@@ -28,35 +28,9 @@ from cli_registry import check_against
 from analysis.analysis_runner import run_analysis
 
 
-def main() -> None:
-    """Main CLI entrypoint that orchestrates the DepGate workflow."""
+def _run_scan(args) -> None:
+    """Execute the legacy scan workflow (now the 'scan' action handler)."""
     logger = logging.getLogger(__name__)
-
-    # Parse CLI arguments
-    args = parse_args()
-
-    # Honor CLI --loglevel by passing it to centralized logger via env
-    if getattr(args, "LOG_LEVEL", None):
-        os.environ["DEPGATE_LOG_LEVEL"] = str(args.LOG_LEVEL).upper()
-
-    # Configure logging, then ensure runtime CLI flag wins regardless of environment defaults
-    configure_logging()
-    try:
-        level_name = str(args.LOG_LEVEL).upper()
-        level_value = getattr(logging, level_name, logging.INFO)
-        logging.getLogger().setLevel(level_value)
-    except Exception:  # pylint: disable=broad-exception-caught
-        # Defensive: never break CLI on logging setup
-        pass
-
-    # Apply CLI overrides for deps.dev feature and tunables (CLI has highest precedence)
-    apply_depsdev_overrides(args)
-
-    if is_debug_enabled(logger):
-        logger.debug(
-            "CLI start",
-            extra=extra_context(event="function_entry", component="cli", action="main"),
-        )
 
     # Banner
     print_banner()
@@ -152,6 +126,64 @@ def main() -> None:
 
     # Exit according to risk/warning flags
     determine_exit_code(args)
+def main() -> None:
+    """Main CLI entrypoint that orchestrates the DepGate workflow."""
+    logger = logging.getLogger(__name__)
+
+    # Parse CLI arguments (supports action-based syntax; legacy mapped to 'scan')
+    args = parse_args()
+
+    # Honor CLI --loglevel by passing it to centralized logger via env
+    if getattr(args, "LOG_LEVEL", None):
+        os.environ["DEPGATE_LOG_LEVEL"] = str(args.LOG_LEVEL).upper()
+
+    # Configure logging, then ensure runtime CLI flag wins regardless of environment defaults
+    configure_logging()
+    try:
+        level_name = str(getattr(args, "LOG_LEVEL", "INFO")).upper()
+        level_value = getattr(logging, level_name, logging.INFO)
+        logging.getLogger().setLevel(level_value)
+    except Exception:  # pylint: disable=broad-exception-caught
+        # Defensive: never break CLI on logging setup
+        pass
+
+    # Apply CLI overrides for deps.dev feature and tunables (CLI has highest precedence)
+    apply_depsdev_overrides(args)
+
+    if is_debug_enabled(logger):
+        logger.debug(
+            "CLI start",
+            extra=extra_context(event="function_entry", component="cli", action="main"),
+        )
+
+    # Emit a single deprecation warning for legacy no-action invocation
+    if getattr(args, "_deprecated_no_action", False):
+        try:
+            sys.stderr.write(
+                "DEPRECATION: The legacy invocation without an action is deprecated and will be removed in a future release. Use: depgate scan [options].\n"
+            )
+        except Exception:  # pylint: disable=broad-exception-caught
+            pass
+
+    # Dispatch by action
+    action = getattr(args, "action", None)
+    if not action:
+        # Top-level usage/help summary
+        sys.stderr.write(
+            "Usage: depgate <action> [options]\n\n"
+            "Actions:\n"
+            "  scan    Analyze dependencies from a package, manifest, or directory\n\n"
+            "Use 'depgate <action> --help' for action-specific options.\n"
+        )
+        sys.exit(ExitCodes.SUCCESS.value)
+
+    if action == "scan":
+        _run_scan(args)
+        return
+
+    # Unknown action safeguard (argparse typically catches this already)
+    sys.stderr.write(f"Unknown action '{action}'. Available actions: scan\n")
+    sys.exit(2)
 
 
 if __name__ == "__main__":

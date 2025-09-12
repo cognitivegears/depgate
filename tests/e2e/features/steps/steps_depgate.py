@@ -94,16 +94,35 @@ def step_pkg_list_file(context, artifact):
 @when("I run depgate with arguments:")
 def step_run_depgate(context):
     args = []
+    action_token = None
+    help_present = False
+
     for row in context.table:
         arg = row["arg"].strip()
         val = row["value"].strip()
+
+        # Allow specifying positional action explicitly
+        if arg.lower() in ("action", "<action>"):
+            action_token = _resolve_placeholder(val, context)
+            continue
+
+        if arg in ("-h", "--help"):
+            help_present = True
+
         # Interpret boolean flags passed as "true"
         if val.lower() == "true":
             args.append(arg)
         else:
             args.extend([arg, _resolve_placeholder(val, context)])
 
-    cmd = ["uv", "run", "-q", str(SRC_ENTRY), *args]
+    # Default to 'scan' action unless explicitly suppressed or asking for root help
+    if not action_token and not help_present and not getattr(context, "legacy_no_action", False):
+        action_token = "scan"
+
+    cmd = ["uv", "run", "-q", str(SRC_ENTRY)]
+    if action_token:
+        cmd.append(action_token)
+    cmd.extend(args)
 
     env = os.environ.copy()
     # Ensure our mocks and src are importable (sitecustomize is auto-imported)
