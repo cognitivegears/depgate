@@ -9,6 +9,7 @@ from metapackage import MetaPackage
 from registry.npm.client import get_package_details as npm_get_package_details
 from registry.pypi.client import recv_pkg_info as pypi_recv_pkg_info
 from registry.maven.client import recv_pkg_info as maven_recv_pkg_info
+from registry.npm.client import recv_pkg_info as npm_recv_pkg_info
 
 
 class TestNPMClientLogging:
@@ -139,3 +140,21 @@ class TestCorrelationAndRequestIDs:
                     if hasattr(record, '__dict__'):
                         assert record.correlation_id == "test-correlation"
                         assert record.request_id == "test-request"
+
+
+class TestNPMClientScopedEncoding:
+    """Ensure scoped package names are percent-encoded in URL path."""
+
+    def test_scoped_package_url_is_percent_encoded(self):
+        pkg = MetaPackage("@biomejs/biome")
+
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.text = '{"versions": {"1.0.0": {}}}'
+
+        with patch('registry.npm.client.npm_pkg.safe_get', return_value=mock_response) as mock_get:
+            npm_get_package_details(pkg, "https://registry.npmjs.org")
+
+            called_url = mock_get.call_args[0][0]
+            assert "%40biomejs%2Fbiome" in called_url
+            assert "@biomejs/biome" not in called_url

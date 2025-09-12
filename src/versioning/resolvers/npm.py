@@ -1,6 +1,7 @@
 """NPM version resolver using semantic versioning."""
 
 import re
+import urllib.parse
 from typing import List, Optional, Tuple
 
 import semantic_version
@@ -40,7 +41,8 @@ class NpmVersionResolver(VersionResolver):
             if cached is not None:
                 return cached
 
-        url = f"{Constants.REGISTRY_URL_NPM}{req.identifier}"
+        encoded = urllib.parse.quote(req.identifier, safe="")
+        url = f"{Constants.REGISTRY_URL_NPM}{encoded}"
         status_code, _, data = get_json(url)
 
         if status_code != 200 or not data:

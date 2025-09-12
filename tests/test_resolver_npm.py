@@ -257,3 +257,16 @@ class TestNpmVersionResolver:
         assert version is None
         assert count == 3
         assert error == "No stable versions available"
+
+
+@patch('src.versioning.resolvers.npm.get_json')
+def test_fetch_candidates_encodes_scoped_name(mock_get_json, resolver):
+    """Ensure scoped npm names are percent-encoded as a single path segment."""
+    mock_get_json.return_value = (200, {}, {"versions": {}})
+
+    req = create_request("@types/node")
+    _ = resolver.fetch_candidates(req)
+
+    called_url = mock_get_json.call_args[0][0]
+    assert "%40types%2Fnode" in called_url
+    assert "@types/node" not in called_url

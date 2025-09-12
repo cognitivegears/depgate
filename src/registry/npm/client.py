@@ -7,6 +7,7 @@ import sys
 import time
 import logging
 from datetime import datetime as dt
+from urllib.parse import urlsplit, urlunsplit, quote
 
 from constants import ExitCodes, Constants
 from common.logging_utils import extra_context, is_debug_enabled, Timer, safe_url
@@ -48,7 +49,13 @@ def get_package_details(pkg, url: str) -> None:
     time.sleep(0.1)
 
     logging.debug("Checking package: %s", pkg.pkg_name)
-    package_url = url + pkg.pkg_name
+    # Build package URL: percent-encode scoped names as a single path segment and preserve base query/fragment
+    encoded_name = quote(str(pkg.pkg_name), safe="")
+    parts = urlsplit(url)
+    base_path = parts.path if parts.path else "/"
+    if not base_path.endswith("/"):
+        base_path = base_path + "/"
+    package_url = urlunsplit((parts.scheme, parts.netloc, base_path + encoded_name, parts.query, parts.fragment))
     package_headers = {
         "Accept": "application/json"
     }
@@ -227,4 +234,6 @@ def recv_pkg_info(
                 logging.warning("Couldn't parse timestamp")
                 i.timestamp = 0
         else:
-            i.exists = False
+            # Preserve existence set by details fetch if already True
+            if getattr(i, "exists", None) is not True:
+                i.exists = False
