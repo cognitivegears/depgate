@@ -255,6 +255,85 @@ class LicenseRuleEvaluator(RuleEvaluator):
         return current
 
 
+class LinkedRuleEvaluator(RuleEvaluator):
+    """Evaluator for 'linked' repository policy constraints.
+
+    Configuration options (all optional, defaults shown):
+      - enabled: bool = True
+      - require_source_repo: bool = False
+      - require_version_in_source: bool = False
+      - version_tag_patterns: list[str] = ["v{version}", "{version}"]
+      - allowed_providers: list[str] = []  # allow all when empty
+    """
+
+    def evaluate(self, facts: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
+        enabled = config.get("enabled", True)
+        require_src = bool(config.get("require_source_repo", False))
+        require_ver = bool(config.get("require_version_in_source", False))
+        patterns = config.get("version_tag_patterns") or ["v{version}", "{version}"]
+        allowed_providers = config.get("allowed_providers") or []
+
+        violations: List[str] = []
+        evaluated: Dict[str, Any] = {}
+
+        repo_url = facts.get("source_repo")
+        host = facts.get("source_repo_host") or facts.get("repo_host")
+        resolved = facts.get("source_repo_resolved")
+        exists = facts.get("source_repo_exists")
+        version_found = facts.get("version_found_in_source")
+        version = facts.get("resolved_version")
+
+        evaluated.update({
+            "source_repo": repo_url,
+            "source_repo_host": host,
+            "source_repo_resolved": resolved,
+            "source_repo_exists": exists,
+            "resolved_version": version,
+            "version_found_in_source": version_found,
+        })
+
+        if enabled is False:
+            return {
+                "decision": "allow",
+                "violated_rules": [],
+                "evaluated_metrics": evaluated,
+            }
+
+        # Provider allow-list enforcement (only when repo is present)
+        if allowed_providers:
+            if not host:
+                violations.append(f"linked: SCM provider not detected; allowed_providers={allowed_providers}")
+            elif str(host).lower() not in [p.lower() for p in allowed_providers]:
+                violations.append(f"linked: SCM provider '{host}' is not allowed (allowed: {allowed_providers})")
+
+        # Repository presence/resolution/existence
+        if require_src:
+            if not repo_url:
+                violations.append("linked: no source repository URL resolved (require_source_repo=true)")
+            else:
+                if resolved is not True:
+                    violations.append(f"linked: repository URL not normalized/resolved (url={repo_url})")
+                if exists is not True:
+                    violations.append(f"linked: repository does not exist or is not accessible (url={repo_url})")
+
+        # Version presence in SCM
+        if require_ver:
+            if version_found is not True:
+                pstr = ", ".join(patterns)
+                vstr = str(version) if version is not None else "<unknown>"
+                rstr = repo_url or "<none>"
+                violations.append(
+                    f"linked: version not found in SCM (repo={rstr}, version={vstr}, patterns=[{pstr}])"
+                )
+
+        decision = "allow" if not violations else "deny"
+        return {
+            "decision": decision,
+            "violated_rules": violations,
+            "evaluated_metrics": evaluated,
+        }
+
+
 class RuleEvaluatorRegistry:
     """Registry for rule evaluators."""
 
@@ -264,6 +343,7 @@ class RuleEvaluatorRegistry:
             "metrics": MetricComparatorEvaluator(),
             "regex": RegexRuleEvaluator(),
             "license": LicenseRuleEvaluator(),
+            "linked": LinkedRuleEvaluator(),
         }
 
     def get_evaluator(self, rule_type: str) -> RuleEvaluator:

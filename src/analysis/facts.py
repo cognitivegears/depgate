@@ -50,10 +50,22 @@ class FactBuilder:
         Returns:
             Dict containing base facts.
         """
+        # Compute derived repo/version facts for policy consumption
+        try:
+            vm = getattr(package, "repo_version_match", None)
+            version_found_in_source = bool(vm.get("matched", False)) if isinstance(vm, dict) else None
+        except Exception:  # pylint: disable=broad-exception-caught
+            version_found_in_source = None
+
         return {
             "package_name": package.pkg_name,
             "registry": package.pkg_type,
             "source_repo": getattr(package, "repo_url_normalized", None),
+            "source_repo_resolved": getattr(package, "repo_resolved", None),
+            "source_repo_exists": getattr(package, "repo_exists", None),
+            "source_repo_host": getattr(package, "repo_host", None),
+            "resolved_version": getattr(package, "resolved_version", None),
+            "version_found_in_source": version_found_in_source,
             "stars_count": getattr(package, "repo_stars", None),
             "contributors_count": getattr(package, "repo_contributors", None),
             "version_count": getattr(package, "version_count", None),

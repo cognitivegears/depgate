@@ -302,6 +302,17 @@ def determine_exit_code(args):
     except Exception:  # pylint: disable=broad-exception-caught
         level = None
 
+    # Policy mode: non-zero exit for any policy denial
+    if level in ("policy", "pol"):
+        any_deny = False
+        for x in metapkg.instances:
+            if getattr(x, "policy_decision", None) == "deny":
+                any_deny = True
+                break
+        if any_deny:
+            logging.error("Policy violations detected; exiting with non-zero status.")
+        sys.exit(ExitCodes.SUCCESS.value if not any_deny else ExitCodes.FILE_ERROR.value)
+
     if level == "linked":
         any_fail = False
         found = False

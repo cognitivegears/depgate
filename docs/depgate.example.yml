@@ -140,6 +140,31 @@ policy:
         - "AGPL-3.0-only"
       allow_unknown: false          # when true, unknown/missing license does not deny
 
+# Linked policy (type=linked) examples
+#   Fully-configured:
+#     - type: linked
+#       enabled: true
+#       require_source_repo: true
+#       require_version_in_source: true
+#       version_tag_patterns:
+#         - "v{version}"
+#         - "{version}"
+#       allowed_providers:
+#         - github
+#         - gitlab
+#       # Optional overrides:
+#       # repo: "org/name"            # If not derivable from metadata
+#       # branch: "main"              # If refs should be validated against a specific branch
+#       # timeout_seconds: 10
+#       # retries: 2
+#       # tokens:
+#       #   github: "${GITHUB_TOKEN}"
+#       #   gitlab: "${GITLAB_TOKEN}"
+#
+#   Minimal example:
+#     - type: linked
+#       enabled: true
+#
 # CLI examples:
 #   Run policy analysis using internal defaults (no YAML loading for policy yet):
 #     depgate scan -t npm -p left-pad -a policy
