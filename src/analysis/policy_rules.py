@@ -272,6 +272,9 @@ class LinkedRuleEvaluator(RuleEvaluator):
         require_ver = bool(config.get("require_version_in_source", False))
         patterns = config.get("version_tag_patterns") or ["v{version}", "{version}"]
         allowed_providers = config.get("allowed_providers") or []
+        # New: repository name matching
+        name_match_mode = str(config.get("name_match", "off")).lower()
+        name_match_min_len = int(config.get("name_match_min_len", 3))
 
         violations: List[str] = []
         evaluated: Dict[str, Any] = {}
@@ -282,6 +285,22 @@ class LinkedRuleEvaluator(RuleEvaluator):
         exists = facts.get("source_repo_exists")
         version_found = facts.get("version_found_in_source")
         version = facts.get("resolved_version")
+        pkg_name = facts.get("package_name")
+
+        # Debug: configuration and facts snapshot for this evaluation
+        try:
+            logger.debug(
+                "[linked] config: enabled=%s require_src=%s require_ver=%s allowed_providers=%s name_match=%s name_match_min_len=%s",
+                str(enabled), str(require_src), str(require_ver),
+                list(allowed_providers) if isinstance(allowed_providers, list) else allowed_providers,
+                name_match_mode, str(name_match_min_len)
+            )
+            logger.debug(
+                "[linked] facts: package=%s repo_url=%s host=%s resolved=%s exists=%s version=%s version_found=%s",
+                str(pkg_name), str(repo_url), str(host), str(resolved), str(exists), str(version), str(version_found)
+            )
+        except Exception:
+            pass
 
         evaluated.update({
             "source_repo": repo_url,
@@ -326,7 +345,86 @@ class LinkedRuleEvaluator(RuleEvaluator):
                     f"linked: version not found in SCM (repo={rstr}, version={vstr}, patterns=[{pstr}])"
                 )
 
+        # Repository name matching (off | exact | partial)
+        def _extract_repo_name(url: Any) -> Optional[str]:
+            try:
+                s = str(url).rstrip("/")
+                seg = s.split("/")[-1] if "/" in s else s
+                if seg.endswith(".git"):
+                    seg = seg[:-4]
+                return seg or None
+            except Exception:
+                return None
+
+        def _sanitize(s: str) -> str:
+            try:
+                return "".join(ch for ch in s.lower() if ch.isalnum())
+            except Exception:
+                return ""
+
+        def _has_min_len_substring(a: str, b: str, min_len: int) -> bool:
+            a_s = _sanitize(a)
+            b_s = _sanitize(b)
+            if not a_s or not b_s or min_len <= 0:
+                return False
+            # Ensure we iterate over the shorter string
+            if len(a_s) > len(b_s):
+                a_s, b_s = b_s, a_s
+            if len(a_s) < min_len:
+                return False
+            # Check any substring of length == min_len (sufficient for >= min_len)
+            for i in range(0, len(a_s) - min_len + 1):
+                sub = a_s[i : i + min_len]
+                if sub in b_s:
+                    return True
+            return False
+
+        if name_match_mode in ("exact", "partial"):
+            if not repo_url:
+                violations.append("linked: repository name match requested but no repository URL is available")
+            else:
+                repo_name = _extract_repo_name(repo_url)
+                try:
+                    logger.debug(
+                        "[linked] name_match start: mode=%s min_len=%s pkg=%s repo_url=%s repo_name=%s",
+                        name_match_mode, str(name_match_min_len), str(pkg_name), str(repo_url), str(repo_name)
+                    )
+                except Exception:
+                    pass
+                if not repo_name:
+                    violations.append("linked: repository name could not be parsed from URL for name match validation")
+                else:
+                    if name_match_mode == "exact":
+                        match_ok = bool(isinstance(pkg_name, str) and str(pkg_name).lower() == str(repo_name).lower())
+                        try:
+                            logger.debug("[linked] name_match exact: pkg=%s repo=%s ok=%s",
+                                         str(pkg_name), str(repo_name), str(match_ok))
+                        except Exception:
+                            pass
+                        if not match_ok:
+                            violations.append(
+                                f"linked: repository name '{repo_name}' does not match package name '{pkg_name}' (mode=exact)"
+                            )
+                    else:  # partial
+                        match_ok = bool(isinstance(pkg_name, str) and _has_min_len_substring(repo_name, pkg_name, name_match_min_len))
+                        try:
+                            logger.debug("[linked] name_match partial: pkg=%s repo=%s min_len=%s ok=%s",
+                                         str(pkg_name), str(repo_name), str(name_match_min_len), str(match_ok))
+                        except Exception:
+                            pass
+                        if not match_ok:
+                            violations.append(
+                                f"linked: package name '{pkg_name}' does not overlap repository name '{repo_name}' with min length {name_match_min_len} (mode=partial)"
+                            )
+
         decision = "allow" if not violations else "deny"
+        try:
+            logger.debug(
+                "[linked] decision=%s violations=%d details=%s",
+                decision, len(violations), "; ".join(violations) if violations else "none"
+            )
+        except Exception:
+            pass
         return {
             "decision": decision,
             "violated_rules": violations,

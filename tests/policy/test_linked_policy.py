@@ -162,3 +162,58 @@ class TestLinkedPolicyRule:
         facts2 = FactBuilder().build_facts(mp)
         # When "matched" is False, evaluator should see False (not None)
         assert facts2.get("version_found_in_source") is False
+
+
+class TestLinkedPolicyNameMatch:
+    def test_name_match_exact_pass(self):
+        mp = _make_mp_with_repo(name="lodash")
+        mp.repo_url_normalized = "https://github.com/acme/lodash"
+        facts = FactBuilder().build_facts(mp)
+
+        policy = {"rules": [{"type": "linked", "enabled": True, "name_match": "exact"}]}
+        engine = create_policy_engine()
+        decision = engine.evaluate_policy(facts, policy)
+        assert decision.decision == "allow"
+
+    def test_name_match_exact_fail(self):
+        mp = _make_mp_with_repo(name="lodash-es")
+        mp.repo_url_normalized = "https://github.com/acme/lodash"
+        facts = FactBuilder().build_facts(mp)
+
+        policy = {"rules": [{"type": "linked", "enabled": True, "name_match": "exact"}]}
+        engine = create_policy_engine()
+        decision = engine.evaluate_policy(facts, policy)
+        assert decision.decision == "deny"
+        assert any("mode=exact" in v for v in decision.violated_rules)
+
+    def test_name_match_partial_pass(self):
+        mp = _make_mp_with_repo(name="lodash-es")
+        mp.repo_url_normalized = "https://github.com/acme/lodash"
+        facts = FactBuilder().build_facts(mp)
+
+        policy = {"rules": [{"type": "linked", "enabled": True, "name_match": "partial", "name_match_min_len": 3}]}
+        engine = create_policy_engine()
+        decision = engine.evaluate_policy(facts, policy)
+        assert decision.decision == "allow"
+
+    def test_name_match_partial_fail_short_overlap(self):
+        mp = _make_mp_with_repo(name="ab")
+        mp.repo_url_normalized = "https://github.com/acme/abc"
+        facts = FactBuilder().build_facts(mp)
+
+        policy = {"rules": [{"type": "linked", "enabled": True, "name_match": "partial", "name_match_min_len": 3}]}
+        engine = create_policy_engine()
+        decision = engine.evaluate_policy(facts, policy)
+        assert decision.decision == "deny"
+        assert any("mode=partial" in v for v in decision.violated_rules)
+
+    def test_name_match_requested_but_no_repo_url_fails(self):
+        mp = _make_mp_with_repo(name="mypkg")
+        mp.repo_url_normalized = None
+        facts = FactBuilder().build_facts(mp)
+
+        policy = {"rules": [{"type": "linked", "enabled": True, "name_match": "exact"}]}
+        engine = create_policy_engine()
+        decision = engine.evaluate_policy(facts, policy)
+        assert decision.decision == "deny"
+        assert any("name match requested" in v.lower() for v in decision.violated_rules)

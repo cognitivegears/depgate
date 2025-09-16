@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import logging
 from typing import Sequence
+from constants import Constants
 
 
 def run_policy_analysis(args, instances: Sequence[object]) -> None:
@@ -31,6 +32,7 @@ def run_policy_analysis(args, instances: Sequence[object]) -> None:
     from analysis import heuristics as _heur  # pylint: disable=import-outside-toplevel
 
     logger = logging.getLogger(__name__)
+    STG = f"{Constants.ANALYSIS} "
 
     # Step 1: Build facts for all packages
     fact_builder = FactBuilder()
@@ -199,10 +201,28 @@ def run_policy_analysis(args, instances: Sequence[object]) -> None:
             pkg.policy_decision = decision.decision
             pkg.policy_violated_rules = decision.violated_rules
             pkg.policy_evaluated_metrics = decision.evaluated_metrics
-            # Log results
+            # Debug-level details
+            try:
+                logger.debug(
+                    "[policy] evaluated package=%s decision=%s violations=%d details=%s",
+                    pname, decision.decision, len(decision.violated_rules or []),
+                    "; ".join(decision.violated_rules or [])
+                )
+            except Exception:
+                pass
+            # Single ANALYSIS outcome log (INFO)
+            try:
+                logger.info(
+                    "%sPolicy outcome: %s for %s (%d violations).",
+                    STG, decision.decision.upper(), pname, len(decision.violated_rules or [])
+                )
+            except Exception:
+                pass
+            # Existing result logs
             if decision.decision == "deny":
                 logger.warning("Policy DENY for %s: %s", pname, ", ".join(decision.violated_rules))
             else:
-                logger.info("Policy ALLOW for %s", pname)
+                # Demote non-ANALYSIS outcome to debug to avoid duplicate INFO logs
+                logger.debug("Policy ALLOW for %s", pname)
         except Exception as exc:  # pylint: disable=broad-exception-caught
             logger.error("Policy evaluation error for %s: %s", pname, exc)
