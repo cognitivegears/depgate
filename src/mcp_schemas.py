@@ -1,3 +1,9 @@
+"""JSON Schemas (Draft-07) for MCP tool input/output contracts.
+
+These schemas define strict shapes for tool inputs and outputs and are used
+by the MCP server validators to ensure contract stability.
+"""
+
 from __future__ import annotations
 
 # Draft-07 JSON Schemas for MCP tools (stable contracts)
@@ -9,7 +15,15 @@ LOOKUP_LATEST_VERSION_INPUT = {
     "properties": {
         "name": {"type": "string", "minLength": 1},
         # Optional ecosystem hint; allow null when omitted
-        "ecosystem": {"type": ["string", "null"], "enum": ["npm", "pypi", "maven", None]},
+        "ecosystem": {
+            "type": ["string", "null"],
+            "enum": [
+                "npm",
+                "pypi",
+                "maven",
+                None,
+            ],
+        },
         # Optional fields should accept null when the client omits them
         "versionRange": {"type": ["string", "null"]},
         "registryUrl": {"type": ["string", "null"]},
@@ -51,7 +65,18 @@ SCAN_PROJECT_INPUT = {
         "offline": {"type": ["boolean", "null"]},
         "strictProvenance": {"type": ["boolean", "null"]},
         "paths": {"type": ["array", "null"], "items": {"type": "string"}},
-        "analysisLevel": {"type": ["string", "null"], "enum": ["compare", "comp", "heuristics", "heur", "policy", "pol", "linked"]},
+        "analysisLevel": {
+            "type": ["string", "null"],
+            "enum": [
+                "compare",
+                "comp",
+                "heuristics",
+                "heur",
+                "policy",
+                "pol",
+                "linked",
+            ],
+        },
         "ecosystem": {"type": ["string", "null"], "enum": ["npm", "pypi", "maven", None]},
     },
     "additionalProperties": False,

@@ -315,10 +315,9 @@ def determine_exit_code(args):
 
     if level == "linked":
         any_fail = False
-        found = False
+        # flag previously tracked whether any manifest was found; not used
         for x in metapkg.instances:
             if getattr(x, "_linked_mode", False):
-                found = True
                 if not bool(getattr(x, "linked", False)):
                     any_fail = True
         # For linked analysis, exit 0 only when all packages are linked; otherwise 1.

@@ -11,10 +11,6 @@ from typing import List
 from common.logging_utils import (
     log_discovered_files,
     log_selection,
-    warn_multiple_lockfiles,
-    warn_missing_expected,
-    warn_orphan_lock_dep,
-    debug_dependency_line,
     is_debug_enabled,
 )
 

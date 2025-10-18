@@ -12,18 +12,16 @@ Behavior is strictly aligned with existing DepGate logic and does not
 introduce new finding types or semantics.
 """
 from __future__ import annotations
-
-import asyncio
-import json
 import logging
 import os
 import sys
 import argparse
-from dataclasses import asdict, dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
+import urllib.parse as _u
 from constants import Constants
 from common.logging_utils import configure_logging as _configure_logging
+from common.http_client import get_json as _get_json
 
 # Import scan/registry wiring for reuse
 from cli_build import (
@@ -37,12 +35,12 @@ from metapackage import MetaPackage as metapkg
 
 # Version resolution service for fast lookups
 try:
-    from src.versioning.models import Ecosystem, PackageRequest, VersionSpec
+    from src.versioning.models import Ecosystem
     from src.versioning.service import VersionResolutionService
     from src.versioning.cache import TTLCache
     from src.versioning.parser import parse_manifest_entry
 except ImportError:
-    from versioning.models import Ecosystem, PackageRequest, VersionSpec
+    from versioning.models import Ecosystem
     from versioning.service import VersionResolutionService
     from versioning.cache import TTLCache
     from versioning.parser import parse_manifest_entry
@@ -51,60 +49,15 @@ _SHARED_TTL_CACHE = TTLCache()
 
 # Official MCP SDK (FastMCP)
 try:
-    from mcp.server.fastmcp import FastMCP, Context  # type: ignore
-except Exception as _imp_err:  # pragma: no cover - import error surfaced at runtime
+    from mcp.server.fastmcp import FastMCP  # type: ignore
+except ImportError as _imp_err:  # pragma: no cover - import error surfaced at runtime
     FastMCP = None  # type: ignore
-    Context = object  # type: ignore
+    # Context is only used for typing in MCP; not required here
 
 
 # ----------------------------
-# Data models for structured I/O
+# Helpers and internal handlers
 # ----------------------------
-
-@dataclass
-class LookupLatestVersionInput:
-    name: str
-    ecosystem: Optional[str] = None  # npm|pypi|maven
-    versionRange: Optional[str] = None
-    registryUrl: Optional[str] = None
-    projectDir: Optional[str] = None
-
-
-@dataclass
-class LookupLatestVersionOutput:
-    name: str
-    ecosystem: str
-    latestVersion: Optional[str]
-    satisfiesRange: Optional[bool]
-    publishedAt: Optional[str]
-    deprecated: Optional[bool]
-    yanked: Optional[bool]
-    license: Optional[str]
-    registryUrl: Optional[str]
-    repositoryUrl: Optional[str]
-    cache: Dict[str, Any]
-
-
-@dataclass
-class ScanProjectInput:
-    projectDir: str
-    includeDevDependencies: Optional[bool] = None
-    includeTransitive: Optional[bool] = None
-    respectLockfiles: Optional[bool] = None
-    offline: Optional[bool] = None
-    strictProvenance: Optional[bool] = None
-    paths: Optional[List[str]] = None
-    analysisLevel: Optional[str] = None
-    ecosystem: Optional[str] = None  # optional hint when multiple manifests exist
-
-
-@dataclass
-class ScanDependencyInput:
-    name: str
-    version: str
-    ecosystem: str
-    registryUrl: Optional[str] = None
-    offline: Optional[bool] = None
 
 
 def _eco_from_str(s: Optional[str]) -> Ecosystem:
@@ -126,14 +79,14 @@ def _apply_registry_override(ecosystem: Ecosystem, registry_url: Optional[str]) 
     if ecosystem == Ecosystem.NPM:
         try:
             setattr(Constants, "REGISTRY_URL_NPM", registry_url)
-        except Exception:
+        except AttributeError:
             pass
     elif ecosystem == Ecosystem.PYPI:
         # Expect base ending with '/pypi/'; accept direct URL and append if needed
         val = registry_url if registry_url.endswith("/pypi/") else registry_url.rstrip("/") + "/pypi/"
         try:
             setattr(Constants, "REGISTRY_URL_PYPI", val)
-        except Exception:
+        except AttributeError:
             pass
     elif ecosystem == Ecosystem.MAVEN:
         # For Maven, this impacts search endpoints elsewhere; version resolver reads metadata
@@ -147,7 +100,7 @@ def _set_runtime_from_args(args) -> None:
     if getattr(args, "MCP_REQUEST_TIMEOUT", None):
         try:
             setattr(Constants, "REQUEST_TIMEOUT", int(args.MCP_REQUEST_TIMEOUT))
-        except Exception:
+        except (ValueError, TypeError, AttributeError):
             pass
 
 
@@ -161,15 +114,27 @@ def _sandbox_project_dir(project_dir: Optional[str], path: Optional[str]) -> Non
         raise PermissionError("Path outside of --project-dir sandbox")
 
 
+def _require_online(args: Any, offline_flag: Optional[bool]) -> None:
+    """Raise if online access is disabled by flags."""
+    if getattr(args, "MCP_NO_NETWORK", False) or (offline_flag is True) or getattr(args, "MCP_OFFLINE", False):
+        raise RuntimeError("offline: networked scan not permitted")
+
+
 def _reset_state() -> None:
     # Clean MetaPackage instances between tool invocations to avoid cross-talk
     try:
         metapkg.instances.clear()
-    except Exception:
+    except AttributeError:
         pass
 
 
-def _resolution_for(ecosystem: Ecosystem, name: str, range_spec: Optional[str]) -> Tuple[Optional[str], int, Optional[str], Dict[str, Any]]:
+def _resolution_for(
+    ecosystem: Ecosystem,
+    name: str,
+    range_spec: Optional[str],
+) -> Tuple[
+    Optional[str], int, Optional[str], Dict[str, Any]
+]:
     svc = VersionResolutionService(_SHARED_TTL_CACHE)
     req = parse_manifest_entry(name, (str(range_spec).strip() if range_spec else None), ecosystem, "mcp")
     res = svc.resolve_all([req])
@@ -181,14 +146,192 @@ def _resolution_for(ecosystem: Ecosystem, name: str, range_spec: Optional[str]) 
     }
 
 
-def _build_cli_args_for_project_scan(inp: ScanProjectInput) -> Any:
+def _validate(schema_name: str, data: Dict[str, Any]) -> None:
+    """Validate input payload against a named schema from mcp_schemas."""
+    try:
+        from mcp_schemas import (  # type: ignore
+            LOOKUP_LATEST_VERSION_INPUT,
+            SCAN_PROJECT_INPUT,
+            SCAN_DEPENDENCY_INPUT,
+        )
+        from mcp_validate import validate_input as _validate_input  # type: ignore
+        mapping = {
+            "lookup": LOOKUP_LATEST_VERSION_INPUT,
+            "project": SCAN_PROJECT_INPUT,
+            "dependency": SCAN_DEPENDENCY_INPUT,
+        }
+        schema = mapping[schema_name]
+        _validate_input(schema, data)
+    except Exception as se:  # pragma: no cover
+        if "Invalid input" in str(se):
+            raise RuntimeError(str(se)) from se
+
+
+def _validate_output_strict(result: Dict[str, Any]) -> None:
+    """Validate scan result output strictly."""
+    from mcp_schemas import SCAN_RESULTS_OUTPUT  # type: ignore
+    from mcp_validate import validate_output as _validate_output  # type: ignore
+    _validate_output(SCAN_RESULTS_OUTPUT, result)
+
+
+def _safe_validate_lookup_output(out: Dict[str, Any]) -> None:
+    """Best-effort validation for lookup output; ignore failures."""
+    try:
+        from mcp_schemas import LOOKUP_LATEST_VERSION_OUTPUT  # type: ignore
+        from mcp_validate import safe_validate_output as _safe  # type: ignore
+        _safe(LOOKUP_LATEST_VERSION_OUTPUT, out)
+    except Exception:
+        pass
+
+
+def _enrich_lookup_metadata(eco: Ecosystem, name: str, latest: Optional[str]) -> Dict[str, Any]:
+    """Fetch lightweight metadata for the latest version when available."""
+    published_at: Optional[str] = None
+    deprecated: Optional[bool] = None
+    yanked: Optional[bool] = None
+    license_id: Optional[str] = None
+    repo_url: Optional[str] = None
+
+    if not latest:
+        return {
+            "published_at": None,
+            "deprecated": None,
+            "yanked": None,
+            "license_id": None,
+            "repo_url": None,
+        }
+    if eco == Ecosystem.NPM:
+        url = f"{Constants.REGISTRY_URL_NPM}{_u.quote(name, safe='')}"
+        status, _, data = _get_json(url)
+        if status == 200 and isinstance(data, dict):
+            times = (data or {}).get("time", {}) or {}
+            published_at = times.get(latest)
+            ver_meta = ((data or {}).get("versions", {}) or {}).get(latest, {}) or {}
+            deprecated = bool(ver_meta.get("deprecated")) if ("deprecated" in ver_meta) else None
+            lic = ver_meta.get("license") or (data or {}).get("license")
+            license_id = str(lic) if lic else None
+            repo = (ver_meta.get("repository") or (data or {}).get("repository") or {})
+            if isinstance(repo, dict):
+                repo_url = repo.get("url")
+            elif isinstance(repo, str):
+                repo_url = repo
+    elif eco == Ecosystem.PYPI:
+        url = f"{Constants.REGISTRY_URL_PYPI}{name}/json"
+        status, _, data = _get_json(url)
+        if status == 200 and isinstance(data, dict):
+            info = (data or {}).get("info", {}) or {}
+            license_id = info.get("license") or None
+            proj_urls = info.get("project_urls") or {}
+            if isinstance(proj_urls, dict):
+                repo_url = (
+                    proj_urls.get("Source")
+                    or proj_urls.get("Source Code")
+                    or proj_urls.get("Homepage")
+                    or None
+                )
+            rels = (data or {}).get("releases", {}) or {}
+            files = rels.get(latest) or []
+            if files and isinstance(files, list):
+                published_at = files[0].get("upload_time_iso_8601")
+                yanked = any(bool(f.get("yanked")) for f in files)
+    return {
+        "published_at": published_at,
+        "deprecated": deprecated,
+        "yanked": yanked,
+        "license_id": license_id,
+        "repo_url": repo_url,
+    }
+
+
+def _handle_lookup_latest_version(
+    *,
+    name: str,
+    eco: Ecosystem,
+    version_range: Optional[str],
+    registry_url: Optional[str],
+) -> Dict[str, Any]:
+    """Core logic for lookup tool; assumes sandbox/online checks already done."""
+    _apply_registry_override(eco, registry_url)
+
+    res = _resolution_for(eco, name, version_range)
+    meta = _enrich_lookup_metadata(eco, name, res[0])
+    result = {
+        "name": name,
+        "ecosystem": eco.value,
+        "latestVersion": res[0],
+        "satisfiesRange": (version_range.strip() == res[0]) if (version_range and res[0]) else None,
+        "publishedAt": meta["published_at"],
+        "deprecated": meta["deprecated"],
+        "yanked": meta["yanked"],
+        "license": meta["license_id"],
+        "registryUrl": registry_url,
+        "repositoryUrl": meta["repo_url"],
+        "cache": res[3],
+        "_candidates": res[1],
+    }
+    _safe_validate_lookup_output(result)
+    if res[2]:
+        raise RuntimeError(res[2])
+    return result
+
+
+def _run_scan_pipeline(scan_args: Any) -> Dict[str, Any]:
+    pkglist = build_pkglist(scan_args)
+    create_metapackages(scan_args, pkglist)
+    apply_version_resolution(scan_args, pkglist)
+    check_against(scan_args.package_type, scan_args.LEVEL, metapkg.instances)
+    run_analysis(scan_args.LEVEL, scan_args, metapkg.instances)
+    return _gather_results()
+
+
+def _build_args_for_single_dependency(eco: Ecosystem, name: str) -> Any:
+    """Construct scan args for a single dependency token."""
+    scan_args = argparse.Namespace()
+    scan_args.package_type = eco.value
+    scan_args.LIST_FROM_FILE = []
+    scan_args.FROM_SRC = None
+    scan_args.SINGLE = [name]
+    scan_args.RECURSIVE = False
+    scan_args.LEVEL = "compare"
+    scan_args.OUTPUT = None
+    scan_args.OUTPUT_FORMAT = None
+    scan_args.LOG_LEVEL = "INFO"
+    scan_args.LOG_FILE = None
+    scan_args.ERROR_ON_WARNINGS = False
+    scan_args.QUIET = True
+    scan_args.DEPSDEV_DISABLE = not Constants.DEPSDEV_ENABLED
+    scan_args.DEPSDEV_BASE_URL = Constants.DEPSDEV_BASE_URL
+    scan_args.DEPSDEV_CACHE_TTL = Constants.DEPSDEV_CACHE_TTL_SEC
+    scan_args.DEPSDEV_MAX_CONCURRENCY = Constants.DEPSDEV_MAX_CONCURRENCY
+    scan_args.DEPSDEV_MAX_RESPONSE_BYTES = Constants.DEPSDEV_MAX_RESPONSE_BYTES
+    scan_args.DEPSDEV_STRICT_OVERRIDE = Constants.DEPSDEV_STRICT_OVERRIDE
+    return scan_args
+
+
+def _force_requested_spec(version: str) -> None:
+    """Ensure metapackages use the provided exact version for resolution."""
+    for mp in metapkg.instances:
+        try:
+            setattr(mp, "requested_spec", version)
+        except AttributeError:
+            try:
+                setattr(mp, "_requested_spec", version)
+            except AttributeError:
+                continue
+
+
+def _build_cli_args_for_project_scan(
+    project_dir: str,
+    ecosystem_hint: Optional[str],
+    analysis_level: Optional[str],
+) -> Any:
     args = argparse.Namespace()
     # Map into existing CLI surfaces used by build_pkglist/create_metapackages
-    if inp.ecosystem:
-        pkg_type = inp.ecosystem
+    if ecosystem_hint:
+        pkg_type = ecosystem_hint
     else:
         # Infer: prefer npm if package.json exists, else pypi via requirements.txt/pyproject, else maven by pom.xml
-        root = inp.projectDir
+        root = project_dir
         if os.path.isfile(os.path.join(root, Constants.PACKAGE_JSON_FILE)):
             pkg_type = "npm"
         elif os.path.isfile(os.path.join(root, Constants.REQUIREMENTS_FILE)) or os.path.isfile(
@@ -202,10 +345,10 @@ def _build_cli_args_for_project_scan(inp: ScanProjectInput) -> Any:
             pkg_type = "npm"
     args.package_type = pkg_type
     args.LIST_FROM_FILE = []
-    args.FROM_SRC = [inp.projectDir]
+    args.FROM_SRC = [project_dir]
     args.SINGLE = None
     args.RECURSIVE = False
-    args.LEVEL = inp.analysisLevel or "compare"
+    args.LEVEL = analysis_level or "compare"
     args.OUTPUT = None
     args.OUTPUT_FORMAT = None
     args.LOG_LEVEL = "INFO"
@@ -250,154 +393,80 @@ def _gather_results() -> Dict[str, Any]:
     return out
 
 
-def run_mcp_server(args) -> None:
-    # Configure logging first
-    _configure_logging()
+def _setup_log_level(args: Any) -> None:
+    """Apply LOG_LEVEL from args defensively without raising."""
     try:
         level_name = str(getattr(args, "LOG_LEVEL", "INFO")).upper()
         level_value = getattr(logging, level_name, logging.INFO)
         logging.getLogger().setLevel(level_value)
-    except Exception:
+    except Exception:  # pylint: disable=broad-exception-caught
+        # Defensive: never break CLI on logging setup
         pass
 
-    _set_runtime_from_args(args)
 
-    server_name = "depgate-mcp"
-    server_version = str(getattr(sys.modules.get("depgate"), "__version__", "")) or ""  # best-effort
-    if FastMCP is None:
-        sys.stderr.write("MCP server not available: 'mcp' package is not installed.\n")
-        sys.exit(1)
-    # Default sandbox root to current working directory if not provided
+def _ensure_default_project_dir(args: Any) -> None:
+    """Default sandbox root to CWD if not provided."""
     if not getattr(args, "MCP_PROJECT_DIR", None):
         try:
             setattr(args, "MCP_PROJECT_DIR", os.getcwd())
-        except Exception:
+        except Exception:  # pylint: disable=broad-exception-caught
             pass
+
+
+def run_mcp_server(args) -> None:
+    """Entry point for launching the MCP server (stdio or streamable-http)."""
+    # Configure logging and runtime
+    _configure_logging()
+    _setup_log_level(args)
+    _set_runtime_from_args(args)
+
+    server_name = "depgate-mcp"
+    _server_version = str(getattr(sys.modules.get("depgate"), "__version__", "")) or ""  # best-effort
+    if FastMCP is None:
+        sys.stderr.write("MCP server not available: 'mcp' package is not installed.\n")
+        sys.exit(1)
+    _ensure_default_project_dir(args)
     mcp = FastMCP(server_name)
 
     @mcp.tool(title="Lookup Latest Version", name="Lookup_Latest_Version")
-    def lookup_latest_version(
+    def lookup_latest_version(  # pylint: disable=invalid-name,too-many-arguments
         name: str,
         ecosystem: Optional[str] = None,
         versionRange: Optional[str] = None,
         registryUrl: Optional[str] = None,
         projectDir: Optional[str] = None,
-        ctx: Any = None,
+        _ctx: Any = None,
     ) -> Dict[str, Any]:
         """Fast lookup of the latest stable version using DepGate's resolvers and caching."""
+        # Map camelCase args to internal names
+        version_range = versionRange
+        registry_url = registryUrl
+        project_dir = projectDir
         # Validate input
-        try:
-            from mcp_schemas import LOOKUP_LATEST_VERSION_INPUT, LOOKUP_LATEST_VERSION_OUTPUT  # type: ignore
-            from mcp_validate import validate_input, safe_validate_output  # type: ignore
-            validate_input(
-                LOOKUP_LATEST_VERSION_INPUT,
-                {
-                    "name": name,
-                    "ecosystem": ecosystem,
-                    "versionRange": versionRange,
-                    "registryUrl": registryUrl,
-                    "projectDir": projectDir,
-                },
-            )
-        except Exception as se:  # pragma: no cover - validation failure
-            if "Invalid input" in str(se):
-                raise RuntimeError(str(se))
-            # Otherwise, continue best-effort
-        # Offline/no-network enforcement
-        if getattr(args, "MCP_NO_NETWORK", False) or getattr(args, "MCP_OFFLINE", False):
-            # Version resolvers use HTTP; fail fast in offline modes
-            raise RuntimeError("offline: registry access disabled")
-
+        _validate(
+            "lookup",
+            {
+                "name": name,
+                "ecosystem": ecosystem,
+                "versionRange": version_range,
+                "registryUrl": registry_url,
+                "projectDir": project_dir,
+            },
+        )
+        # Enforce sandbox and network policy at the wrapper level
+        if args.MCP_PROJECT_DIR and project_dir:
+            _sandbox_project_dir(args.MCP_PROJECT_DIR, project_dir)
+        _require_online(args, None)
         eco = _eco_from_str(ecosystem) if ecosystem else Ecosystem.NPM
-        if projectDir and args.MCP_PROJECT_DIR:
-            _sandbox_project_dir(args.MCP_PROJECT_DIR, projectDir)
-
-        _apply_registry_override(eco, registryUrl)
-
-        latest, candidate_count, err, cache_info = _resolution_for(eco, name, versionRange)
-
-        # Optional metadata enrichment (no new analysis types; best-effort)
-        published_at: Optional[str] = None
-        deprecated: Optional[bool] = None
-        yanked: Optional[bool] = None
-        license_id: Optional[str] = None
-        repo_url: Optional[str] = None
-
-        try:
-            if latest:
-                if eco == Ecosystem.NPM:
-                    from common.http_client import get_json as _get_json
-                    import urllib.parse as _u
-                    url = f"{Constants.REGISTRY_URL_NPM}{_u.quote(name, safe='')}"
-                    status, _, data = _get_json(url)
-                    if status == 200 and isinstance(data, dict):
-                        times = (data or {}).get("time", {}) or {}
-                        published_at = times.get(latest)
-                        ver_meta = ((data or {}).get("versions", {}) or {}).get(latest, {}) or {}
-                        deprecated = bool(ver_meta.get("deprecated")) if ("deprecated" in ver_meta) else None
-                        lic = ver_meta.get("license") or (data or {}).get("license")
-                        license_id = str(lic) if lic else None
-                        repo = (ver_meta.get("repository") or (data or {}).get("repository") or {})
-                        if isinstance(repo, dict):
-                            repo_url = repo.get("url")
-                        elif isinstance(repo, str):
-                            repo_url = repo
-                elif eco == Ecosystem.PYPI:
-                    from common.http_client import get_json as _get_json
-                    url = f"{Constants.REGISTRY_URL_PYPI}{name}/json"
-                    status, _, data = _get_json(url)
-                    if status == 200 and isinstance(data, dict):
-                        info = (data or {}).get("info", {}) or {}
-                        license_id = info.get("license") or None
-                        # Repo URL heuristic from project_urls
-                        proj_urls = info.get("project_urls") or {}
-                        if isinstance(proj_urls, dict):
-                            repo_url = (
-                                proj_urls.get("Source")
-                                or proj_urls.get("Source Code")
-                                or proj_urls.get("Homepage")
-                                or None
-                            )
-                        # Release publish/yanked
-                        rels = (data or {}).get("releases", {}) or {}
-                        files = rels.get(latest) or []
-                        # publishedAt: prefer first file's upload_time_iso_8601
-                        if files and isinstance(files, list):
-                            published_at = files[0].get("upload_time_iso_8601")
-                            yanked = any(bool(f.get("yanked")) for f in files)
-                # Maven metadata lacks license/publish at the resolver stage; skip
-        except Exception:
-            # Best-effort; leave fields as None
-            pass
-        out = {
-            "name": name,
-            "ecosystem": eco.value,
-            "latestVersion": latest,
-            "satisfiesRange": None,
-            "publishedAt": published_at,
-            "deprecated": deprecated,
-            "yanked": yanked,
-            "license": license_id,
-            "registryUrl": registryUrl,
-            "repositoryUrl": repo_url,
-            "cache": cache_info,
-            "_candidates": candidate_count,
-        }
-        try:
-            # Validate output best-effort
-            safe_validate_output(LOOKUP_LATEST_VERSION_OUTPUT, out)  # type: ignore
-        except Exception:
-            pass
-        if versionRange and latest:
-            # conservative: declare satisfiesRange True if resolved latest equals range when exact
-            out["satisfiesRange"] = True if versionRange.strip() == latest else None
-        if err:
-            # propagate as error via FastMCP structured result – clients will surface call error content
-            raise RuntimeError(err)
-        return out
+        return _handle_lookup_latest_version(
+            name=name,
+            eco=eco,
+            version_range=version_range,
+            registry_url=registry_url,
+        )
 
     @mcp.tool(title="Scan Project", name="Scan_Project")
-    def scan_project(
+    def scan_project(  # pylint: disable=invalid-name,too-many-arguments
         projectDir: str,
         includeDevDependencies: Optional[bool] = None,
         includeTransitive: Optional[bool] = None,
@@ -407,149 +476,73 @@ def run_mcp_server(args) -> None:
         paths: Optional[List[str]] = None,
         analysisLevel: Optional[str] = None,
         ecosystem: Optional[str] = None,
-        ctx: Any = None,
-        ) -> Dict[str, Any]:
-        # Validate input
-        try:
-            from mcp_schemas import SCAN_PROJECT_INPUT  # type: ignore
-            from mcp_validate import validate_input  # type: ignore
-            validate_input(
-                SCAN_PROJECT_INPUT,
-                {
-                    "projectDir": projectDir,
-                    "includeDevDependencies": includeDevDependencies,
-                    "includeTransitive": includeTransitive,
-                    "respectLockfiles": respectLockfiles,
-                    "offline": offline,
-                    "strictProvenance": strictProvenance,
-                    "paths": paths,
-                    "analysisLevel": analysisLevel,
-                    "ecosystem": ecosystem,
-                },
-            )
-        except Exception as se:  # pragma: no cover
-            if "Invalid input" in str(se):
-                raise RuntimeError(str(se))
-        if args.MCP_PROJECT_DIR:
-            _sandbox_project_dir(args.MCP_PROJECT_DIR, projectDir)
-        if getattr(args, "MCP_NO_NETWORK", False) or (offline is True) or getattr(args, "MCP_OFFLINE", False):
-            # For now, scanning requires network for registry enrichment
-            raise RuntimeError("offline: networked scan not permitted")
-
-        _reset_state()
-        inp = ScanProjectInput(
-            projectDir=projectDir,
-            includeDevDependencies=includeDevDependencies,
-            includeTransitive=includeTransitive,
-            respectLockfiles=respectLockfiles,
-            offline=offline,
-            strictProvenance=strictProvenance,
-            paths=paths,
-            analysisLevel=analysisLevel,
-            ecosystem=ecosystem,
+        _ctx: Any = None,
+    ) -> Dict[str, Any]:
+        """Run the standard DepGate pipeline on a project directory."""
+        # Map camelCase to internal names
+        project_dir = projectDir
+        analysis_level = analysisLevel
+        _validate(
+            "project",
+            {
+                "projectDir": project_dir,
+                "includeDevDependencies": includeDevDependencies,
+                "includeTransitive": includeTransitive,
+                "respectLockfiles": respectLockfiles,
+                "offline": offline,
+                "strictProvenance": strictProvenance,
+                "paths": paths,
+                "analysisLevel": analysis_level,
+                "ecosystem": ecosystem,
+            },
         )
-        scan_args = _build_cli_args_for_project_scan(inp)
-
-        # Build and execute pipeline identically to CLI scan
-        pkglist = build_pkglist(scan_args)
-        create_metapackages(scan_args, pkglist)
-        apply_version_resolution(scan_args, pkglist)
-        check_against(scan_args.package_type, scan_args.LEVEL, metapkg.instances)
-        run_analysis(scan_args.LEVEL, scan_args, metapkg.instances)
-        result = _gather_results()
-        # Strictly validate shape; surface issues as tool errors
+        if args.MCP_PROJECT_DIR:
+            _sandbox_project_dir(args.MCP_PROJECT_DIR, project_dir)
+        _require_online(args, offline)
+        _reset_state()
+        scan_args = _build_cli_args_for_project_scan(project_dir, ecosystem, analysis_level)
+        result = _run_scan_pipeline(scan_args)
         try:
-            from mcp_schemas import SCAN_RESULTS_OUTPUT  # type: ignore
-            from mcp_validate import validate_output  # type: ignore
-            validate_output(SCAN_RESULTS_OUTPUT, result)
+            _validate_output_strict(result)
         except Exception as se:
-            raise RuntimeError(str(se))
+            raise RuntimeError(str(se)) from se
         return result
 
     @mcp.tool(title="Scan Dependency", name="Scan_Dependency")
-    def scan_dependency(
+    def scan_dependency(  # pylint: disable=invalid-name,too-many-arguments
         name: str,
         version: str,
         ecosystem: str,
         registryUrl: Optional[str] = None,
         offline: Optional[bool] = None,
-        ctx: Any = None,
+        _ctx: Any = None,
         ) -> Dict[str, Any]:
-        # Validate input
-        try:
-            from mcp_schemas import SCAN_DEPENDENCY_INPUT  # type: ignore
-            from mcp_validate import validate_input  # type: ignore
-            validate_input(
-                SCAN_DEPENDENCY_INPUT,
-                {
-                    "name": name,
-                    "version": version,
-                    "ecosystem": ecosystem,
-                    "registryUrl": registryUrl,
-                    "offline": offline,
-                },
-            )
-        except Exception as se:  # pragma: no cover
-            if "Invalid input" in str(se):
-                raise RuntimeError(str(se))
-        if getattr(args, "MCP_NO_NETWORK", False) or (offline is True) or getattr(args, "MCP_OFFLINE", False):
-            raise RuntimeError("offline: networked scan not permitted")
-
+        """Analyze a single dependency (without touching a project tree)."""
+        registry_url = registryUrl
+        _validate(
+            "dependency",
+            {
+                "name": name,
+                "version": version,
+                "ecosystem": ecosystem,
+                "registryUrl": registry_url,
+                "offline": offline,
+            },
+        )
+        _require_online(args, offline)
         eco = _eco_from_str(ecosystem)
-        _apply_registry_override(eco, registryUrl)
-
+        _apply_registry_override(eco, registry_url)
         _reset_state()
-        # Build a minimal args facade to reuse pipeline like single-token scan
-        scan_args = argparse.Namespace()
-        scan_args.package_type = eco.value
-        scan_args.LIST_FROM_FILE = []
-        scan_args.FROM_SRC = None
-        scan_args.SINGLE = [name]
-        scan_args.RECURSIVE = False
-        scan_args.LEVEL = "compare"
-        scan_args.OUTPUT = None
-        scan_args.OUTPUT_FORMAT = None
-        scan_args.LOG_LEVEL = "INFO"
-        scan_args.LOG_FILE = None
-        scan_args.ERROR_ON_WARNINGS = False
-        scan_args.QUIET = True
-        scan_args.DEPSDEV_DISABLE = not Constants.DEPSDEV_ENABLED
-        scan_args.DEPSDEV_BASE_URL = Constants.DEPSDEV_BASE_URL
-        scan_args.DEPSDEV_CACHE_TTL = Constants.DEPSDEV_CACHE_TTL_SEC
-        scan_args.DEPSDEV_MAX_CONCURRENCY = Constants.DEPSDEV_MAX_CONCURRENCY
-        scan_args.DEPSDEV_MAX_RESPONSE_BYTES = Constants.DEPSDEV_MAX_RESPONSE_BYTES
-        scan_args.DEPSDEV_STRICT_OVERRIDE = Constants.DEPSDEV_STRICT_OVERRIDE
-
+        scan_args = _build_args_for_single_dependency(eco, name)
         pkglist = build_pkglist(scan_args)
         create_metapackages(scan_args, pkglist)
-        # Force requested spec to exact version for metapackages before resolution
-        try:
-            for mp in metapkg.instances:
-                mp._requested_spec = version  # internal field
-        except Exception:
-            pass
+        _force_requested_spec(version)
         apply_version_resolution(scan_args, pkglist)
         check_against(scan_args.package_type, scan_args.LEVEL, metapkg.instances)
         run_analysis(scan_args.LEVEL, scan_args, metapkg.instances)
         result = _gather_results()
         try:
-            from mcp_schemas import SCAN_RESULTS_OUTPUT  # type: ignore
-            from mcp_validate import validate_output  # type: ignore
-            validate_output(SCAN_RESULTS_OUTPUT, result)
+            _validate_output_strict(result)
         except Exception as se:
-            raise RuntimeError(str(se))
+            raise RuntimeError(str(se)) from se
         return result
-
-    # Start server
-    host = getattr(args, "MCP_HOST", None)
-    port = getattr(args, "MCP_PORT", None)
-    if host and port:
-        # Non-standard/custom for this repo: expose streamable HTTP for testing tools
-        mcp.settings.host = host
-        try:
-            mcp.settings.port = int(port)
-        except Exception:
-            pass
-        mcp.run(transport="streamable-http")
-    else:
-        mcp.run()  # defaults to stdio

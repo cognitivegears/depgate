@@ -160,7 +160,10 @@ def main() -> None:
     if getattr(args, "_deprecated_no_action", False):
         try:
             sys.stderr.write(
-                "DEPRECATION: The legacy invocation without an action is deprecated and will be removed in a future release. Use: depgate scan [options].\n"
+                (
+                    "DEPRECATION: The legacy invocation without an action is deprecated "
+                    "and will be removed in a future release. Use: depgate scan [options].\n"
+                )
             )
         except Exception:  # pylint: disable=broad-exception-caught
             pass
