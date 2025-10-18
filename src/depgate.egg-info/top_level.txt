@@ -4,10 +4,14 @@ cli_build
 cli_classify
 cli_config
 cli_io
+cli_mcp
 cli_registry
 common
 constants
 depgate
+mcp
+mcp_schemas
+mcp_validate
 metapackage
 registry
 repository

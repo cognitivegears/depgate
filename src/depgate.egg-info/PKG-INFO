@@ -9,7 +9,7 @@ Project-URL: Bug Tracker, https://github.com/cognitivegears/depgate/issues
 Classifier: Programming Language :: Python :: 3
 Classifier: License :: OSI Approved :: Apache Software License
 Classifier: Operating System :: OS Independent
-Requires-Python: >=3.8
+Requires-Python: >=3.10
 Description-Content-Type: text/markdown
 License-File: LICENSE
 License-File: NOTICE
@@ -20,6 +20,8 @@ Requires-Dist: requirements-parser>=0.11.0
 Requires-Dist: packaging>=23.2
 Requires-Dist: semantic_version>=2.10.0
 Requires-Dist: PyYAML>=6.0
+Requires-Dist: mcp[cli]>=1.18.0
+Requires-Dist: jsonschema>=4.19.0
 Dynamic: license-file
 
 # DepGate — Dependency Supply‑Chain Risk & Confusion Checker
@@ -37,6 +39,47 @@ DepGate is a fork of Apiiro’s “Dependency Combobulator”, maintained going 
 - Flexible inputs: single package, manifest scan, or list from file.
 - Structured outputs: human‑readable logs plus CSV/JSON exports for CI.
 - Designed for automation: predictable exit codes and quiet/log options.
+
+## MCP server (experimental, additive)
+
+DepGate includes an MCP server mode that exposes existing analysis via three tools using the official MCP Python SDK.
+
+Quickstart:
+
+1. Start the server over stdio (default):
+
+```bash
+depgate mcp
+```
+
+2. Or start a local TCP endpoint for testing (non-standard transport used by this repo for convenience):
+
+```bash
+depgate mcp --host 127.0.0.1 --port 8765
+```
+
+Tools exposed:
+
+- Lookup_Latest_Version: Resolve latest stable version for npm/pypi/maven per DepGate rules.
+- Scan_Project: Equivalent to `depgate scan` on a project directory.
+- Scan_Dependency: Analyze a single coordinate without changing your project.
+
+Common client examples:
+
+- Claude Desktop / IDEs with MCP: Add a server entry pointing to the `depgate mcp` executable (stdio). The client handles the stdio handshake automatically.
+- Node/JS agents (stdio): Spawn `depgate mcp` with stdio pipes and speak JSON‑RPC 2.0. List tools via `tools/list`, then call with `tools/call`.
+- Python agents: Use the official MCP client libs; connect over stdio to `depgate mcp`.
+
+Flags & env:
+
+- `--project-dir`: sandbox root for file access
+- Networking: `--offline`, `--no-network`, cache TTL/dir
+- Runtime: `--log-level`, `--max-concurrency`, `--request-timeout`
+
+Notes:
+
+- This mode is additive; existing commands and exit codes are unchanged.
+- Tests and local development can use mocks via `FAKE_REGISTRY=1` with `PYTHONPATH=src:tests/e2e_mocks`.
 
 ## Requirements
 
@@ -92,18 +135,17 @@ With uv during development:
 ### Linked analysis (repository linkage verification)
 
 Supply‑chain context: recent attacks, particularly in the npm ecosystem, have involved attackers compromising developer credentials (for example, via phishing) and publishing malicious versions of popular libraries. Linked analysis helps mitigate this risk by verifying that each analyzed package:
+
 - Has a resolvable upstream source repository (GitHub/GitLab)
 - Contains a tag or release that exactly corresponds to the package’s published version (including v‑prefix compatibility)
 
 Behavior and outputs:
+
 - Strict exit semantics: process exits 0 only if all packages are linked; otherwise 1
-- JSON output adds fields when `-a linked` is used:
-  - `repositoryUrl`: normalized upstream repository URL
-  - `tagMatch`: true if the version matched via tags
-  - `releaseMatch`: true if the version matched via releases
-  - `linked`: overall per‑package linkage result (boolean)
+- When `-a linked` is used, JSON includes: `repositoryUrl`, `tagMatch`, `releaseMatch`, and `linked`.
 
 Examples:
+
 - npm: `depgate scan -t npm -p left-pad -a linked -o out.json`
 - pypi: `depgate scan -t pypi -p requests -a linked -o out.json`
 - maven: `depgate scan -t maven -p org.apache.commons:commons-lang3 -a linked -o out.json`
@@ -115,8 +157,8 @@ DepGate discovers canonical source repositories from registry metadata, normaliz
 - Discovery sources:
   - npm: versions[dist‑tags.latest].repository (string or object), fallbacks to homepage and bugs.url
   - PyPI: info.project_urls (Repository/Source/Code preferred), fallback Homepage/Documentation; Read the Docs URLs are resolved to backing repos
-  - Maven: POM <scm> (url/connection/developerConnection) with parent traversal; fallback <url> when repo‑like
-- URL normalization: canonical https://host/owner/repo (strip .git), host detection (github|gitlab), monorepo directory hints preserved in provenance
+  - Maven: POM scm (url/connection/developerConnection) with parent traversal; fallback url when repo‑like
+- URL normalization: canonical host/owner/repo form (strip .git), host detection (github|gitlab), monorepo directory hints preserved in provenance
 - Metrics: stars, last activity timestamp, approximate contributors
 - Version matching strategies (in order):
   1) exact (raw label equality)
@@ -128,6 +170,7 @@ DepGate discovers canonical source repositories from registry metadata, normaliz
 
 Notes:
 - Exact‑unsatisfiable guard: when an exact spec cannot be resolved to a concrete version (e.g., CLI requested exact but no resolved_version), matching is disabled (empty version passed to matcher). Metrics still populate and provenance is recorded.
+
 
 ### Configuration (optional but recommended)
 
@@ -167,11 +210,12 @@ See detailed design in [docs/repository-integration.md](docs/repository-integrat
 DepGate optionally reads a YAML configuration file to override defaults such as registry URLs and HTTP behavior.
 
 Search order (first found wins):
-1) DEPGATE_CONFIG environment variable (absolute path)
-2) ./depgate.yml (or ./.depgate.yml)
-3) $XDG_CONFIG_HOME/depgate/depgate.yml (or ~/.config/depgate/depgate.yml)
-4) macOS: ~/Library/Application Support/depgate/depgate.yml
-5) Windows: %APPDATA%\\depgate\\depgate.yml
+
+1. DEPGATE_CONFIG environment variable (absolute path)
+2. ./depgate.yml (or ./.depgate.yml)
+3. $XDG_CONFIG_HOME/depgate/depgate.yml (or ~/.config/depgate/depgate.yml)
+4. macOS: ~/Library/Application Support/depgate/depgate.yml
+5. Windows: %APPDATA%\\depgate\\depgate.yml
 
 Example:
 
@@ -255,6 +299,7 @@ When policy rules reference heuristic-derived metrics (e.g., `heuristic_score`, 
 ### License Discovery Performance
 
 License discovery uses LRU caching (default maxsize: 256) to minimize network calls. It follows a metadata-first strategy:
+
 1. Check registry metadata for license information
 2. Optionally fall back to repository file parsing (LICENSE, LICENSE.md)
 3. Cache results per (repo_url, ref) combination
@@ -268,7 +313,7 @@ The `is_license_available` heuristic indicates whether license information is av
 ## Exit Codes
 
 - `0`: success (no risks or informational only)
-- `1`: file/IO error
+depgate mcp --host 127.0.0.1 --port 8765
 - `2`: connection error
 - `3`: risks found and `--error-on-warnings` set
 
@@ -281,5 +326,5 @@ Note: For `-a linked`, the process exits with `0` only when all analyzed package
 
 ## Credits & Attribution
 
-- DepGate is a fork of “Dependency Combobulator” originally developed by Apiiro and its contributors: https://github.com/apiiro/combobulator - see `CONTRIBUTORS.md`.
+- DepGate is a fork of “Dependency Combobulator” originally developed by Apiiro and its contributors: <https://github.com/apiiro/combobulator> - see `CONTRIBUTORS.md`.
 - Licensed under the Apache License 2.0. See `LICENSE` and `NOTICE`.

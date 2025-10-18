@@ -1,2 +1,12 @@
 [MASTER]
-init-hook='import sys; sys.path.append(".");sys.path.append("src")'
+ignore=.venv
+
+[MESSAGES CONTROL]
+disable=
+    too-few-public-methods
+
+[FORMAT]
+max-line-length=120
+
+[IMPORTS]
+known-third-party=requirements,packaging,requests,semantic_version

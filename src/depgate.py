@@ -181,8 +181,14 @@ def main() -> None:
         _run_scan(args)
         return
 
+    if action == "mcp":
+        # Lazy import to avoid importing MCP SDK for other commands
+        from cli_mcp import run_mcp_server  # type: ignore
+        run_mcp_server(args)
+        return
+
     # Unknown action safeguard (argparse typically catches this already)
-    sys.stderr.write(f"Unknown action '{action}'. Available actions: scan\n")
+    sys.stderr.write(f"Unknown action '{action}'. Available actions: scan, mcp\n")
     sys.exit(2)
 
 
