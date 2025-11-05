@@ -6,9 +6,9 @@ import sys
 import time
 import logging
 from datetime import datetime as dt
+from packaging.requirements import Requirement
 from constants import ExitCodes, Constants
 from common.logging_utils import extra_context, is_debug_enabled, Timer, safe_url
-from packaging.requirements import Requirement
 
 import registry.pypi as pypi_pkg
 from .enrich import _enrich_with_repo, _enrich_with_license

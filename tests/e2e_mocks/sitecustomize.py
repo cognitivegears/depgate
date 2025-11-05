@@ -7,17 +7,20 @@ import requests as _requests
 # Preserve real functions in case we need passthrough
 _REAL_GET = _requests.get
 _REAL_POST = _requests.post
+_REAL_REQUEST = _requests.request
+_REAL_SESSION_REQUEST = getattr(_requests.Session, "request", None)
 
 FAKE_ENABLED = os.environ.get("FAKE_REGISTRY", "0") == "1"
 FAKE_MODE = os.environ.get("FAKE_MODE", "").strip()  # "", "timeout", "conn_error", "bad_json"
 
 class MockResponse:
-    def __init__(self, status_code=200, data=None, text=None):
+    def __init__(self, status_code=200, data=None, text=None, headers=None):
         self.status_code = status_code
         if text is None and data is not None:
             self.text = json.dumps(data)
         else:
             self.text = text if text is not None else ""
+        self.headers = headers if headers is not None else {}
     def json(self):
         return json.loads(self.text)
 
@@ -47,12 +50,34 @@ def _fake_get(url, timeout=None, headers=None, params=None, **kwargs):
     # NPM package details GET
     if "registry.npmjs.org/" in url:
         pkg = url.rsplit("/", 1)[-1]
+        # URL decode if needed
+        import urllib.parse
+        pkg = urllib.parse.unquote(pkg)
         if pkg == "missing-pkg":
             return MockResponse(404, text="{}")
-        versions = {"1.0.0": {}, "1.0.1": {}}
+        versions = {"1.0.0": {}, "1.0.1": {}, "1.3.0": {}}
         if pkg == "shortver-pkg":
             versions = {"1.0.0": {}}
-        data = {"versions": versions}
+        # Include time field for version metadata lookup
+        time_data = {
+            "1.0.0": "2016-03-21T17:41:23.000Z",
+            "1.0.1": "2016-03-22T17:41:23.000Z",
+            "1.3.0": "2016-03-25T17:41:23.000Z"
+        }
+        # Add time field to versions for _enrich_lookup_metadata
+        versions_with_time = {}
+        for ver, ver_data in versions.items():
+            versions_with_time[ver] = {
+                **ver_data,
+                "license": "MIT",
+                "repository": {"url": "https://github.com/stevemao/left-pad"}
+            }
+        data = {
+            "versions": versions_with_time,
+            "time": time_data,
+            "license": "MIT",
+            "repository": {"url": "https://github.com/stevemao/left-pad"}
+        }
         return MockResponse(200, data=data)
 
     # PyPI GET package JSON
@@ -132,10 +157,51 @@ def _fake_post(url, data=None, timeout=None, headers=None, **kwargs):
 
     return _REAL_POST(url, data=data, timeout=timeout, headers=headers, **kwargs)
 
+def _fake_request(method, url, timeout=None, headers=None, params=None, data=None, json=None, session=None, **kwargs):
+    """Mock requests.request to handle requests.request() calls used by middleware."""
+    if not FAKE_ENABLED:
+        return _REAL_REQUEST(method, url, timeout=timeout, headers=headers, params=params, data=data, json=json, **kwargs)
+
+    # Route to appropriate mock based on method
+    method_upper = method.upper() if method else "GET"
+    if method_upper == "GET":
+        return _fake_get(url, timeout=timeout, headers=headers, params=params, **kwargs)
+    elif method_upper == "POST":
+        # Use data or json parameter, not both
+        post_data = data if data is not None else (json.dumps(json) if json else None)
+        return _fake_post(url, data=post_data, timeout=timeout, headers=headers, **kwargs)
+    else:
+        # For other methods, use real implementation
+        return _REAL_REQUEST(method, url, timeout=timeout, headers=headers, params=params, data=data, json=json, **kwargs)
+
+def _fake_session_request(self, method, url, **kwargs):
+    """Mock Session.request to handle Session.request() calls used by middleware."""
+    # Extract common parameters - avoid passing data twice
+    timeout = kwargs.pop("timeout", None)
+    headers = kwargs.pop("headers", None)
+    params = kwargs.pop("params", None)
+    data = kwargs.pop("data", None)
+    json_data = kwargs.pop("json", None)
+    # Call the module-level _fake_request
+    return _fake_request(method, url, timeout=timeout, headers=headers, params=params, data=data, json=json_data, session=self, **kwargs)
+
+def _fake_session_get(self, url, **kwargs):
+    """Mock Session.get to handle Session.get() calls."""
+    return _fake_session_request(self, "GET", url, **kwargs)
+
 # Install patches when module is imported
 try:
     _requests.get = _fake_get
     _requests.post = _fake_post
+    _requests.request = _fake_request
+    # Patch Session methods if they exist
+    if _REAL_SESSION_REQUEST:
+        _requests.Session.request = _fake_session_request
+        # Also patch Session.get and Session.post for completeness
+        if hasattr(_requests.Session, "get"):
+            _requests.Session.get = _fake_session_get
+        if hasattr(_requests.Session, "post"):
+            _requests.Session.post = lambda self, url, **kwargs: _fake_session_request(self, "POST", url, **kwargs)
 except Exception:
     # If patching fails, leave real functions intact
     pass

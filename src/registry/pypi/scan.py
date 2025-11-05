@@ -11,8 +11,6 @@ from common.logging_utils import (
     log_selection,
     warn_multiple_lockfiles,
     warn_missing_expected,
-    warn_orphan_lock_dep,
-    debug_dependency_line,
     is_debug_enabled,
 )
 
@@ -72,6 +70,7 @@ def scan_source(dir_name: str, recursive: bool = False) -> List[str]:
         if pyproject_paths:
             manifest_path = pyproject_paths[0]
             from versioning.parser import parse_pyproject_tools
+            assert manifest_path is not None
             tools = parse_pyproject_tools(manifest_path)
             if tools.get("tool_uv"):
                 uv_locks = [p for p in discovered["lockfile"] if p.endswith(Constants.UV_LOCK_FILE)]

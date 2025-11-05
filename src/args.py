@@ -9,6 +9,98 @@ from typing import List, Optional, Tuple
 from constants import Constants
 
 
+def add_mcp_arguments(parser: argparse.ArgumentParser) -> None:
+    """Register arguments for the 'mcp' action (Model Context Protocol server)."""
+    # Transport
+    parser.add_argument(
+        "--host",
+        dest="MCP_HOST",
+        help="Optional host for non-stdio server (used for streamable HTTP if provided)",
+        action="store",
+        type=str,
+    )
+    parser.add_argument(
+        "--port",
+        dest="MCP_PORT",
+        help="Optional port for non-stdio server (used for streamable HTTP if provided)",
+        action="store",
+        type=int,
+    )
+
+    # Project scoping
+    parser.add_argument(
+        "--project-dir",
+        dest="MCP_PROJECT_DIR",
+        help="Restrict file access/scan scope to this root directory",
+        action="store",
+        type=str,
+        default=None,
+    )
+
+    # Networking / caching
+    parser.add_argument(
+        "--offline",
+        dest="MCP_OFFLINE",
+        help="Disable all network calls (tools return offline errors for networked ops)",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--no-network",
+        dest="MCP_NO_NETWORK",
+        help="Hard fail any operation that would require network access",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--cache-dir",
+        dest="MCP_CACHE_DIR",
+        help="Optional cache directory for server-local caches (not required)",
+        action="store",
+        type=str,
+        default=None,
+    )
+    parser.add_argument(
+        "--cache-ttl",
+        dest="MCP_CACHE_TTL",
+        help="Default cache TTL in seconds for version/HTTP caches (default 600)",
+        action="store",
+        type=int,
+        default=600,
+    )
+
+    # Runtime
+    parser.add_argument(
+        "--log-level",
+        dest="LOG_LEVEL",
+        help="Set logging level (default INFO)",
+        action="store",
+        type=str,
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        default="INFO",
+    )
+    parser.add_argument(
+        "--log-json",
+        dest="MCP_LOG_JSON",
+        help="Emit structured JSON logs",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--max-concurrency",
+        dest="MCP_MAX_CONCURRENCY",
+        help="Max concurrency for registry/provider requests (advisory)",
+        action="store",
+        type=int,
+        default=None,
+    )
+    parser.add_argument(
+        "--request-timeout",
+        dest="MCP_REQUEST_TIMEOUT",
+        help="Request timeout in seconds for HTTP operations",
+        action="store",
+        type=int,
+        default=None,
+    )
+
+
 def add_scan_arguments(parser: argparse.ArgumentParser) -> None:
     """Register all existing CLI options under the 'scan' action."""
     # NOTE: This preserves the legacy flags, defaults, and choices exactly.
@@ -210,6 +302,19 @@ def build_root_parser() -> Tuple[argparse.ArgumentParser, argparse._SubParsersAc
         formatter_class=argparse.RawTextHelpFormatter,
     )
     add_scan_arguments(scan)
+
+    # Register 'mcp' action
+    mcp = subparsers.add_parser(
+        "mcp",
+        help="Launch an MCP server exposing DepGate tools",
+        description=(
+            "Start a Model Context Protocol server with three tools: "
+            "Lookup_Latest_Version, Scan_Project, Scan_Dependency.\n\n"
+            "Transport: stdio by default. Provide --host/--port to run Streamable HTTP instead."
+        ),
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+    add_mcp_arguments(mcp)
 
     return parser, subparsers
 

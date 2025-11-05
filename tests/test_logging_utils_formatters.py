@@ -143,8 +143,11 @@ class TestTimer:
 
     def test_timer_context_manager(self):
         """Test Timer as context manager."""
+        import time
         with Timer() as timer:
             assert timer.start_time is not None
+            # Add a small delay to ensure measurable duration on fast systems
+            time.sleep(0.001)  # 1ms delay
         assert timer.end_time is not None
         assert timer.duration_ms() > 0
 

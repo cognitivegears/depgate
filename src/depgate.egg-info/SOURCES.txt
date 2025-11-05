@@ -8,6 +8,7 @@ src/cli_build.py
 src/cli_classify.py
 src/cli_config.py
 src/cli_io.py
+src/cli_mcp.py
 src/cli_registry.py
 src/constants.py
 src/depgate.py
@@ -34,6 +35,9 @@ src/depgate.egg-info/dependency_links.txt
 src/depgate.egg-info/entry_points.txt
 src/depgate.egg-info/requires.txt
 src/depgate.egg-info/top_level.txt
+src/depgate_mcp/__init__.py
+src/depgate_mcp/schemas.py
+src/depgate_mcp/validate.py
 src/registry/__init__.py
 src/registry/depsdev/client.py
 src/registry/depsdev/enrich.py
@@ -92,6 +96,9 @@ tests/test_logging_integration_e2e.py
 tests/test_logging_utils_formatters.py
 tests/test_logging_utils_redaction.py
 tests/test_maven_repo_discovery.py
+tests/test_mcp_scan_project_integration.py
+tests/test_mcp_server_basic.py
+tests/test_mcp_stdio_integration.py
 tests/test_npm_exists_preservation.py
 tests/test_npm_repo_discovery.py
 tests/test_parse_tokens.py
