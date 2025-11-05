@@ -12,8 +12,6 @@ src/cli_mcp.py
 src/cli_registry.py
 src/constants.py
 src/depgate.py
-src/mcp_schemas.py
-src/mcp_validate.py
 src/metapackage.py
 src/analysis/__init__.py
 src/analysis/analysis_runner.py

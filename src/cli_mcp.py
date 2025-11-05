@@ -174,6 +174,20 @@ def _resolution_for(
 ) -> Tuple[
     Optional[str], int, Optional[str], Dict[str, Any]
 ]:
+    """Resolve the latest version for a package in the given ecosystem.
+
+    Args:
+        ecosystem: The package ecosystem (npm, pypi, maven).
+        name: The package name.
+        range_spec: Optional version range specification (e.g., "^1.0.0", ">=2.0.0").
+
+    Returns:
+        Tuple containing:
+            - resolved_version (Optional[str]): The resolved latest version string, or None if resolution failed.
+            - candidate_count (int): The number of candidate versions found in the registry.
+            - error_message (Optional[str]): Error message if resolution failed, None otherwise.
+            - cache_metadata (Dict[str, Any]): Cache-related metadata (fromCache, ageSeconds).
+    """
     svc = VersionResolutionService(_SHARED_TTL_CACHE)
     req = parse_manifest_entry(name, (str(range_spec).strip() if range_spec else None), ecosystem, "mcp")
     res = svc.resolve_all([req])
@@ -186,7 +200,7 @@ def _resolution_for(
 
 
 def _validate(schema_name: str, data: Dict[str, Any]) -> None:
-    """Validate input payload against a named schema from mcp_schemas."""
+    """Validate input payload against a named schema from depgate_mcp.schemas."""
     try:
         from depgate_mcp.schemas import (  # type: ignore
             LOOKUP_LATEST_VERSION_INPUT,
@@ -229,6 +243,7 @@ def _safe_validate_lookup_output(out: Dict[str, Any]) -> None:
         from depgate_mcp.validate import safe_validate_output as _safe  # type: ignore
         _safe(LOOKUP_LATEST_VERSION_OUTPUT, out)
     except Exception:
+        # Best-effort validation: ignore any validation errors to avoid breaking tool replies
         pass
 
 
@@ -453,12 +468,6 @@ def _setup_log_level(args: Any) -> None:
     except Exception:  # pylint: disable=broad-exception-caught
         # Defensive: never break CLI on logging setup
         pass
-
-
-def _ensure_default_project_dir(args: Any) -> None:
-    """Default sandbox root to CWD if not provided."""
-    # No-op: Only enforce sandbox when user explicitly provides MCP_PROJECT_DIR
-    return
 
 
 def run_mcp_server(args) -> None:
