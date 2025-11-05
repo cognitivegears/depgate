@@ -163,6 +163,9 @@ def test_mcp_scan_project_integration_smoke(monkeypatch, tmp_path):
         assert scan_resp.get("error") is None, f"Scan_Project error: {scan_resp.get('error')}"
         result = scan_resp.get("result")
         assert isinstance(result, dict)
+        # FastMCP may wrap structured output in structuredContent - extract if present
+        if "structuredContent" in result:
+            result = result["structuredContent"]
         # Minimal golden-shape checks according to tightened schema
         assert "packages" in result and isinstance(result["packages"], list)
         assert "summary" in result and isinstance(result["summary"], dict)

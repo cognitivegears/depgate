@@ -36,3 +36,16 @@ def safe_validate_output(schema: Dict[str, Any], data: Dict[str, Any]) -> None:
             break
     except Exception:
         return
+
+
+def validate_output(schema: Dict[str, Any], data: Dict[str, Any]) -> None:
+    """Strict output validation; raise on first error."""
+    if Draft7Validator is None:
+        return
+    v = Draft7Validator(schema)
+    errs = sorted(v.iter_errors(data), key=lambda e: e.path)
+    if errs:
+        first = errs[0]
+        path = "/".join([str(p) for p in first.path])
+        msg = f"Invalid output at '{path}': {first.message}"
+        raise SchemaError(msg)

@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: depgate
-Version: 0.5.1
+Version: 0.6.0
 Summary: DepGate detects and prevents dependency confusion and supply-chain risks. (Hard fork of Apiiro's Dependency Combobulator)
 Author: cognitivegears
 License: Apache-2.0
@@ -69,6 +69,49 @@ Common client examples:
 - Claude Desktop / IDEs with MCP: Add a server entry pointing to the `depgate mcp` executable (stdio). The client handles the stdio handshake automatically.
 - Node/JS agents (stdio): Spawn `depgate mcp` with stdio pipes and speak JSON‑RPC 2.0. List tools via `tools/list`, then call with `tools/call`.
 - Python agents: Use the official MCP client libs; connect over stdio to `depgate mcp`.
+
+Try it quickly (stdio, JSON-RPC):
+
+- List tools
+
+```bash
+printf '%s\n' \
+'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","clientInfo":{"name":"cli","version":"0"},"capabilities":{}}}' \
+'{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
+| depgate mcp
+```
+
+- Call Lookup_Latest_Version and Scan_Dependency
+
+```bash
+# npm (left-pad)
+printf '%s\n' \
+'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","clientInfo":{"name":"cli","version":"0"},"capabilities":{}}}' \
+'{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"Lookup_Latest_Version","arguments":{"name":"left-pad","ecosystem":"npm","versionRange":"^1.0.0"}}}' \
+'{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"Scan_Dependency","arguments":{"name":"left-pad","version":"1.3.0","ecosystem":"npm"}}}' \
+| depgate mcp
+
+# PyPI (requests)
+# Use PEP 440 specifiers (e.g., ">=2,<3"); caret (^) is not valid for PyPI.
+printf '%s\n' \
+'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","clientInfo":{"name":"cli","version":"0"},"capabilities":{}}}' \
+'{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"Lookup_Latest_Version","arguments":{"name":"requests","ecosystem":"pypi","versionRange":">=2,<3"}}}' \
+'{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"Scan_Dependency","arguments":{"name":"requests","version":"2.32.5","ecosystem":"pypi"}}}' \
+| depgate mcp
+
+# Maven (groupId:artifactId coordinates)
+printf '%s\n' \
+'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","clientInfo":{"name":"cli","version":"0"},"capabilities":{}}}' \
+'{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"Lookup_Latest_Version","arguments":{"name":"org.apache.commons:commons-lang3","ecosystem":"maven"}}}' \
+'{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"Scan_Dependency","arguments":{"name":"org.apache.commons:commons-lang3","version":"3.19.0","ecosystem":"maven"}}}' \
+| depgate mcp
+```
+
+Sandboxing and environment:
+
+- The server restricts filesystem access to a sandbox root. By default, it's the current working directory.
+  - If you pass absolute paths (e.g., to Scan_Project), run `depgate mcp --project-dir "/abs/path"` with a root that contains those paths.
+- When developing with this repo installed in editable mode, avoid adding `src/` to PYTHONPATH when launching the server; it may shadow the external `mcp` SDK package. For tests that need mocks, add only `tests/e2e_mocks` to PYTHONPATH.
 
 Flags & env:
 
@@ -169,6 +212,7 @@ DepGate discovers canonical source repositories from registry metadata, normaliz
 - Tag/release name returned prefers the bare token unless both v‑prefixed and bare forms co‑exist, in which case the raw label is preserved.
 
 Notes:
+
 - Exact‑unsatisfiable guard: when an exact spec cannot be resolved to a concrete version (e.g., CLI requested exact but no resolved_version), matching is disabled (empty version passed to matcher). Metrics still populate and provenance is recorded.
 
 

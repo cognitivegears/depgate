@@ -8,10 +8,10 @@ LOOKUP_LATEST_VERSION_INPUT = {
     "required": ["name"],
     "properties": {
         "name": {"type": "string", "minLength": 1},
-        "ecosystem": {"type": "string", "enum": ["npm", "pypi", "maven"]},
-        "versionRange": {"type": "string"},
-        "registryUrl": {"type": "string"},
-        "projectDir": {"type": "string"},
+        "ecosystem": {"type": ["string", "null"], "enum": ["npm", "pypi", "maven", None]},
+        "versionRange": {"type": ["string", "null"]},
+        "registryUrl": {"type": ["string", "null"]},
+        "projectDir": {"type": ["string", "null"]},
     },
     "additionalProperties": False,
 }
@@ -32,7 +32,7 @@ LOOKUP_LATEST_VERSION_OUTPUT = {
         "registryUrl": {"type": ["string", "null"]},
         "repositoryUrl": {"type": ["string", "null"]},
         "cache": {"type": "object"},
-        "_candidates": {"type": ["integer", "null"]},
+        "candidates": {"type": ["integer", "null"]},
     },
     "additionalProperties": False,
 }
@@ -67,4 +67,42 @@ SCAN_DEPENDENCY_INPUT = {
         "offline": {"type": ["boolean", "null"]},
     },
     "additionalProperties": False,
+}
+
+SCAN_RESULTS_OUTPUT = {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "required": ["packages", "summary", "findings"],
+    "properties": {
+        "packages": {
+            "type": "array",
+            "minItems": 0,
+            "items": {
+                "type": "object",
+                "required": ["name", "ecosystem"],
+                "properties": {
+                    "name": {"type": "string"},
+                    "ecosystem": {"type": "string", "enum": ["npm", "pypi", "maven"]},
+                    "version": {"type": ["string", "null"]},
+                    "repositoryUrl": {"type": ["string", "null"]},
+                    "license": {"type": ["string", "null"]},
+                    "linked": {"type": ["boolean", "null"]},
+                    "repoVersionMatch": {"type": ["object", "null"]},
+                    "policyDecision": {"type": ["string", "null"]},
+                },
+                "additionalProperties": True,
+            },
+        },
+        "findings": {
+            "type": "array",
+            "items": {"type": "object", "additionalProperties": True},
+        },
+        "summary": {
+            "type": "object",
+            "required": ["count"],
+            "properties": {"count": {"type": "integer", "minimum": 0}},
+            "additionalProperties": True,
+        },
+    },
+    "additionalProperties": True,
 }

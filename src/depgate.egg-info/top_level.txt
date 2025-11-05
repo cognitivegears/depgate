@@ -9,9 +9,7 @@ cli_registry
 common
 constants
 depgate
-mcp
-mcp_schemas
-mcp_validate
+depgate_mcp
 metapackage
 registry
 repository

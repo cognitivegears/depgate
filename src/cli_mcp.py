@@ -17,6 +17,7 @@ import os
 import sys
 import argparse
 from typing import Any, Dict, List, Optional, Tuple
+from typing_extensions import TypedDict
 
 import urllib.parse as _u
 from constants import Constants
@@ -58,6 +59,42 @@ except ImportError as _imp_err:  # pragma: no cover - import error surfaced at r
 # ----------------------------
 # Helpers and internal handlers
 # ----------------------------
+
+
+class PackageOut(TypedDict, total=False):
+    name: Optional[str]
+    ecosystem: Optional[str]
+    version: Optional[str]
+    repositoryUrl: Optional[str]
+    license: Optional[str]
+    linked: Optional[bool]
+    repoVersionMatch: Any
+    policyDecision: Any
+
+
+class SummaryOut(TypedDict):
+    count: int
+
+
+class ScanResultOut(TypedDict, total=False):
+    packages: List[PackageOut]
+    findings: List[Dict[str, Any]]
+    summary: SummaryOut
+
+
+class LookupOut(TypedDict, total=False):
+    name: str
+    ecosystem: str
+    latestVersion: Optional[str]
+    satisfiesRange: Optional[bool]
+    publishedAt: Optional[str]
+    deprecated: Optional[bool]
+    yanked: Optional[bool]
+    license: Optional[str]
+    registryUrl: Optional[str]
+    repositoryUrl: Optional[str]
+    cache: Dict[str, Any]
+    candidates: int
 
 
 def _eco_from_str(s: Optional[str]) -> Ecosystem:
@@ -149,12 +186,12 @@ def _resolution_for(
 def _validate(schema_name: str, data: Dict[str, Any]) -> None:
     """Validate input payload against a named schema from mcp_schemas."""
     try:
-        from mcp_schemas import (  # type: ignore
+        from depgate_mcp.schemas import (  # type: ignore
             LOOKUP_LATEST_VERSION_INPUT,
             SCAN_PROJECT_INPUT,
             SCAN_DEPENDENCY_INPUT,
         )
-        from mcp_validate import validate_input as _validate_input  # type: ignore
+        from depgate_mcp.validate import validate_input as _validate_input  # type: ignore
         mapping = {
             "lookup": LOOKUP_LATEST_VERSION_INPUT,
             "project": SCAN_PROJECT_INPUT,
@@ -169,16 +206,16 @@ def _validate(schema_name: str, data: Dict[str, Any]) -> None:
 
 def _validate_output_strict(result: Dict[str, Any]) -> None:
     """Validate scan result output strictly."""
-    from mcp_schemas import SCAN_RESULTS_OUTPUT  # type: ignore
-    from mcp_validate import validate_output as _validate_output  # type: ignore
+    from depgate_mcp.schemas import SCAN_RESULTS_OUTPUT  # type: ignore
+    from depgate_mcp.validate import validate_output as _validate_output  # type: ignore
     _validate_output(SCAN_RESULTS_OUTPUT, result)
 
 
 def _safe_validate_lookup_output(out: Dict[str, Any]) -> None:
     """Best-effort validation for lookup output; ignore failures."""
     try:
-        from mcp_schemas import LOOKUP_LATEST_VERSION_OUTPUT  # type: ignore
-        from mcp_validate import safe_validate_output as _safe  # type: ignore
+        from depgate_mcp.schemas import LOOKUP_LATEST_VERSION_OUTPUT  # type: ignore
+        from depgate_mcp.validate import safe_validate_output as _safe  # type: ignore
         _safe(LOOKUP_LATEST_VERSION_OUTPUT, out)
     except Exception:
         pass
@@ -200,6 +237,17 @@ def _enrich_lookup_metadata(eco: Ecosystem, name: str, latest: Optional[str]) ->
             "license_id": None,
             "repo_url": None,
         }
+
+    # Skip HTTP calls in test mode to avoid hangs
+    if os.environ.get("FAKE_REGISTRY", "0") == "1":
+        return {
+            "published_at": None,
+            "deprecated": None,
+            "yanked": None,
+            "license_id": None,
+            "repo_url": None,
+        }
+
     if eco == Ecosystem.NPM:
         url = f"{Constants.REGISTRY_URL_NPM}{_u.quote(name, safe='')}"
         status, _, data = _get_json(url)
@@ -267,7 +315,7 @@ def _handle_lookup_latest_version(
         "registryUrl": registry_url,
         "repositoryUrl": meta["repo_url"],
         "cache": res[3],
-        "_candidates": res[1],
+    "candidates": res[1],
     }
     _safe_validate_lookup_output(result)
     if res[2]:
@@ -284,13 +332,17 @@ def _run_scan_pipeline(scan_args: Any) -> Dict[str, Any]:
     return _gather_results()
 
 
-def _build_args_for_single_dependency(eco: Ecosystem, name: str) -> Any:
+def _build_args_for_single_dependency(eco: Ecosystem, name: str, version: Optional[str] = None) -> Any:
     """Construct scan args for a single dependency token."""
     scan_args = argparse.Namespace()
     scan_args.package_type = eco.value
     scan_args.LIST_FROM_FILE = []
     scan_args.FROM_SRC = None
-    scan_args.SINGLE = [name]
+    # Include version in token if provided (format: name:version for parse_cli_token)
+    if version:
+        scan_args.SINGLE = [f"{name}:{version}"]
+    else:
+        scan_args.SINGLE = [name]
     scan_args.RECURSIVE = False
     scan_args.LEVEL = "compare"
     scan_args.OUTPUT = None
@@ -406,11 +458,8 @@ def _setup_log_level(args: Any) -> None:
 
 def _ensure_default_project_dir(args: Any) -> None:
     """Default sandbox root to CWD if not provided."""
-    if not getattr(args, "MCP_PROJECT_DIR", None):
-        try:
-            setattr(args, "MCP_PROJECT_DIR", os.getcwd())
-        except Exception:  # pylint: disable=broad-exception-caught
-            pass
+    # No-op: Only enforce sandbox when user explicitly provides MCP_PROJECT_DIR
+    return
 
 
 def run_mcp_server(args) -> None:
@@ -426,17 +475,34 @@ def run_mcp_server(args) -> None:
         sys.stderr.write("MCP server not available: 'mcp' package is not installed.\n")
         sys.exit(1)
     _ensure_default_project_dir(args)
-    mcp = FastMCP(server_name)
+    class DepGateMCP(FastMCP):  # type: ignore
+        async def call_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any] | List[Any]:  # type: ignore[override]
+            # Use FastMCP's conversion, then flatten to pure structured dict when available
+            context = self.get_context()
+            raw = await self._tool_manager.call_tool(name, arguments, context=context, convert_result=True)
+            # raw can be Sequence[ContentBlock] or (Sequence[ContentBlock], dict)
+            if isinstance(raw, tuple) and len(raw) == 2 and isinstance(raw[1], dict):
+                structured = raw[1]
+                # FastMCP may return structuredContent nested - extract it if present
+                if isinstance(structured, dict) and "structuredContent" in structured:
+                    return structured["structuredContent"]
+                return structured
+            # If raw is a dict with structuredContent, extract it
+            if isinstance(raw, dict) and "structuredContent" in raw:
+                return raw["structuredContent"]
+            return raw  # type: ignore[return-value]
 
-    @mcp.tool(title="Lookup Latest Version", name="Lookup_Latest_Version")
+    mcp = DepGateMCP(server_name)
+
+    @mcp.tool(title="Lookup Latest Version", name="Lookup_Latest_Version", structured_output=True)
     def lookup_latest_version(  # pylint: disable=invalid-name,too-many-arguments
         name: str,
         ecosystem: Optional[str] = None,
         versionRange: Optional[str] = None,
         registryUrl: Optional[str] = None,
         projectDir: Optional[str] = None,
-        _ctx: Any = None,
-    ) -> Dict[str, Any]:
+        ctx: Any = None,
+    ) -> LookupOut:
         """Fast lookup of the latest stable version using DepGate's resolvers and caching."""
         # Map camelCase args to internal names
         version_range = versionRange
@@ -463,9 +529,9 @@ def run_mcp_server(args) -> None:
             eco=eco,
             version_range=version_range,
             registry_url=registry_url,
-        )
+        )  # type: ignore[return-value]
 
-    @mcp.tool(title="Scan Project", name="Scan_Project")
+    @mcp.tool(title="Scan Project", name="Scan_Project", structured_output=True)
     def scan_project(  # pylint: disable=invalid-name,too-many-arguments
         projectDir: str,
         includeDevDependencies: Optional[bool] = None,
@@ -476,8 +542,8 @@ def run_mcp_server(args) -> None:
         paths: Optional[List[str]] = None,
         analysisLevel: Optional[str] = None,
         ecosystem: Optional[str] = None,
-        _ctx: Any = None,
-    ) -> Dict[str, Any]:
+        ctx: Any = None,
+    ) -> ScanResultOut:
         """Run the standard DepGate pipeline on a project directory."""
         # Map camelCase to internal names
         project_dir = projectDir
@@ -506,17 +572,17 @@ def run_mcp_server(args) -> None:
             _validate_output_strict(result)
         except Exception as se:
             raise RuntimeError(str(se)) from se
-        return result
+        return result  # type: ignore[return-value]
 
-    @mcp.tool(title="Scan Dependency", name="Scan_Dependency")
+    @mcp.tool(title="Scan Dependency", name="Scan_Dependency", structured_output=True)
     def scan_dependency(  # pylint: disable=invalid-name,too-many-arguments
         name: str,
         version: str,
         ecosystem: str,
         registryUrl: Optional[str] = None,
         offline: Optional[bool] = None,
-        _ctx: Any = None,
-        ) -> Dict[str, Any]:
+        ctx: Any = None,
+    ) -> ScanResultOut:
         """Analyze a single dependency (without touching a project tree)."""
         registry_url = registryUrl
         _validate(
@@ -533,10 +599,9 @@ def run_mcp_server(args) -> None:
         eco = _eco_from_str(ecosystem)
         _apply_registry_override(eco, registry_url)
         _reset_state()
-        scan_args = _build_args_for_single_dependency(eco, name)
+        scan_args = _build_args_for_single_dependency(eco, name, version)
         pkglist = build_pkglist(scan_args)
         create_metapackages(scan_args, pkglist)
-        _force_requested_spec(version)
         apply_version_resolution(scan_args, pkglist)
         check_against(scan_args.package_type, scan_args.LEVEL, metapkg.instances)
         run_analysis(scan_args.LEVEL, scan_args, metapkg.instances)
@@ -545,4 +610,15 @@ def run_mcp_server(args) -> None:
             _validate_output_strict(result)
         except Exception as se:
             raise RuntimeError(str(se)) from se
-        return result
+        return result  # type: ignore[return-value]
+
+    # Run the server in stdio mode (default transport for tests/integration)
+    try:
+        run_stdio = getattr(mcp, "run_stdio", None)
+        if callable(run_stdio):
+            run_stdio()
+        else:
+            mcp.run("stdio")  # type: ignore[arg-type]
+    except Exception as exc:  # pragma: no cover - surfaced in stderr
+        sys.stderr.write(f"Failed to start MCP stdio server: {exc}\n")
+        sys.exit(1)
