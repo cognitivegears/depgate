@@ -194,6 +194,7 @@ def _validate(schema_name: str, data: Dict[str, Any]) -> None:
             SCAN_DEPENDENCY_INPUT,
         )
         from depgate_mcp.validate import validate_input as _validate_input  # type: ignore
+        from depgate_mcp.validate import SchemaError  # type: ignore
         mapping = {
             "lookup": LOOKUP_LATEST_VERSION_INPUT,
             "project": SCAN_PROJECT_INPUT,
@@ -201,7 +202,15 @@ def _validate(schema_name: str, data: Dict[str, Any]) -> None:
         }
         schema = mapping[schema_name]
         _validate_input(schema, data)
+    except SchemaError as se:
+        # Re-raise schema validation errors as RuntimeError for consistency
+        raise RuntimeError(str(se)) from se
+    except KeyError as ke:
+        # Unknown schema name
+        raise RuntimeError(f"Unknown schema name: {schema_name}") from ke
     except Exception as se:  # pragma: no cover
+        # Unexpected errors during validation setup (e.g., import failures)
+        # Only re-raise if it looks like a validation error
         if "Invalid input" in str(se):
             raise RuntimeError(str(se)) from se
 
@@ -317,7 +326,7 @@ def _handle_lookup_latest_version(
         "registryUrl": registry_url,
         "repositoryUrl": meta["repo_url"],
         "cache": res[3],
-    "candidates": res[1],
+        "candidates": res[1],
     }
     _safe_validate_lookup_output(result)
     if res[2]:
@@ -360,18 +369,6 @@ def _build_args_for_single_dependency(eco: Ecosystem, name: str, version: Option
     scan_args.DEPSDEV_MAX_RESPONSE_BYTES = Constants.DEPSDEV_MAX_RESPONSE_BYTES
     scan_args.DEPSDEV_STRICT_OVERRIDE = Constants.DEPSDEV_STRICT_OVERRIDE
     return scan_args
-
-
-def _force_requested_spec(version: str) -> None:
-    """Ensure metapackages use the provided exact version for resolution."""
-    for mp in metapkg.instances:
-        try:
-            setattr(mp, "requested_spec", version)
-        except AttributeError:
-            try:
-                setattr(mp, "_requested_spec", version)
-            except AttributeError:
-                continue
 
 
 def _build_cli_args_for_project_scan(
@@ -475,7 +472,6 @@ def run_mcp_server(args) -> None:
     if FastMCP is None:
         sys.stderr.write("MCP server not available: 'mcp' package is not installed.\n")
         sys.exit(1)
-    _ensure_default_project_dir(args)
     # FastMCP is guaranteed to be non-None here due to the check above
     # Type narrowing: after the None check and early exit, FastMCP must be callable
     assert FastMCP is not None

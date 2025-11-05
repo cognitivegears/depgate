@@ -222,7 +222,7 @@ def test_mcp_stdio_initialize_and_lookup_latest_version_smoke(monkeypatch):
             except Exception:
                 # Process I/O error; continue without stderr
                 stderr_tail = ""
-        assert lookup_resp is not None, f"No lookup result from MCP server after {timeout}s. Stderr: {stderr_tail}"
+        assert lookup_resp is not None, f"No lookup result from MCP server after 15s. Stderr: {stderr_tail}"
         assert lookup_resp.get("error") is None, f"Lookup error: {lookup_resp.get('error')}"
         result = lookup_resp.get("result")
         # FastMCP may wrap structured output in structuredContent - extract if present
