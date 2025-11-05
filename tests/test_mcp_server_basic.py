@@ -3,12 +3,6 @@
 These tests exercise the stdio initialization and list_tools; deeper tests can
 mock underlying resolvers and registry clients to avoid network.
 """
-import os
-import sys
-import json
-import asyncio
-import contextlib
-
 import pytest
 
 

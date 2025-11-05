@@ -31,9 +31,8 @@ def safe_validate_output(schema: Dict[str, Any], data: Dict[str, Any]) -> None:
         if Draft7Validator is None:
             return
         v = Draft7Validator(schema)
-        # Iterate to exercise validation; ignore errors intentionally
-        for _ in v.iter_errors(data):
-            break
+        # Trigger validation by checking for errors; ignore them intentionally
+        next(v.iter_errors(data), None)
     except Exception:
         return
 

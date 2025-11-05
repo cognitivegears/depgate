@@ -5,8 +5,6 @@ import sys
 import time
 from pathlib import Path
 
-import pytest
-
 ROOT = Path(__file__).resolve().parents[1]
 ENTRY = ROOT / "src" / "depgate.py"
 
@@ -57,6 +55,7 @@ def _read_json_response(proc, expected_id=None, timeout=5):
                     if expected_id is None or obj.get("id") == expected_id:
                         return obj
                 except Exception:
+                    # Invalid JSON in LSP-framed payload; continue reading
                     pass
                 content_len = None
                 continue
@@ -83,6 +82,7 @@ def _read_json_response(proc, expected_id=None, timeout=5):
                 else:
                     buf = ""
             except Exception:
+                # Invalid JSON when accumulating; continue reading
                 pass
     return None
 
@@ -181,4 +181,5 @@ def test_mcp_scan_project_integration_smoke(monkeypatch, tmp_path):
                 proc.stdin.close()
             proc.terminate()
         except Exception:
+            # Process may already be terminated; ignore cleanup errors
             pass

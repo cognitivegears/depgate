@@ -51,9 +51,10 @@ _SHARED_TTL_CACHE = TTLCache()
 # Official MCP SDK (FastMCP)
 try:
     from mcp.server.fastmcp import FastMCP  # type: ignore
-except ImportError as _imp_err:  # pragma: no cover - import error surfaced at runtime
+except ImportError:  # pragma: no cover - import error surfaced at runtime
+    # MCP SDK not available; gracefully degrade by setting FastMCP to None
+    # The run_mcp_server function will check and exit with error message if needed
     FastMCP = None  # type: ignore
-    # Context is only used for typing in MCP; not required here
 
 
 # ----------------------------
@@ -162,6 +163,7 @@ def _reset_state() -> None:
     try:
         metapkg.instances.clear()
     except AttributeError:
+        # If instances is not a list/collection, ignore (defensive programming)
         pass
 
 
@@ -470,12 +472,15 @@ def run_mcp_server(args) -> None:
     _set_runtime_from_args(args)
 
     server_name = "depgate-mcp"
-    _server_version = str(getattr(sys.modules.get("depgate"), "__version__", "")) or ""  # best-effort
     if FastMCP is None:
         sys.stderr.write("MCP server not available: 'mcp' package is not installed.\n")
         sys.exit(1)
     _ensure_default_project_dir(args)
-    class DepGateMCP(FastMCP):  # type: ignore
+    # FastMCP is guaranteed to be non-None here due to the check above
+    # Type narrowing: after the None check and early exit, FastMCP must be callable
+    assert FastMCP is not None
+    _FastMCP = FastMCP  # Assign to local variable for type narrowing
+    class DepGateMCP(_FastMCP):  # type: ignore
         async def call_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any] | List[Any]:  # type: ignore[override]
             # Use FastMCP's conversion, then flatten to pure structured dict when available
             context = self.get_context()

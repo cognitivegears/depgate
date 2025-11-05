@@ -61,6 +61,7 @@ def _read_json_response(proc, expected_id=None, timeout=5):
                     if expected_id is None or obj.get("id") == expected_id:
                         return obj
                 except Exception:
+                    # Invalid JSON in LSP-framed payload; continue reading
                     pass
                 content_len = None
                 continue
@@ -87,6 +88,7 @@ def _read_json_response(proc, expected_id=None, timeout=5):
                 else:
                     buf = ""
             except Exception:
+                # Invalid JSON when accumulating; continue reading
                 pass
     return None
 
@@ -174,8 +176,10 @@ def test_mcp_stdio_initialize_and_lookup_latest_version_smoke(monkeypatch):
                         if r:
                             stderr_tail = proc.stderr.read(4096) or ""
                     except Exception:
+                        # select may not be available on all platforms; ignore and continue
                         stderr_tail = ""
             except Exception:
+                # Process I/O error; continue without stderr
                 stderr_tail = ""
         assert response is not None, f"No response from MCP server. Stderr: {stderr_tail}"
 
@@ -213,8 +217,10 @@ def test_mcp_stdio_initialize_and_lookup_latest_version_smoke(monkeypatch):
                         if r:
                             stderr_tail = proc.stderr.read(4096) or ""
                     except Exception:
+                        # select may not be available on all platforms; ignore and continue
                         stderr_tail = ""
             except Exception:
+                # Process I/O error; continue without stderr
                 stderr_tail = ""
         assert lookup_resp is not None, f"No lookup result from MCP server after {timeout}s. Stderr: {stderr_tail}"
         assert lookup_resp.get("error") is None, f"Lookup error: {lookup_resp.get('error')}"
@@ -230,6 +236,7 @@ def test_mcp_stdio_initialize_and_lookup_latest_version_smoke(monkeypatch):
                 proc.stdin.close()
             proc.terminate()
         except Exception:
+            # Process may already be terminated; ignore cleanup errors
             pass
 
 

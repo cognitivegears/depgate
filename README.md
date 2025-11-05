@@ -331,7 +331,7 @@ The `is_license_available` heuristic indicates whether license information is av
 ## Exit Codes
 
 - `0`: success (no risks or informational only)
-depgate mcp --host 127.0.0.1 --port 8765
+- `1`: file/IO error
 - `2`: connection error
 - `3`: risks found and `--error-on-warnings` set
 
