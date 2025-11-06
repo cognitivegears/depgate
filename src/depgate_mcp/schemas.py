@@ -100,7 +100,10 @@ SCAN_RESULTS_OUTPUT = {
         "summary": {
             "type": "object",
             "required": ["count"],
-            "properties": {"count": {"type": "integer", "minimum": 0}},
+            "properties": {
+                "count": {"type": "integer", "minimum": 0},
+                "findingsCount": {"type": "integer", "minimum": 0},
+            },
             "additionalProperties": True,
         },
     },

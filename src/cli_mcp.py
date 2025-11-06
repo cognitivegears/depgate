@@ -73,8 +73,9 @@ class PackageOut(TypedDict, total=False):
     policyDecision: Any
 
 
-class SummaryOut(TypedDict):
+class SummaryOut(TypedDict, total=False):
     count: int
+    findingsCount: int
 
 
 class ScanResultOut(TypedDict, total=False):
@@ -450,23 +451,115 @@ def _gather_results() -> Dict[str, Any]:
         "summary": {},
     }
     pkgs = []
+    findings = []
     for mp in metapkg.instances:
+        pkg_name = getattr(mp, "pkg_name", None)
+        pkg_type = getattr(mp, "pkg_type", None)
+        resolved_version = getattr(mp, "resolved_version", None)
+        repo_url = getattr(mp, "repo_url_normalized", None)
+        repo_exists = getattr(mp, "repo_exists", None)
+        repo_resolved = bool(getattr(mp, "repo_resolved", False))
+        repo_version_match = getattr(mp, "repo_version_match", None)
+
         pkgs.append(
             {
-                "name": getattr(mp, "pkg_name", None),
-                "ecosystem": getattr(mp, "pkg_type", None),
-                "version": getattr(mp, "resolved_version", None),
-                "repositoryUrl": getattr(mp, "repo_url_normalized", None),
+                "name": pkg_name,
+                "ecosystem": pkg_type,
+                "version": resolved_version,
+                "repositoryUrl": repo_url,
                 "license": getattr(mp, "license_id", None),
                 "linked": getattr(mp, "linked", None),
-                "repoVersionMatch": getattr(mp, "repo_version_match", None),
+                "repoVersionMatch": repo_version_match,
                 "policyDecision": getattr(mp, "policy_decision", None),
             }
         )
+
+        # Check for various supply-chain issues and add findings
+
+        # 1. Missing package (package doesn't exist in registry)
+        pkg_exists = getattr(mp, "exists", None)
+        if pkg_exists is False:
+            findings.append({
+                "type": "missing_package",
+                "severity": "error",
+                "package": pkg_name,
+                "ecosystem": pkg_type,
+                "version": resolved_version,
+                "message": (
+                    f"Package {pkg_name} does not exist in the {pkg_type} registry. "
+                    "This may indicate a dependency confusion attack or a typo in the package name."
+                ),
+            })
+
+        # 2. Invalid repository URL (repository URL exists but repository doesn't exist)
+        if repo_url and repo_resolved and repo_exists is False:
+            findings.append({
+                "type": "invalid_repository_url",
+                "severity": "warning",
+                "package": pkg_name,
+                "ecosystem": pkg_type,
+                "version": resolved_version,
+                "repositoryUrl": repo_url,
+                "message": (
+                    f"Package {pkg_name}@{resolved_version} references a repository URL "
+                    f"({repo_url}) that does not exist or is not accessible. "
+                    "This may indicate a broken link or a supply-chain risk."
+                ),
+            })
+
+        # 3. Version mismatch (repository exists but version doesn't match)
+        # This mirrors the logic from linked.py: repo_ok = (repo_url is not None) and repo_resolved and repo_exists
+        repo_ok = (repo_url is not None) and repo_resolved and (repo_exists is True)
+        if repo_ok:
+            match_ok = False
+            try:
+                if repo_version_match and isinstance(repo_version_match, dict):
+                    match_ok = bool(repo_version_match.get("matched", False))
+            except Exception:  # pylint: disable=broad-exception-caught
+                match_ok = False
+
+            if not match_ok and resolved_version:
+                # Repository exists but version doesn't match - this is a problem
+                # Only flag if we have a resolved version (to avoid false positives when version matching is disabled)
+                findings.append({
+                    "type": "version_mismatch",
+                    "severity": "warning",
+                    "package": pkg_name,
+                    "ecosystem": pkg_type,
+                    "version": resolved_version,
+                    "repositoryUrl": repo_url,
+                    "message": (
+                        f"Package {pkg_name}@{resolved_version} has a repository URL "
+                        f"({repo_url}) but no matching tag or release was found in the repository. "
+                        "This may indicate a supply-chain risk where the package version "
+                        "does not correspond to a repository release."
+                    ),
+                })
+
+        # 4. Missing repository URL (package exists but has no repository URL)
+        # This is less critical but could be informative for supply-chain transparency
+        if pkg_exists is True and not repo_url:
+            repo_present_in_registry = getattr(mp, "repo_present_in_registry", None)
+            # Only flag if we know the package should have a repo URL (it was checked but not found)
+            if repo_present_in_registry is False:
+                findings.append({
+                    "type": "missing_repository_url",
+                    "severity": "info",
+                    "package": pkg_name,
+                    "ecosystem": pkg_type,
+                    "version": resolved_version,
+                    "message": (
+                        f"Package {pkg_name}@{resolved_version} exists in the registry "
+                        "but does not have a repository URL in its metadata. "
+                        "This may reduce supply-chain transparency."
+                    ),
+                })
+
     out["packages"] = pkgs
-    # findings and summary are inferred by callers today; we include minimal fields
+    out["findings"] = findings
     out["summary"] = {
         "count": len(pkgs),
+        "findingsCount": len(findings),
     }
     return out
 
