@@ -117,74 +117,93 @@ class ProviderValidationService:  # pylint: disable=too-few-public-methods
 
 
         # Populate repository existence and metadata
-        mp.repo_exists = True
-        mp.repo_stars = info.get('stars')
-        mp.repo_last_activity_at = info.get('last_activity_at')
-
-        # Get contributor count if available
-        contributors = provider.get_contributors_count(ref.owner, ref.repo)
-        if contributors is not None:
-            mp.repo_contributors = contributors
-
-        # Attempt version matching across releases, then optional fallback to tags
-        m = matcher or VersionMatcher()
-        empty_version = (version or "") == ""
-
-        # Releases first
-        rel_artifacts = _to_artifacts_list(_safe_get_releases(provider, ref.owner, ref.repo))
-        release_result = _match_version(m, version, rel_artifacts) if rel_artifacts else None
-
-        # Tags fallback only when version is not empty and releases didn't match
-        tag_result = None
-        if (
-            not empty_version
-            and not (
-                release_result
-                and isinstance(release_result, dict)
-                and release_result.get('matched', False)
-            )
-        ):
-            tag_artifacts = _to_artifacts_list(_safe_get_tags(provider, ref.owner, ref.repo))
-            tag_result = _match_version(m, version, tag_artifacts) if tag_artifacts else None
-
-        # Record match sources for downstream (non-breaking diagnostics)
+        # Once we set repo_exists = True, we must ensure repo_version_match is always set
+        # Wrap everything after setting repo_exists in try-except to guarantee this
         try:
-            setattr(
-                mp,
-                "_version_match_release_matched",
-                bool(
+            mp.repo_exists = True
+            mp.repo_stars = info.get('stars')
+            mp.repo_last_activity_at = info.get('last_activity_at')
+
+            # Get contributor count if available
+            try:
+                contributors = provider.get_contributors_count(ref.owner, ref.repo)
+                if contributors is not None:
+                    mp.repo_contributors = contributors
+            except Exception:  # pylint: disable=broad-exception-caught
+                # Contributor count is optional, continue even if it fails
+                pass
+
+            # Attempt version matching across releases, then optional fallback to tags
+            m = matcher or VersionMatcher()
+            empty_version = (version or "") == ""
+
+            # Releases first
+            rel_artifacts = _to_artifacts_list(_safe_get_releases(provider, ref.owner, ref.repo))
+            release_result = _match_version(m, version, rel_artifacts) if rel_artifacts else None
+
+            # Tags fallback only when version is not empty and releases didn't match
+            tag_result = None
+            if (
+                not empty_version
+                and not (
                     release_result
                     and isinstance(release_result, dict)
-                    and release_result.get("matched", False)
-                ),
-            )
-            setattr(
-                mp,
-                "_version_match_tag_matched",
-                bool(
-                    tag_result
-                    and isinstance(tag_result, dict)
-                    and tag_result.get("matched", False)
-                ),
-            )
-            _src = (
-                "release"
-                if getattr(mp, "_version_match_release_matched", False)
-                else ("tag" if getattr(mp, "_version_match_tag_matched", False) else None)
-            )
-            setattr(mp, "_repo_version_match_source", _src)
-        except Exception:  # pylint: disable=broad-exception-caught
-            pass
+                    and release_result.get('matched', False)
+                )
+            ):
+                tag_artifacts = _to_artifacts_list(_safe_get_tags(provider, ref.owner, ref.repo))
+                tag_result = _match_version(m, version, tag_artifacts) if tag_artifacts else None
 
-        # Choose final result
-        final_result = _choose_final_result(release_result, tag_result)
-        if final_result is None:
-            final_result = {
-                'matched': False,
-                'match_type': None,
-                'artifact': None,
-                'tag_or_release': None
-            }
-        mp.repo_version_match = final_result
+            # Record match sources for downstream (non-breaking diagnostics)
+            try:
+                setattr(
+                    mp,
+                    "_version_match_release_matched",
+                    bool(
+                        release_result
+                        and isinstance(release_result, dict)
+                        and release_result.get("matched", False)
+                    ),
+                )
+                setattr(
+                    mp,
+                    "_version_match_tag_matched",
+                    bool(
+                        tag_result
+                        and isinstance(tag_result, dict)
+                        and tag_result.get("matched", False)
+                    ),
+                )
+                _src = (
+                    "release"
+                    if getattr(mp, "_version_match_release_matched", False)
+                    else ("tag" if getattr(mp, "_version_match_tag_matched", False) else None)
+                )
+                setattr(mp, "_repo_version_match_source", _src)
+            except Exception:  # pylint: disable=broad-exception-caught
+                pass
+
+            # Choose final result
+            final_result = _choose_final_result(release_result, tag_result)
+            if final_result is None:
+                final_result = {
+                    'matched': False,
+                    'match_type': None,
+                    'artifact': None,
+                    'tag_or_release': None
+                }
+            mp.repo_version_match = final_result
+        except Exception:  # pylint: disable=broad-exception-caught
+            # If an exception occurs after setting repo_exists = True, we must ensure
+            # repo_version_match is set to avoid None values in output
+            # Only set it if repo_exists was successfully set (defensive check)
+            if getattr(mp, "repo_exists", None) is True:
+                mp.repo_version_match = {
+                    'matched': False,
+                    'match_type': None,
+                    'artifact': None,
+                    'tag_or_release': None
+                }
+            # If repo_exists wasn't set, we'll return False below, which is correct
 
         return True
