@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 
+from repository.url_normalize import normalize_repo_url
+
 ROOT = Path(__file__).resolve().parents[1]
 ENTRY = ROOT / "src" / "depgate.py"
 
@@ -185,7 +187,11 @@ def test_mcp_scan_dependency_version_mismatch_detection():
         if repo_url is None:
             pytest.skip("Repository URL not found - cannot test version mismatch detection")
 
-        assert "github.com" in repo_url or "gitlab.com" in repo_url, "Repository URL should point to GitHub or GitLab"
+        # Parse URL to check hostname safely (avoid substring matching in sanitized URLs)
+        repo_ref = normalize_repo_url(repo_url)
+        assert repo_ref is not None, f"Repository URL should be parseable: {repo_url}"
+        assert repo_ref.host in ("github", "gitlab"), \
+            f"Repository URL should point to GitHub or GitLab, got host: {repo_ref.host}"
 
         # Verify findings contain version mismatch warning
         # Note: Version mismatch finding requires:

@@ -333,8 +333,10 @@ def _url_fallback_from_pom(pom_xml: str) -> Optional[str]:
         url_elem = root.find(f"{ns}url")
         if url_elem is not None and url_elem.text:
             url = url_elem.text.strip()
-            # Check if it looks like a GitHub/GitLab URL
-            if "github.com" in url or "gitlab.com" in url:
+            # Check if it looks like a GitHub/GitLab URL by parsing it
+            # (avoid substring matching in sanitized URLs)
+            repo_ref = normalize_repo_url(url)
+            if repo_ref is not None and repo_ref.host in ("github", "gitlab"):
                 return url
     except (ET.ParseError, AttributeError):
         pass
