@@ -20,7 +20,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from typing_extensions import TypedDict
 
 import urllib.parse as _u
-from constants import Constants
+from constants import Constants, ExitCodes
 from common.logging_utils import configure_logging as _configure_logging
 from common.http_client import get_json as _get_json
 
@@ -350,12 +350,21 @@ def _handle_lookup_latest_version(
 
 
 def _run_scan_pipeline(scan_args: Any) -> Dict[str, Any]:
-    pkglist = build_pkglist(scan_args)
-    create_metapackages(scan_args, pkglist)
-    apply_version_resolution(scan_args, pkglist)
-    check_against(scan_args.package_type, scan_args.LEVEL, metapkg.instances)
-    run_analysis(scan_args.LEVEL, scan_args, metapkg.instances)
-    return _gather_results()
+    """Run the scan pipeline, catching SystemExit and converting to RuntimeError for MCP context."""
+    try:
+        pkglist = build_pkglist(scan_args)
+        create_metapackages(scan_args, pkglist)
+        apply_version_resolution(scan_args, pkglist)
+        check_against(scan_args.package_type, scan_args.LEVEL, metapkg.instances)
+        run_analysis(scan_args.LEVEL, scan_args, metapkg.instances)
+        return _gather_results()
+    except SystemExit as se:
+        # Convert SystemExit (from sys.exit() in scan_source) to RuntimeError for MCP context
+        # SystemExit.code may be an ExitCodes enum value or an integer
+        exit_code = se.code if hasattr(se, 'code') and se.code is not None else 1
+        if exit_code == ExitCodes.FILE_ERROR.value:
+            raise RuntimeError("No supported dependency files found in project directory") from se
+        raise RuntimeError(f"Scan failed with exit code {exit_code}") from se
 
 
 def _build_args_for_single_dependency(eco: Ecosystem, name: str, version: Optional[str] = None) -> Any:
@@ -407,8 +416,11 @@ def _build_cli_args_for_project_scan(
         elif os.path.isfile(os.path.join(root, Constants.POM_XML_FILE)):
             pkg_type = "maven"
         else:
-            # Default to npm to preserve common behavior
-            pkg_type = "npm"
+            # No supported dependency files found - raise error early for MCP context
+            raise RuntimeError(
+                f"No supported dependency files found in '{project_dir}'. "
+                "Expected one of: package.json (npm), requirements.txt/pyproject.toml (pypi), or pom.xml (maven)"
+            )
     args.package_type = pkg_type
     args.LIST_FROM_FILE = []
     args.FROM_SRC = [project_dir]
