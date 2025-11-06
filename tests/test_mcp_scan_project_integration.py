@@ -183,3 +183,110 @@ def test_mcp_scan_project_integration_smoke(monkeypatch, tmp_path):
         except Exception:
             # Process may already be terminated; ignore cleanup errors
             pass
+
+
+def test_mcp_scan_project_no_dependency_files(monkeypatch, tmp_path):
+    """Test that scanning a directory without supported dependency files returns an error instead of hanging."""
+    # If MCP SDK isn't available, verify graceful subcommand failure instead of skipping
+    try:
+        import mcp  # noqa: F401
+        mcp_available = True
+    except Exception:
+        mcp_available = False
+
+    # Create an empty directory with no dependency files
+    project_dir = tmp_path / "empty_proj"
+    project_dir.mkdir(parents=True, exist_ok=True)
+    # Create a dummy file to ensure the directory exists but has no dependency files
+    (project_dir / "README.txt").write_text("No dependency files here", encoding="utf-8")
+
+    env = os.environ.copy()
+    env.update({
+        "FAKE_REGISTRY": "1",
+        "PYTHONPATH": f"{ROOT / 'tests' / 'e2e_mocks'}:{ROOT / 'src'}",
+    })
+
+    proc = _spawn_mcp_stdio(env)
+    try:
+        # If server exited immediately (e.g., fastmcp missing), assert graceful error
+        time.sleep(0.2)
+        if not mcp_available or proc.poll() is not None:
+            outs, errs = proc.communicate(timeout=2)
+            assert proc.returncode != 0
+            assert "MCP server not available" in (errs or "")
+            return
+
+        # Initialize first per MCP
+        assert proc.stdin is not None and proc.stdout is not None
+        init_req = _rpc_envelope(
+            "initialize",
+            {
+                "protocolVersion": "2024-11-05",
+                "clientInfo": {"name": "pytest", "version": "0.0.0"},
+                "capabilities": {},
+            },
+            id_=31,
+        )
+        try:
+            _send_json(proc, init_req)
+        except BrokenPipeError:
+            raise AssertionError("MCP stdio not available: server closed pipe on initialize")
+        _ = _read_json_response(proc, expected_id=31, timeout=1)
+
+        # Call Scan_Project on directory without dependency files
+        call = _rpc_envelope(
+            "tools/call",
+            {
+                "name": "Scan_Project",
+                "arguments": {
+                    "projectDir": str(project_dir),
+                    "analysisLevel": "compare"
+                },
+            },
+            id_=32,
+        )
+        try:
+            _send_json(proc, call)
+        except BrokenPipeError:
+            raise AssertionError("MCP stdio not available: server closed pipe on tools/call Scan_Project")
+
+        # Read response with timeout - should NOT hang
+        scan_resp = _read_json_response(proc, expected_id=32, timeout=5)
+        assert scan_resp is not None, "No Scan_Project result from MCP server (should return error, not hang)"
+
+        # FastMCP may return errors in result.content with isError: true instead of JSON-RPC error field
+        result = scan_resp.get("result", {})
+        error = scan_resp.get("error")
+
+        # Check for FastMCP error format (result.content with isError: true)
+        has_fastmcp_error = (
+            isinstance(result, dict)
+            and result.get("isError") is True
+            and "content" in result
+            and isinstance(result["content"], list)
+            and len(result["content"]) > 0
+        )
+
+        # Should have an error (either JSON-RPC error field or FastMCP error format)
+        assert error is not None or has_fastmcp_error, \
+            f"Expected error when scanning directory without dependency files. Response: {json.dumps(scan_resp, indent=2)}"
+
+        # Extract error message from either format
+        if error is not None:
+            error_message = error.get("message", "") if isinstance(error, dict) else str(error)
+        else:
+            # FastMCP error format: extract from result.content[0].text
+            error_text = result["content"][0].get("text", "")
+            error_message = error_text
+
+        # Verify error message mentions missing dependency files
+        assert "No supported dependency files found" in error_message or "dependency files" in error_message.lower(), \
+            f"Error message should mention dependency files. Got: {error_message}"
+    finally:
+        try:
+            if proc.stdin:
+                proc.stdin.close()
+            proc.terminate()
+        except Exception:
+            # Process may already be terminated; ignore cleanup errors
+            pass

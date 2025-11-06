@@ -20,7 +20,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from typing_extensions import TypedDict
 
 import urllib.parse as _u
-from constants import Constants
+from constants import Constants, ExitCodes
 from common.logging_utils import configure_logging as _configure_logging
 from common.http_client import get_json as _get_json
 
@@ -73,8 +73,9 @@ class PackageOut(TypedDict, total=False):
     policyDecision: Any
 
 
-class SummaryOut(TypedDict):
+class SummaryOut(TypedDict, total=False):
     count: int
+    findingsCount: int
 
 
 class ScanResultOut(TypedDict, total=False):
@@ -350,12 +351,72 @@ def _handle_lookup_latest_version(
 
 
 def _run_scan_pipeline(scan_args: Any) -> Dict[str, Any]:
-    pkglist = build_pkglist(scan_args)
-    create_metapackages(scan_args, pkglist)
-    apply_version_resolution(scan_args, pkglist)
-    check_against(scan_args.package_type, scan_args.LEVEL, metapkg.instances)
-    run_analysis(scan_args.LEVEL, scan_args, metapkg.instances)
-    return _gather_results()
+    """Run the scan pipeline, catching SystemExit and converting to RuntimeError for MCP context.
+
+    This function handles various FILE_ERROR scenarios by providing specific error messages
+    based on where in the pipeline the error occurred.
+    """
+    try:
+        # Step 1: Build package list (may fail if no dependency files found, file I/O errors, or parse errors)
+        try:
+            pkglist = build_pkglist(scan_args)
+        except SystemExit as se:
+            exit_code = se.code if hasattr(se, 'code') and se.code is not None else 1
+            if exit_code == ExitCodes.FILE_ERROR.value:
+                # Check if this is a project scan (has FROM_SRC) vs single dependency scan
+                from_src = getattr(scan_args, "FROM_SRC", None)
+                if from_src:
+                    project_dir = from_src[0] if from_src else None
+                    if project_dir:
+                        # Match the specific error message format from _build_cli_args_for_project_scan
+                        raise RuntimeError(
+                            f"No supported dependency files found in '{project_dir}'. "
+                            "Expected one of: package.json (npm), requirements.txt/pyproject.toml (pypi), or pom.xml (maven)"
+                        ) from se
+                    raise RuntimeError(
+                        "No supported dependency files found in project directory. "
+                        "Expected one of: package.json (npm), requirements.txt/pyproject.toml (pypi), or pom.xml (maven)"
+                    ) from se
+                # For single dependency scans, FILE_ERROR might indicate file I/O errors or parse errors
+                raise RuntimeError("Failed to build package list: file error or parse error") from se
+            raise
+
+        # Step 2: Create metapackages (may fail on invalid Maven coordinates)
+        try:
+            create_metapackages(scan_args, pkglist)
+        except SystemExit as se:
+            exit_code = se.code if hasattr(se, 'code') and se.code is not None else 1
+            if exit_code == ExitCodes.FILE_ERROR.value:
+                # Invalid Maven coordinates or other package creation errors
+                raise RuntimeError("Invalid package format or coordinates") from se
+            raise
+
+        # Step 3: Apply version resolution
+        apply_version_resolution(scan_args, pkglist)
+
+        # Step 4: Check against registry (may fail on invalid package type)
+        try:
+            check_against(scan_args.package_type, scan_args.LEVEL, metapkg.instances)
+        except SystemExit as se:
+            exit_code = se.code if hasattr(se, 'code') and se.code is not None else 1
+            if exit_code == ExitCodes.FILE_ERROR.value:
+                raise RuntimeError(f"Package type '{scan_args.package_type}' does not support registry check") from se
+            raise
+
+        # Step 5: Run analysis
+        run_analysis(scan_args.LEVEL, scan_args, metapkg.instances)
+
+        return _gather_results()
+    except RuntimeError:
+        # Re-raise RuntimeErrors as-is (they already have specific messages)
+        raise
+    except SystemExit as se:
+        # Catch any other SystemExit that wasn't handled above
+        exit_code = se.code if hasattr(se, 'code') and se.code is not None else 1
+        if exit_code == ExitCodes.FILE_ERROR.value:
+            # Generic fallback for FILE_ERROR we couldn't categorize
+            raise RuntimeError("Scan failed: file or package error") from se
+        raise RuntimeError(f"Scan failed with exit code {exit_code}") from se
 
 
 def _build_args_for_single_dependency(eco: Ecosystem, name: str, version: Optional[str] = None) -> Any:
@@ -407,8 +468,11 @@ def _build_cli_args_for_project_scan(
         elif os.path.isfile(os.path.join(root, Constants.POM_XML_FILE)):
             pkg_type = "maven"
         else:
-            # Default to npm to preserve common behavior
-            pkg_type = "npm"
+            # No supported dependency files found - raise error early for MCP context
+            raise RuntimeError(
+                f"No supported dependency files found in '{project_dir}'. "
+                "Expected one of: package.json (npm), requirements.txt/pyproject.toml (pypi), or pom.xml (maven)"
+            )
     args.package_type = pkg_type
     args.LIST_FROM_FILE = []
     args.FROM_SRC = [project_dir]
@@ -432,29 +496,153 @@ def _build_cli_args_for_project_scan(
 
 
 def _gather_results() -> Dict[str, Any]:
+    """Gather scan results and detect supply-chain issues.
+
+    Collects package information and generates findings for various supply-chain
+    risks including missing packages, invalid repository URLs, version mismatches,
+    and missing repository URLs.
+
+    Returns:
+        Dict with keys:
+        - packages: List of package information dictionaries
+        - findings: List of supply-chain issue findings
+        - summary: Summary statistics including count and findingsCount
+
+    Findings Types:
+        - missing_package: Package doesn't exist in registry (severity: error)
+        - invalid_repository_url: Repository URL exists but repo doesn't (severity: warning)
+        - version_mismatch: Repo exists but version doesn't match (severity: warning)
+        - missing_repository_url: Package exists but no repo URL (severity: info)
+    """
     out: Dict[str, Any] = {
         "packages": [],
         "findings": [],
         "summary": {},
     }
     pkgs = []
+    findings = []
+
+    # Helper function to format package name with optional version
+    def _format_pkg_version(name: str, version: Optional[str]) -> str:
+        """Format package name with optional version."""
+        if version:
+            return f"{name}@{version}"
+        return name
+
     for mp in metapkg.instances:
+        pkg_name = getattr(mp, "pkg_name", None)
+        pkg_type = getattr(mp, "pkg_type", None)
+        resolved_version = getattr(mp, "resolved_version", None)
+        repo_url = getattr(mp, "repo_url_normalized", None)
+        repo_exists = getattr(mp, "repo_exists", None)
+        repo_resolved = bool(getattr(mp, "repo_resolved", False))
+        repo_version_match = getattr(mp, "repo_version_match", None)
+
+        # Skip packages with missing essential data (name and ecosystem are required by schema)
+        if not pkg_name or not pkg_type:
+            continue
+
         pkgs.append(
             {
-                "name": getattr(mp, "pkg_name", None),
-                "ecosystem": getattr(mp, "pkg_type", None),
-                "version": getattr(mp, "resolved_version", None),
-                "repositoryUrl": getattr(mp, "repo_url_normalized", None),
+                "name": pkg_name,
+                "ecosystem": pkg_type,
+                "version": resolved_version,
+                "repositoryUrl": repo_url,
                 "license": getattr(mp, "license_id", None),
                 "linked": getattr(mp, "linked", None),
-                "repoVersionMatch": getattr(mp, "repo_version_match", None),
+                "repoVersionMatch": repo_version_match,
                 "policyDecision": getattr(mp, "policy_decision", None),
             }
         )
+
+        pkg_display = _format_pkg_version(pkg_name, resolved_version)
+
+        # Check for various supply-chain issues and add findings
+
+        # 1. Missing package (package doesn't exist in registry)
+        pkg_exists = getattr(mp, "exists", None)
+        if pkg_exists is False:
+            findings.append({
+                "type": "missing_package",
+                "severity": "error",
+                "package": pkg_name,
+                "ecosystem": pkg_type,
+                "version": resolved_version,
+                "message": (
+                    f"Package {pkg_name} does not exist in the {pkg_type} registry. "
+                    "This may indicate a dependency confusion attack or a typo in the package name."
+                ),
+            })
+
+        # 2. Invalid repository URL (repository URL exists but repository doesn't exist)
+        if repo_url and repo_resolved and repo_exists is False:
+            findings.append({
+                "type": "invalid_repository_url",
+                "severity": "warning",
+                "package": pkg_name,
+                "ecosystem": pkg_type,
+                "version": resolved_version,
+                "repositoryUrl": repo_url,
+                "message": (
+                    f"Package {pkg_display} references a repository URL "
+                    f"({repo_url}) that does not exist or is not accessible. "
+                    "This may indicate a broken link or a supply-chain risk."
+                ),
+            })
+
+        # 3. Version mismatch (repository exists but version doesn't match)
+        # This mirrors the logic from linked.py: repo_ok = (repo_url is not None) and repo_resolved and repo_exists
+        repo_ok = (repo_url is not None) and repo_resolved and (repo_exists is True)
+        if repo_ok:
+            match_ok = False
+            try:
+                if repo_version_match and isinstance(repo_version_match, dict):
+                    match_ok = bool(repo_version_match.get("matched", False))
+            except Exception:  # pylint: disable=broad-exception-caught
+                match_ok = False
+
+            if not match_ok and resolved_version:
+                # Repository exists but version doesn't match - this is a problem
+                # Only flag if we have a resolved version (to avoid false positives when version matching is disabled)
+                findings.append({
+                    "type": "version_mismatch",
+                    "severity": "warning",
+                    "package": pkg_name,
+                    "ecosystem": pkg_type,
+                    "version": resolved_version,
+                    "repositoryUrl": repo_url,
+                    "message": (
+                        f"Package {pkg_display} has a repository URL "
+                        f"({repo_url}) but no matching tag or release was found in the repository. "
+                        "This may indicate a supply-chain risk where the package version "
+                        "does not correspond to a repository release."
+                    ),
+                })
+
+        # 4. Missing repository URL (package exists but has no repository URL)
+        # This is less critical but could be informative for supply-chain transparency
+        if pkg_exists is True and not repo_url:
+            repo_present_in_registry = getattr(mp, "repo_present_in_registry", None)
+            # Only flag if we know the package should have a repo URL (it was checked but not found)
+            if repo_present_in_registry is False:
+                findings.append({
+                    "type": "missing_repository_url",
+                    "severity": "info",
+                    "package": pkg_name,
+                    "ecosystem": pkg_type,
+                    "version": resolved_version,
+                    "message": (
+                        f"Package {pkg_display} exists in the registry "
+                        "but does not have a repository URL in its metadata. "
+                        "This may reduce supply-chain transparency."
+                    ),
+                })
+
     out["packages"] = pkgs
-    # findings and summary are inferred by callers today; we include minimal fields
+    out["findings"] = findings
     out["summary"] = {
         "count": len(pkgs),
+        "findingsCount": len(findings),
     }
     return out
 
