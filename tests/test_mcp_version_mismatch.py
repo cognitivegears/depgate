@@ -106,9 +106,7 @@ def test_mcp_scan_dependency_version_mismatch_detection():
     """
     try:
         import mcp  # noqa: F401
-        mcp_available = True
     except Exception:
-        mcp_available = False
         pytest.skip("MCP SDK not available")
 
     env = os.environ.copy()

@@ -61,7 +61,7 @@ def _read_json_response(proc, expected_id=None, timeout=30):
                     obj = json.loads(payload)
                     if expected_id is None or obj.get("id") == expected_id:
                         return obj
-                except Exception:
+                except Exception:  # Invalid JSON in payload, continue trying other parsing methods
                     pass
                 content_len = None
                 continue
@@ -86,7 +86,7 @@ def _read_json_response(proc, expected_id=None, timeout=30):
                     return obj
                 else:
                     buf = ""
-            except Exception:
+            except Exception:  # JSON parsing failed, continue accumulating buffer
                 pass
     return None
 
@@ -120,9 +120,7 @@ def test_mcp_scan_dependency_missing_package():
     """
     try:
         import mcp  # noqa: F401
-        mcp_available = True
     except Exception:
-        mcp_available = False
         pytest.skip("MCP SDK not available")
 
     env = os.environ.copy()
@@ -188,12 +186,13 @@ def test_mcp_scan_dependency_missing_package():
             f"Message should mention missing package. Got: {missing['message']}"
 
     finally:
+        # Cleanup: terminate process and ignore errors during cleanup
         try:
             if proc.stdin:
                 proc.stdin.close()
             proc.terminate()
             proc.wait(timeout=5)
-        except Exception:
+        except Exception:  # Ignore errors during cleanup (process may already be terminated)
             pass
 
 
@@ -213,9 +212,7 @@ def test_mcp_scan_dependency_invalid_repository_url():
     """
     try:
         import mcp  # noqa: F401
-        mcp_available = True
     except Exception:
-        mcp_available = False
         pytest.skip("MCP SDK not available")
 
     env = os.environ.copy()
@@ -275,12 +272,13 @@ def test_mcp_scan_dependency_invalid_repository_url():
                         f"Message should mention invalid repo. Got: {invalid['message']}"
 
     finally:
+        # Cleanup: terminate process and ignore errors during cleanup
         try:
             if proc.stdin:
                 proc.stdin.close()
             proc.terminate()
             proc.wait(timeout=5)
-        except Exception:
+        except Exception:  # Ignore errors during cleanup (process may already be terminated)
             pass
 
 
@@ -299,9 +297,7 @@ def test_mcp_scan_dependency_missing_repository_url():
     """
     try:
         import mcp  # noqa: F401
-        mcp_available = True
     except Exception:
-        mcp_available = False
         pytest.skip("MCP SDK not available")
 
     env = os.environ.copy()
@@ -321,9 +317,12 @@ def test_mcp_scan_dependency_missing_repository_url():
         call = _rpc_envelope(
             "tools/call",
             {
-                "name": "left-pad",
-                "version": "1.3.0",
-                "ecosystem": "npm",
+                "name": "Scan_Dependency",
+                "arguments": {
+                    "name": "left-pad",
+                    "version": "1.3.0",
+                    "ecosystem": "npm",
+                },
             },
             id_=call_id,
         )
@@ -355,12 +354,13 @@ def test_mcp_scan_dependency_missing_repository_url():
                         f"Message should mention missing repo URL. Got: {missing['message']}"
 
     finally:
+        # Cleanup: terminate process and ignore errors during cleanup
         try:
             if proc.stdin:
                 proc.stdin.close()
             proc.terminate()
             proc.wait(timeout=5)
-        except Exception:
+        except Exception:  # Ignore errors during cleanup (process may already be terminated)
             pass
 
 
@@ -376,9 +376,7 @@ def test_mcp_scan_dependency_all_finding_types():
     """
     try:
         import mcp  # noqa: F401
-        mcp_available = True
     except Exception:
-        mcp_available = False
         pytest.skip("MCP SDK not available")
 
     # Expected finding types
@@ -442,10 +440,11 @@ def test_mcp_scan_dependency_all_finding_types():
                     f"Finding type {finding_type} should have severity {expected_types[finding_type]}"
 
     finally:
+        # Cleanup: terminate process and ignore errors during cleanup
         try:
             if proc.stdin:
                 proc.stdin.close()
             proc.terminate()
             proc.wait(timeout=5)
-        except Exception:
+        except Exception:  # Ignore errors during cleanup (process may already be terminated)
             pass
