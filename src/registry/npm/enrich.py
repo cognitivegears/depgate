@@ -317,9 +317,29 @@ def _enrich_with_repo(pkg, packument: dict) -> None:
             # If resolution failed, try to use requested_spec if it's an exact version
             requested_spec = getattr(pkg, "requested_spec", None)
             if requested_spec and isinstance(requested_spec, str):
+                # Strip whitespace before checking
+                requested_spec = requested_spec.strip()
                 # Check if it's an exact version (no range operators)
-                if requested_spec and not any(op in requested_spec for op in ['^', '~', '>=', '<=', '>', '<', '||', ' ']):
+                if requested_spec and not any(op in requested_spec for op in ['^', '~', '>=', '<=', '>', '<', '||']):
                     osm_version = requested_spec
+                elif requested_spec:
+                    # requested_spec is a range, not an exact version - warn user
+                    logger.warning(
+                        "OpenSourceMalware check using latest version (%s) instead of requested range '%s' for package %s. "
+                        "For accurate version-specific malware detection, use an exact version.",
+                        latest_version,
+                        requested_spec,
+                        pkg.pkg_name,
+                        extra=extra_context(
+                            event="osm_version_fallback",
+                            component="enrich",
+                            action="enrich_with_repo",
+                            package_manager="npm",
+                            requested_spec=requested_spec,
+                            fallback_version=latest_version,
+                            pkg=pkg.pkg_name,
+                        ),
+                    )
         if not osm_version:
             osm_version = latest_version
         osm_enrich(pkg, "npm", pkg.pkg_name, osm_version)

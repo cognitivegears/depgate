@@ -309,9 +309,29 @@ def _enrich_with_repo(mp, _name: str, info: Dict[str, Any], version: str) -> Non
             # If resolution failed, try to use requested_spec if it's an exact version
             requested_spec = getattr(mp, "requested_spec", None)
             if requested_spec and isinstance(requested_spec, str):
+                # Strip whitespace before checking
+                requested_spec = requested_spec.strip()
                 # Check if it's an exact version (no range operators)
-                if requested_spec and not any(op in requested_spec for op in ['>=', '<=', '>', '<', '~=', '!=']):
+                if requested_spec and not any(op in requested_spec for op in ['>=', '<=', '>', '<', '~=', '!=', ',']):
                     osm_version = requested_spec
+                elif requested_spec:
+                    # requested_spec is a range, not an exact version - warn user
+                    logger.warning(
+                        "OpenSourceMalware check using resolved version (%s) instead of requested range '%s' for package %s. "
+                        "For accurate version-specific malware detection, use an exact version.",
+                        version,
+                        requested_spec,
+                        getattr(mp, "pkg_name", None) or "",
+                        extra=extra_context(
+                            event="osm_version_fallback",
+                            component="enrich",
+                            action="enrich_with_repo",
+                            package_manager="pypi",
+                            requested_spec=requested_spec,
+                            fallback_version=version,
+                            pkg=getattr(mp, "pkg_name", None) or "",
+                        ),
+                    )
         if not osm_version:
             osm_version = version
         osm_enrich(mp, "pypi", getattr(mp, "pkg_name", None) or "", osm_version)
