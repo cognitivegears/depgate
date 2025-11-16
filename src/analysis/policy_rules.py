@@ -476,11 +476,15 @@ class MalwareRuleEvaluator(RuleEvaluator):
                     "evaluated_metrics": evaluated_metrics,
                 }
             else:
-                # Log warning but allow
+                # Log warning but allow - indicate in evaluated_metrics that malicious was detected but allowed
                 logger.warning(
                     "Package flagged as malicious by OpenSourceMalware but fail_on_malicious=false: %s",
                     facts.get("package_name", "unknown"),
                 )
+                # Add flag to evaluated_metrics so consumers know malicious was detected but allowed
+                evaluated_metrics["osm_malicious_but_allowed"] = True
+                reason_str = f" (reason: {osm_reason})" if osm_reason else ""
+                evaluated_metrics["osm_malicious_but_allowed_reason"] = f"package flagged as malicious by OpenSourceMalware{reason_str}"
 
         return {
             "decision": "allow",
