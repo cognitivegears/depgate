@@ -154,7 +154,8 @@ class TestEnrichWithRepo:
                 'artifact': {'name': 'v1.5.0'},
                 'tag_or_release': 'v1.5.0'
             }
-            assert mp.provenance == {'pypi_project_urls': 'https://github.com/pandas-dev/pandas'}
+            # Check that expected provenance is present (OSM enrichment may add additional keys)
+            assert mp.provenance.get('pypi_project_urls') == 'https://github.com/pandas-dev/pandas'
 
     @patch('registry.pypi.normalize_repo_url')
     @patch('registry.pypi._maybe_resolve_via_rtd')

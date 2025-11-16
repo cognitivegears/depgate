@@ -10,6 +10,7 @@ from repository.providers import ProviderType, map_host_to_type
 from repository.provider_registry import ProviderRegistry
 from repository.provider_validation import ProviderValidationService
 from registry.depsdev.enrich import enrich_metapackage as depsdev_enrich
+from registry.opensourcemalware.enrich import enrich_metapackage as osm_enrich
 
 from .discovery import (
     _normalize_scm_to_repo_url,
@@ -252,6 +253,15 @@ def _enrich_with_repo(mp, group: str, artifact: str, version: Optional[str]) -> 
         depsdev_enrich(mp, "maven", deps_name, deps_version)
     except Exception:
         # Defensive: never fail Maven enrichment due to deps.dev issues
+        pass
+
+    # OpenSourceMalware enrichment (feature flag enforced inside function)
+    try:
+        osm_name = f"{group}:{artifact}"
+        osm_version = getattr(mp, "resolved_version", None) or version
+        osm_enrich(mp, "maven", osm_name, osm_version)
+    except Exception:
+        # Defensive: never fail Maven enrichment due to OSM issues
         pass
 
     # Fallback: parse license from POM if still missing after deps.dev

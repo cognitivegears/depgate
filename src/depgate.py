@@ -15,7 +15,7 @@ from constants import ExitCodes
 from common.logging_utils import configure_logging, is_debug_enabled, extra_context
 from metapackage import MetaPackage as metapkg
 
-from cli_config import apply_depsdev_overrides
+from cli_config import apply_depsdev_overrides, apply_osm_overrides
 from cli_io import print_banner, export_csv, export_json
 from cli_build import (
     build_pkglist,
@@ -149,6 +149,8 @@ def main() -> None:
 
     # Apply CLI overrides for deps.dev feature and tunables (CLI has highest precedence)
     apply_depsdev_overrides(args)
+    # Apply CLI overrides for OpenSourceMalware feature and tunables (CLI has highest precedence)
+    apply_osm_overrides(args)
 
     if is_debug_enabled(logger):
         logger.debug(

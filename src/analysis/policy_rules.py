@@ -432,6 +432,63 @@ class LinkedRuleEvaluator(RuleEvaluator):
         }
 
 
+class MalwareRuleEvaluator(RuleEvaluator):
+    """Evaluator for OpenSourceMalware-based rules."""
+
+    def evaluate(self, facts: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
+        """Evaluate malware rules.
+
+        Args:
+            facts: The facts dictionary.
+            config: The rule configuration.
+
+        Returns:
+            Dict with evaluation result.
+        """
+        enabled = config.get("enabled", True)
+        fail_on_malicious = config.get("fail_on_malicious", True)
+
+        if not enabled:
+            return {
+                "decision": "allow",
+                "violated_rules": [],
+                "evaluated_metrics": {},
+            }
+
+        osm_malicious = facts.get("osm_malicious")
+        osm_reason = facts.get("osm_reason")
+        osm_threat_count = facts.get("osm_threat_count")
+        osm_severity = facts.get("osm_severity")
+
+        evaluated_metrics = {
+            "osm_malicious": osm_malicious,
+            "osm_reason": osm_reason,
+            "osm_threat_count": osm_threat_count,
+            "osm_severity": osm_severity,
+        }
+
+        if osm_malicious is True:
+            if fail_on_malicious:
+                reason_str = f" (reason: {osm_reason})" if osm_reason else ""
+                return {
+                    "decision": "deny",
+                    "violated_rules": [f"package flagged as malicious by OpenSourceMalware{reason_str}"],
+                    "evaluated_metrics": evaluated_metrics,
+                }
+            else:
+                # Log warning but allow
+                logger.warning(
+                    "Package flagged as malicious by OpenSourceMalware but fail_on_malicious=false: %s",
+                    facts.get("package_name", "unknown"),
+                )
+
+        return {
+            "decision": "allow",
+            "violated_rules": [],
+            "evaluated_metrics": evaluated_metrics,
+        }
+
+
 class RuleEvaluatorRegistry:
     """Registry for rule evaluators."""
 
@@ -442,6 +499,8 @@ class RuleEvaluatorRegistry:
             "regex": RegexRuleEvaluator(),
             "license": LicenseRuleEvaluator(),
             "linked": LinkedRuleEvaluator(),
+            "malware": MalwareRuleEvaluator(),
+            "opensourcemalware": MalwareRuleEvaluator(),  # Alias
         }
 
     def get_evaluator(self, rule_type: str) -> RuleEvaluator:

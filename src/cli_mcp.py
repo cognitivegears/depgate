@@ -31,6 +31,7 @@ from cli_build import (
     apply_version_resolution,
 )
 from cli_registry import check_against
+from cli_config import apply_depsdev_overrides, apply_osm_overrides
 from analysis.analysis_runner import run_analysis
 from metapackage import MetaPackage as metapkg
 
@@ -71,6 +72,10 @@ class PackageOut(TypedDict, total=False):
     linked: Optional[bool]
     repoVersionMatch: Any
     policyDecision: Any
+    osmMalicious: Optional[bool]
+    osmReason: Optional[str]
+    osmThreatCount: Optional[int]
+    osmSeverity: Optional[str]
 
 
 class SummaryOut(TypedDict, total=False):
@@ -552,12 +557,30 @@ def _gather_results() -> Dict[str, Any]:
                 "linked": getattr(mp, "linked", None),
                 "repoVersionMatch": repo_version_match,
                 "policyDecision": getattr(mp, "policy_decision", None),
+                "osmMalicious": getattr(mp, "osm_malicious", None),
+                "osmReason": getattr(mp, "osm_reason", None),
+                "osmThreatCount": getattr(mp, "osm_threat_count", None),
+                "osmSeverity": getattr(mp, "osm_severity", None),
             }
         )
 
         pkg_display = _format_pkg_version(pkg_name, resolved_version)
 
         # Check for various supply-chain issues and add findings
+
+        # 0. Malicious package (highest priority)
+        osm_malicious = getattr(mp, "osm_malicious", None)
+        if osm_malicious is True:
+            findings.append({
+                "type": "malicious_package",
+                "severity": "critical",
+                "package": pkg_name,
+                "ecosystem": pkg_type,
+                "version": resolved_version,
+                "message": f"Package flagged as malicious by OpenSourceMalware: {getattr(mp, 'osm_reason', 'unknown')}",
+                "osmThreatCount": getattr(mp, "osm_threat_count", None),
+                "osmSeverity": getattr(mp, "osm_severity", None),
+            })
 
         # 1. Missing package (package doesn't exist in registry)
         pkg_exists = getattr(mp, "exists", None)
@@ -660,6 +683,9 @@ def _setup_log_level(args: Any) -> None:
 
 def run_mcp_server(args) -> None:
     """Entry point for launching the MCP server (stdio or streamable-http)."""
+    # Apply CLI overrides for deps.dev and OpenSourceMalware
+    apply_depsdev_overrides(args)
+    apply_osm_overrides(args)
     # Configure logging and runtime
     _configure_logging()
     _setup_log_level(args)

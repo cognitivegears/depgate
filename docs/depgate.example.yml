@@ -171,6 +171,27 @@ policy:
 #     - type: linked
 #       enabled: true
 #
+# OpenSourceMalware configuration
+# Optional integration with OpenSourceMalware.com API for malicious package detection.
+# Requires an API token to be enabled.
+opensourcemalware:
+  # Enable OpenSourceMalware checks (default: false, requires API token)
+  enabled: false
+  # API token (can also be set via DEPGATE_OSM_API_TOKEN environment variable or --osm-api-token CLI flag)
+  api_token: ""  # Set your token here or use environment variable
+  # Command to execute to retrieve API token (alternative to api_token)
+  token_command: ""  # e.g., "cat ~/.osm_token" or "vault read -field=token secret/opensourcemalware"
+  # Base URL for OpenSourceMalware API (default: https://api.opensourcemalware.com/functions/v1)
+  base_url: "https://api.opensourcemalware.com/functions/v1"
+  # Cache TTL in seconds (default: 3600)
+  cache_ttl_sec: 3600
+  # Authentication method: "header" (Bearer token) or "query" (apikey parameter) (default: header)
+  auth_method: "header"
+  # Maximum retries for API requests when rate limited (default: 5)
+  max_retries: 5
+  # Initial retry delay in seconds for rate limit handling (default: 1.0)
+  rate_limit_retry_delay_sec: 1.0
+
 # CLI examples:
 #   Run policy analysis using internal defaults (no YAML loading for policy yet):
 #     depgate scan -t npm -p left-pad -a policy
