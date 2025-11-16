@@ -57,12 +57,13 @@ def get_osm_token() -> Optional[str]:
     if env_token and env_token.strip():
         return env_token.strip()
 
-    # Check command execution
+    # Check command execution (from environment variable)
     token_command = os.environ.get("DEPGATE_OSM_TOKEN_COMMAND")
+    # Also check Constants for token_command from YAML config
     if not token_command:
-        # Try to get from config if available (would need to check Constants, but config might have it)
-        # For now, we'll rely on CLI args being passed to apply_osm_overrides
-        pass
+        # Check if token_command is in Constants (from YAML config)
+        if hasattr(Constants, "OSM_TOKEN_COMMAND") and Constants.OSM_TOKEN_COMMAND:  # type: ignore[attr-defined]
+            token_command = Constants.OSM_TOKEN_COMMAND  # type: ignore[attr-defined]
 
     if token_command:
         try:
@@ -101,18 +102,55 @@ def apply_osm_overrides(args) -> None:
             return
 
         # Get token from CLI args (highest priority)
+        # Priority: 1. CLI --osm-api-token, 2. CLI --osm-token-command, 3. Other sources
         cli_token = getattr(args, "OSM_API_TOKEN", None)
         if cli_token:
             Constants.OSM_API_TOKEN = cli_token  # type: ignore[attr-defined]
             Constants.OSM_ENABLED = True  # type: ignore[attr-defined]
         else:
-            # Try to get token from other sources
-            token = get_osm_token()
-            if token:
-                Constants.OSM_API_TOKEN = token  # type: ignore[attr-defined]
-                Constants.OSM_ENABLED = True  # type: ignore[attr-defined]
-            else:
-                # No token available - disable feature and warn
+            # Check CLI token command (second priority)
+            token_cmd = getattr(args, "OSM_TOKEN_COMMAND", None)
+            if token_cmd:
+                try:
+                    result = subprocess.run(
+                        token_cmd,
+                        shell=True,
+                        capture_output=True,
+                        text=True,
+                        timeout=10,
+                        check=False,
+                    )
+                    if result.returncode == 0 and result.stdout:
+                        token = result.stdout.strip()
+                        if token:
+                            Constants.OSM_API_TOKEN = token  # type: ignore[attr-defined]
+                            Constants.OSM_ENABLED = True  # type: ignore[attr-defined]
+                        else:
+                            logger.warning(
+                                "OSM token command '%s' executed successfully but returned empty output",
+                                token_cmd
+                            )
+                    else:
+                        error_msg = result.stderr.strip() if result.stderr else f"exit code {result.returncode}"
+                        logger.warning(
+                            "OSM token command '%s' failed: %s",
+                            token_cmd,
+                            error_msg
+                        )
+                except subprocess.TimeoutExpired:
+                    logger.warning("OSM token command '%s' timed out after 10 seconds", token_cmd)
+                except Exception as exc:  # pylint: disable=broad-exception-caught
+                    logger.warning("Failed to execute OSM token command '%s': %s", token_cmd, exc)
+
+            # If still no token, try other sources (env var, config token_command, YAML)
+            if not getattr(Constants, "OSM_API_TOKEN", None):  # type: ignore[attr-defined]
+                token = get_osm_token()
+                if token:
+                    Constants.OSM_API_TOKEN = token  # type: ignore[attr-defined]
+                    Constants.OSM_ENABLED = True  # type: ignore[attr-defined]
+
+            # If still no token, disable and warn
+            if not getattr(Constants, "OSM_API_TOKEN", None):  # type: ignore[attr-defined]
                 was_enabled = getattr(Constants, "OSM_ENABLED", False)  # type: ignore[attr-defined]
                 Constants.OSM_ENABLED = False  # type: ignore[attr-defined]
                 # Show warning if it was enabled, or show info message if disabled by default
@@ -128,7 +166,7 @@ def apply_osm_overrides(args) -> None:
                     logger.warning(
                         "OpenSourceMalware checks are disabled (API token not available). "
                         "To enable, set DEPGATE_OSM_API_TOKEN environment variable, "
-                        "use --osm-api-token, or configure in YAML config."
+                        "use --osm-api-token, use --osm-token-command, or configure in YAML config."
                     )
 
         # Apply other CLI overrides
@@ -142,26 +180,6 @@ def apply_osm_overrides(args) -> None:
                 Constants.OSM_AUTH_METHOD = auth_method  # type: ignore[attr-defined]
         if getattr(args, "OSM_MAX_RETRIES", None) is not None:
             Constants.OSM_MAX_RETRIES = int(args.OSM_MAX_RETRIES)  # type: ignore[attr-defined]
-
-        # Handle token command from CLI
-        token_cmd = getattr(args, "OSM_TOKEN_COMMAND", None)
-        if token_cmd:
-            try:
-                result = subprocess.run(
-                    token_cmd,
-                    shell=True,
-                    capture_output=True,
-                    text=True,
-                    timeout=10,
-                    check=False,
-                )
-                if result.returncode == 0 and result.stdout:
-                    token = result.stdout.strip()
-                    if token:
-                        Constants.OSM_API_TOKEN = token  # type: ignore[attr-defined]
-                        Constants.OSM_ENABLED = True  # type: ignore[attr-defined]
-            except Exception as exc:  # pylint: disable=broad-exception-caught
-                logger.warning("Failed to execute OSM token command: %s", exc)
 
     except Exception:  # pylint: disable=broad-exception-caught
         # Defensive: never break CLI on config overrides
