@@ -311,7 +311,17 @@ def _enrich_with_repo(pkg, packument: dict) -> None:
 
     # OpenSourceMalware enrichment (feature flag enforced inside function)
     try:
-        osm_version = getattr(pkg, "resolved_version", None) or latest_version
+        # Prefer resolved_version, then try to extract from requested_spec, fallback to latest_version
+        osm_version = getattr(pkg, "resolved_version", None)
+        if not osm_version:
+            # If resolution failed, try to use requested_spec if it's an exact version
+            requested_spec = getattr(pkg, "requested_spec", None)
+            if requested_spec and isinstance(requested_spec, str):
+                # Check if it's an exact version (no range operators)
+                if requested_spec and not any(op in requested_spec for op in ['^', '~', '>=', '<=', '>', '<', '||', ' ']):
+                    osm_version = requested_spec
+        if not osm_version:
+            osm_version = latest_version
         osm_enrich(pkg, "npm", pkg.pkg_name, osm_version)
     except Exception:
         # Defensive: never fail NPM enrichment due to OSM issues

@@ -258,7 +258,17 @@ def _enrich_with_repo(mp, group: str, artifact: str, version: Optional[str]) -> 
     # OpenSourceMalware enrichment (feature flag enforced inside function)
     try:
         osm_name = f"{group}:{artifact}"
-        osm_version = getattr(mp, "resolved_version", None) or version
+        # Prefer resolved_version, then try to extract from requested_spec, fallback to version parameter
+        osm_version = getattr(mp, "resolved_version", None)
+        if not osm_version:
+            # If resolution failed, try to use requested_spec if it's an exact version
+            requested_spec = getattr(mp, "requested_spec", None)
+            if requested_spec and isinstance(requested_spec, str):
+                # Check if it's an exact version (no range operators)
+                if requested_spec and not any(op in requested_spec for op in ['[', ']', '(', ')', ',']):
+                    osm_version = requested_spec
+        if not osm_version:
+            osm_version = version
         osm_enrich(mp, "maven", osm_name, osm_version)
     except Exception:
         # Defensive: never fail Maven enrichment due to OSM issues
