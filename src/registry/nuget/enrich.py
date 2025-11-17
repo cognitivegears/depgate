@@ -154,10 +154,6 @@ def _enrich_with_repo(pkg, metadata: Dict[str, Any]) -> None:
 
     # For unsatisfiable exact requests (empty version disables matching),
     # attach a diagnostic message expected by tests.
-    try:
-        version_for_match  # type: ignore[name-defined]
-    except NameError:
-        version_for_match = None  # defensive, should be defined above
 
     if version_for_match == "":
         existing = getattr(pkg, "repo_errors", None) or []
