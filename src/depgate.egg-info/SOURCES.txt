@@ -50,6 +50,11 @@ src/registry/npm/client.py
 src/registry/npm/discovery.py
 src/registry/npm/enrich.py
 src/registry/npm/scan.py
+src/registry/nuget/__init__.py
+src/registry/nuget/client.py
+src/registry/nuget/discovery.py
+src/registry/nuget/enrich.py
+src/registry/nuget/scan.py
 src/registry/opensourcemalware/__init__.py
 src/registry/opensourcemalware/client.py
 src/registry/opensourcemalware/enrich.py
@@ -79,6 +84,7 @@ src/versioning/resolvers/__init__.py
 src/versioning/resolvers/base.py
 src/versioning/resolvers/maven.py
 src/versioning/resolvers/npm.py
+src/versioning/resolvers/nuget.py
 src/versioning/resolvers/pypi.py
 tests/test_cli_actions.py
 tests/test_client_logging.py
@@ -106,6 +112,12 @@ tests/test_mcp_stdio_integration.py
 tests/test_mcp_version_mismatch.py
 tests/test_npm_exists_preservation.py
 tests/test_npm_repo_discovery.py
+tests/test_nuget_client.py
+tests/test_nuget_discovery.py
+tests/test_nuget_enrich.py
+tests/test_nuget_integration.py
+tests/test_nuget_scan.py
+tests/test_nuget_version_resolver.py
 tests/test_opensourcemalware_client.py
 tests/test_opensourcemalware_config.py
 tests/test_opensourcemalware_enrich.py

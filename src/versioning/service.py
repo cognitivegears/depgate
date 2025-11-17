@@ -4,7 +4,7 @@ from typing import Dict, Sequence
 
 from .cache import TTLCache
 from .models import Ecosystem, PackageKey, PackageRequest, ResolutionMode, ResolutionResult
-from .resolvers import MavenVersionResolver, NpmVersionResolver, PyPIVersionResolver
+from .resolvers import MavenVersionResolver, NpmVersionResolver, NuGetVersionResolver, PyPIVersionResolver
 
 
 class VersionResolutionService:
@@ -20,6 +20,7 @@ class VersionResolutionService:
             Ecosystem.NPM: NpmVersionResolver(cache),
             Ecosystem.PYPI: PyPIVersionResolver(cache),
             Ecosystem.MAVEN: MavenVersionResolver(cache),
+            Ecosystem.NUGET: NuGetVersionResolver(cache),
         }
 
     def resolve_all(self, requests: Sequence[PackageRequest]) -> Dict[PackageKey, ResolutionResult]:

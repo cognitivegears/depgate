@@ -50,6 +50,8 @@ def to_ecosystem(pkgtype: str) -> Ecosystem:
         return Ecosystem.PYPI
     if pkgtype == PackageManagers.MAVEN.value:
         return Ecosystem.MAVEN
+    if pkgtype == PackageManagers.NUGET.value:
+        return Ecosystem.NUGET
     raise ValueError(f"Unsupported package type: {pkgtype}")
 
 
@@ -236,6 +238,54 @@ def build_version_requests(args, pkglist):
                 add_req(name, None, "manifest")
             return requests
 
+        if eco == Ecosystem.NUGET:
+            csproj_files = []
+            if args.RECURSIVE:
+                for root, _, files in os.walk(base_dir):
+                    csproj_files.extend(
+                        os.path.join(root, f) for f in files if f.endswith(".csproj")
+                    )
+            else:
+                for f in os.listdir(base_dir):
+                    if f.endswith(".csproj"):
+                        csproj_files.append(os.path.join(base_dir, f))
+
+            import xml.etree.ElementTree as ET
+            for csproj_path in csproj_files:
+                try:
+                    tree = ET.parse(csproj_path)
+                    root = tree.getroot()
+                    # Handle both Sdk-style and non-Sdk projects
+                    ns = "{http://schemas.microsoft.com/developer/msbuild/2003}"
+                    # Check if it's an Sdk-style project (no namespace)
+                    item_groups = root.findall(".//ItemGroup")
+                    if not item_groups:
+                        item_groups = root.findall(f".//{ns}ItemGroup")
+                    for item_group in item_groups:
+                        # PackageReference elements
+                        refs = item_group.findall("PackageReference")
+                        if not refs:
+                            refs = item_group.findall(f"{ns}PackageReference")
+                        for ref in refs:
+                            include = ref.get("Include")
+                            if not include:
+                                include_elem = ref.find("Include")
+                                if include_elem is not None:
+                                    include = include_elem.text
+                            if not include:
+                                continue
+                            version = ref.get("Version")
+                            if not version:
+                                version_elem = ref.find("Version")
+                                if version_elem is not None:
+                                    version = version_elem.text
+                            add_req(include, version, "manifest")
+                except Exception:  # pylint: disable=broad-except
+                    continue
+            for name in pkglist or []:
+                add_req(name, None, "manifest")
+            return requests
+
     # Fallback – create 'latest' requests for provided names
     for name in pkglist or []:
         add_req(name, None, "fallback")
@@ -258,6 +308,9 @@ def create_metapackages(args, pkglist):
                 sys.exit(ExitCodes.FILE_ERROR.value)
             metapkg(parts[1], args.package_type, parts[0])
     elif args.package_type == PackageManagers.PYPI.value:
+        for pkg in pkglist:
+            metapkg(pkg, args.package_type)
+    elif args.package_type == PackageManagers.NUGET.value:
         for pkg in pkglist:
             metapkg(pkg, args.package_type)
 
