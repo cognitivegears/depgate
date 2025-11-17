@@ -8,7 +8,7 @@ LOOKUP_LATEST_VERSION_INPUT = {
     "required": ["name"],
     "properties": {
         "name": {"type": "string", "minLength": 1},
-        "ecosystem": {"type": ["string", "null"], "enum": ["npm", "pypi", "maven", None]},
+        "ecosystem": {"type": ["string", "null"], "enum": ["npm", "pypi", "maven", "nuget", None]},
         "versionRange": {"type": ["string", "null"]},
         "registryUrl": {"type": ["string", "null"]},
         "projectDir": {"type": ["string", "null"]},
@@ -50,7 +50,7 @@ SCAN_PROJECT_INPUT = {
         "strictProvenance": {"type": ["boolean", "null"]},
         "paths": {"type": ["array", "null"], "items": {"type": "string"}},
         "analysisLevel": {"type": ["string", "null"], "enum": ["compare", "comp", "heuristics", "heur", "policy", "pol", "linked"]},
-        "ecosystem": {"type": ["string", "null"], "enum": ["npm", "pypi", "maven", None]},
+        "ecosystem": {"type": ["string", "null"], "enum": ["npm", "pypi", "maven", "nuget", None]},
     },
     "additionalProperties": False,
 }
@@ -62,7 +62,7 @@ SCAN_DEPENDENCY_INPUT = {
     "properties": {
         "name": {"type": "string", "minLength": 1},
         "version": {"type": "string", "minLength": 1},
-        "ecosystem": {"type": "string", "enum": ["npm", "pypi", "maven"]},
+        "ecosystem": {"type": "string", "enum": ["npm", "pypi", "maven", "nuget"]},
         "registryUrl": {"type": ["string", "null"]},
         "offline": {"type": ["boolean", "null"]},
     },
@@ -82,7 +82,7 @@ SCAN_RESULTS_OUTPUT = {
                 "required": ["name", "ecosystem"],
                 "properties": {
                     "name": {"type": "string"},
-                    "ecosystem": {"type": "string", "enum": ["npm", "pypi", "maven"]},
+                    "ecosystem": {"type": "string", "enum": ["npm", "pypi", "maven", "nuget"]},
                     "version": {"type": ["string", "null"]},
                     "repositoryUrl": {"type": ["string", "null"]},
                     "license": {"type": ["string", "null"]},

@@ -17,6 +17,9 @@ def scan_source(pkgtype, dir_name, recursive=False):
     if pkgtype == PackageManagers.PYPI.value:
         from registry import pypi as _pypi  # pylint: disable=import-outside-toplevel
         return _pypi.scan_source(dir_name, recursive)
+    if pkgtype == PackageManagers.NUGET.value:
+        from registry import nuget as _nuget  # pylint: disable=import-outside-toplevel
+        return _nuget.scan_source(dir_name, recursive)
     logging.error("Selected package type doesn't support import scan.")
     sys.exit(ExitCodes.FILE_ERROR.value)
 
@@ -34,6 +37,9 @@ def check_against(check_type, _level, check_list):
     elif check_type == PackageManagers.PYPI.value:
         from registry import pypi as _pypi  # pylint: disable=import-outside-toplevel
         _pypi.recv_pkg_info(check_list)
+    elif check_type == PackageManagers.NUGET.value:
+        from registry import nuget as _nuget  # pylint: disable=import-outside-toplevel
+        _nuget.recv_pkg_info(check_list)
     else:
         logging.error("Selected package type doesn't support registry check.")
         sys.exit(ExitCodes.FILE_ERROR.value)

@@ -130,7 +130,7 @@ def add_scan_arguments(parser: argparse.ArgumentParser) -> None:
         "-t",
         "--type",
         dest="package_type",
-        help="Package Manager Type, i.e: npm, PyPI, maven",
+        help="Package Manager Type, i.e: npm, PyPI, maven, nuget",
         action="store",
         type=str,
         choices=Constants.SUPPORTED_PACKAGES,

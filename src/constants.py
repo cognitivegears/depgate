@@ -35,6 +35,7 @@ class PackageManagers(Enum):
     NPM = "npm"
     PYPI = "pypi"
     MAVEN = "maven"
+    NUGET = "nuget"
 
 
 class DefaultHeuristics(Enum):
@@ -59,16 +60,22 @@ class Constants:  # pylint: disable=too-few-public-methods
     REGISTRY_URL_NPM = "https://registry.npmjs.org/"
     REGISTRY_URL_NPM_STATS = "https://api.npms.io/v2/package/mget"
     REGISTRY_URL_MAVEN = "https://search.maven.org/solrsearch/select"
+    REGISTRY_URL_NUGET_V3 = "https://api.nuget.org/v3/index.json"
+    REGISTRY_URL_NUGET_V2 = "https://www.nuget.org/api/v2/"
     SUPPORTED_PACKAGES = [
         PackageManagers.NPM.value,
         PackageManagers.PYPI.value,
         PackageManagers.MAVEN.value,
+        PackageManagers.NUGET.value,
     ]
     LEVELS = ["compare", "comp", "heuristics", "heur", "policy", "pol", "linked"]
     REQUIREMENTS_FILE = "requirements.txt"
     PACKAGE_JSON_FILE = "package.json"
     POM_XML_FILE = "pom.xml"
     PYPROJECT_TOML_FILE = "pyproject.toml"
+    CSPROJ_FILE = "*.csproj"
+    PACKAGES_CONFIG_FILE = "packages.config"
+    PROJECT_JSON_FILE = "project.json"
     UV_LOCK_FILE = "uv.lock"
     POETRY_LOCK_FILE = "poetry.lock"
     LOG_FORMAT = "[%(levelname)s] %(message)s"  # Added LOG_FORMAT constant
@@ -257,6 +264,12 @@ def _apply_config_overrides(cfg: Dict[str, Any]) -> None:  # pylint: disable=too
     )
     Constants.REGISTRY_URL_MAVEN = registry.get(  # type: ignore[attr-defined]
         "maven_search_url", Constants.REGISTRY_URL_MAVEN
+    )
+    Constants.REGISTRY_URL_NUGET_V3 = registry.get(  # type: ignore[attr-defined]
+        "nuget_v3_base_url", Constants.REGISTRY_URL_NUGET_V3
+    )
+    Constants.REGISTRY_URL_NUGET_V2 = registry.get(  # type: ignore[attr-defined]
+        "nuget_v2_base_url", Constants.REGISTRY_URL_NUGET_V2
     )
 
     # Provider URLs and paging

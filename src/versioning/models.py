@@ -10,6 +10,7 @@ class Ecosystem(Enum):
     NPM = "npm"
     PYPI = "pypi"
     MAVEN = "maven"
+    NUGET = "nuget"
 
 
 class ResolutionMode(Enum):

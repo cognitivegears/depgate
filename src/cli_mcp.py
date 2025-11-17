@@ -114,6 +114,8 @@ def _eco_from_str(s: Optional[str]) -> Ecosystem:
         return Ecosystem.PYPI
     if s == "maven":
         return Ecosystem.MAVEN
+    if s == "nuget":
+        return Ecosystem.NUGET
     raise ValueError(f"unsupported ecosystem: {s}")
 
 
@@ -137,6 +139,15 @@ def _apply_registry_override(ecosystem: Ecosystem, registry_url: Optional[str]) 
         # directly from repo1.maven.org. For now, keep default; advanced registry selection
         # would require broader changes not in scope.
         pass
+    elif ecosystem == Ecosystem.NUGET:
+        # For NuGet, accept V3 service index URL or V2 base URL
+        try:
+            if "v3" in registry_url or "index.json" in registry_url:
+                setattr(Constants, "REGISTRY_URL_NUGET_V3", registry_url)
+            else:
+                setattr(Constants, "REGISTRY_URL_NUGET_V2", registry_url)
+        except AttributeError:
+            pass
 
 
 def _set_runtime_from_args(args) -> None:
@@ -462,7 +473,7 @@ def _build_cli_args_for_project_scan(
     if ecosystem_hint:
         pkg_type = ecosystem_hint
     else:
-        # Infer: prefer npm if package.json exists, else pypi via requirements.txt/pyproject, else maven by pom.xml
+        # Infer: prefer npm if package.json exists, else pypi via requirements.txt/pyproject, else maven by pom.xml, else nuget by .csproj/packages.config
         root = project_dir
         if os.path.isfile(os.path.join(root, Constants.PACKAGE_JSON_FILE)):
             pkg_type = "npm"
@@ -473,16 +484,37 @@ def _build_cli_args_for_project_scan(
         elif os.path.isfile(os.path.join(root, Constants.POM_XML_FILE)):
             pkg_type = "maven"
         else:
-            # No supported dependency files found - raise error early for MCP context
-            raise RuntimeError(
-                f"No supported dependency files found in '{project_dir}'. "
-                "Expected one of: package.json (npm), requirements.txt/pyproject.toml (pypi), or pom.xml (maven)"
-            )
+            # Check for NuGet files (.csproj, packages.config, project.json)
+            # Use os.walk with limited depth to find NuGet files in subdirectories
+            # Skip hidden directories to avoid wasting depth on .git, .github, etc.
+            has_nuget = False
+            if os.path.isdir(root):
+                max_depth = 3  # Limit depth to avoid performance issues
+                for depth, (dirpath, dirnames, filenames) in enumerate(os.walk(root)):
+                    if depth > max_depth:
+                        break
+                    # Skip hidden directories in next iteration
+                    dirnames[:] = [d for d in dirnames if not d.startswith('.')]
+                    for filename in filenames:
+                        if filename.endswith(".csproj") or filename == Constants.PACKAGES_CONFIG_FILE or filename == Constants.PROJECT_JSON_FILE:
+                            has_nuget = True
+                            break
+                    if has_nuget:
+                        break
+            if has_nuget:
+                pkg_type = "nuget"
+            else:
+                # No supported dependency files found - raise error early for MCP context
+                raise RuntimeError(
+                    f"No supported dependency files found in '{project_dir}'. "
+                    "Expected one of: package.json (npm), requirements.txt/pyproject.toml (pypi), pom.xml (maven), or .csproj/packages.config/project.json (nuget)"
+                )
     args.package_type = pkg_type
     args.LIST_FROM_FILE = []
     args.FROM_SRC = [project_dir]
     args.SINGLE = None
-    args.RECURSIVE = False
+    # For NuGet, enable recursive scanning by default since projects often have multiple .csproj files
+    args.RECURSIVE = (pkg_type == "nuget")
     args.LEVEL = analysis_level or "compare"
     args.OUTPUT = None
     args.OUTPUT_FORMAT = None

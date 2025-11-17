@@ -299,8 +299,26 @@ def run_min_analysis(pkgs):
     Args:
         pkgs (list): List of packages to check.
     """
+    logger = logging.getLogger(__name__)
     for x in pkgs:
         test_exists(x)
+
+        # Check OpenSourceMalware status for ALL packages (including non-existent ones)
+        # This is important because OSM can detect malicious packages even if they don't exist in the registry
+        osm_malicious = getattr(x, "osm_malicious", None)
+        if osm_malicious is True:
+            # Override score to 0.0 for malicious packages (regardless of existence)
+            x.score = 0.0
+            logger.critical(
+                "%sPackage flagged as MALICIOUS by OpenSourceMalware: %s (reason: %s)",
+                STG,
+                str(x),
+                getattr(x, "osm_reason", "unknown"),
+            )
+            # For non-existent packages, create a minimal breakdown
+            if x.exists is False:
+                breakdown = {"osm_malicious": {"raw": True, "normalized": 0.0}}
+                x.breakdown = breakdown
 
 def run_heuristics(pkgs):
     """Run heuristics on the packages.
@@ -311,25 +329,35 @@ def run_heuristics(pkgs):
     logger = logging.getLogger(__name__)
     for x in pkgs:
         test_exists(x)
+
+        # Check OpenSourceMalware status for ALL packages (including non-existent ones)
+        # This is important because OSM can detect malicious packages even if they don't exist in the registry
+        osm_malicious = getattr(x, "osm_malicious", None)
+        if osm_malicious is True:
+            # Override score to 0.0 for malicious packages (regardless of existence)
+            x.score = 0.0
+            logger.critical(
+                "%sPackage flagged as MALICIOUS by OpenSourceMalware: %s (reason: %s)",
+                STG,
+                str(x),
+                getattr(x, "osm_reason", "unknown"),
+            )
+            # For non-existent packages, create a minimal breakdown
+            if x.exists is False:
+                breakdown = {"osm_malicious": {"raw": True, "normalized": 0.0}}
+                x.breakdown = breakdown
+            else:
+                # For existing packages, compute score and add OSM to breakdown
+                final_score, breakdown, weights_used = compute_final_score(x)
+                final_score = 0.0  # Override to 0.0 for malicious
+                x.score = final_score
+                breakdown["osm_malicious"] = {"raw": True, "normalized": 0.0}
+
         if x.exists is True:
             # Compute final normalized score in [0,1] using available metrics
-            final_score, breakdown, weights_used = compute_final_score(x)
-
-            # Check OpenSourceMalware status - auto-fail if malicious (high priority)
-            osm_malicious = getattr(x, "osm_malicious", None)
-            if osm_malicious is True:
-                # Override score to 0.0 for malicious packages
-                final_score = 0.0
-                x.score = final_score
-                logger.critical(
-                    "%sPackage flagged as MALICIOUS by OpenSourceMalware: %s (reason: %s)",
-                    STG,
-                    str(x),
-                    getattr(x, "osm_reason", "unknown"),
-                )
-                # Update breakdown to include OSM result
-                breakdown["osm_malicious"] = {"raw": True, "normalized": 0.0}
-            else:
+            # (Skip if already processed above for malicious packages)
+            if osm_malicious is not True:
+                final_score, breakdown, weights_used = compute_final_score(x)
                 x.score = final_score
                 # Add OSM status to breakdown if checked
                 if getattr(x, "osm_checked", None) is True:
