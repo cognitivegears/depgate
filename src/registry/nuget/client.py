@@ -298,6 +298,36 @@ def recv_pkg_info(pkgs, url: Optional[str] = None) -> None:
                 ),
             )
             pkg.exists = False
+            # Still run OSM enrichment for non-existent packages to detect malicious/typosquatting attempts
+            # OSM can check packages even if they don't exist in the registry (useful for detecting malicious packages)
+            try:
+                from registry.opensourcemalware.enrich import enrich_metapackage as osm_enrich
+                # Check if OSM is enabled before attempting enrichment
+                if getattr(Constants, "OSM_ENABLED", False):  # type: ignore[attr-defined]
+                    # Try to get version from resolved_version or requested_spec
+                    osm_version = getattr(pkg, "resolved_version", None)
+                    if not osm_version:
+                        requested_spec = getattr(pkg, "requested_spec", None)
+                        if requested_spec and isinstance(requested_spec, str):
+                            requested_spec = requested_spec.strip()
+                            if requested_spec and not any(op in requested_spec for op in ['^', '~', '>=', '<=', '>', '<', '||']):
+                                osm_version = requested_spec
+                    # Call OSM even without version (version is optional for OSM API)
+                    osm_enrich(pkg, "nuget", package_id, osm_version)
+            except Exception as exc:  # pylint: disable=broad-exception-caught
+                # Defensive: never fail on OSM errors, but log them in debug mode
+                if is_debug_enabled(logger):
+                    logger.debug(
+                        "OSM enrichment failed for non-existent package",
+                        extra=extra_context(
+                            event="osm_enrich_error",
+                            component="client",
+                            action="enrich_missing_package",
+                            package_manager="nuget",
+                            target=package_id,
+                            error=str(exc),
+                        ),
+                    )
             continue
 
         # Normalize metadata

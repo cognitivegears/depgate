@@ -149,6 +149,10 @@ def apply_osm_overrides(args) -> None:
                 if token:
                     Constants.OSM_API_TOKEN = token  # type: ignore[attr-defined]
                     Constants.OSM_ENABLED = True  # type: ignore[attr-defined]
+            else:
+                # Token was already set (e.g., by environment variable in _apply_env_overrides)
+                # Enable OSM if we have a token
+                Constants.OSM_ENABLED = True  # type: ignore[attr-defined]
 
             # If still no token, disable and warn
             if not getattr(Constants, "OSM_API_TOKEN", None):  # type: ignore[attr-defined]

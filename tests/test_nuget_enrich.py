@@ -79,6 +79,7 @@ class TestEnrichWithRepo:
     def test_integrates_with_depsdev_and_osm(self, mock_osm, mock_depsdev):
         """Test integration with deps.dev and OpenSourceMalware."""
         pkg = MetaPackage("TestPackage", "nuget")
+        pkg.resolved_version = "1.0.0"
         metadata = {
             "id": "TestPackage",
             "latest_version": "1.0.0",
@@ -88,8 +89,19 @@ class TestEnrichWithRepo:
 
         _enrich_with_repo(pkg, metadata)
 
-        # Should attempt to call enrichment functions (may be disabled by feature flags)
-        # Just verify the function completes without error
+        # Verify OSM enrichment is called with correct parameters
+        mock_osm.assert_called_once()
+        call_args = mock_osm.call_args
+        assert call_args[0][0] == pkg, "First argument should be the package"
+        assert call_args[0][1] == "nuget", "Second argument should be 'nuget' ecosystem"
+        assert call_args[0][2] == "TestPackage", "Third argument should be package name"
+        assert call_args[0][3] == "1.0.0", "Fourth argument should be version (resolved_version)"
+
+        # Verify deps.dev enrichment is also called
+        mock_depsdev.assert_called_once()
+        depsdev_call_args = mock_depsdev.call_args
+        assert depsdev_call_args[0][0] == pkg, "First argument should be the package"
+        assert depsdev_call_args[0][1] == "nuget", "Second argument should be 'nuget' ecosystem"
 
     def test_populates_license_information(self):
         """Test license information population."""
