@@ -163,8 +163,8 @@ def apply_osm_overrides(args) -> None:
                         "Disabling OpenSourceMalware checks."
                     )
                 else:
-                    # Warn user that OSM checks are not available (one-time warning message)
-                    logger.warning(
+                    # Info message when OSM is disabled by default (expected behavior)
+                    logger.info(
                         "OpenSourceMalware checks are disabled (API token not available). "
                         "To enable, set DEPGATE_OSM_API_TOKEN environment variable, "
                         "use --osm-api-token, use --osm-token-command, or configure in YAML config."

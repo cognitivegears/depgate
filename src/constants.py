@@ -585,14 +585,29 @@ try:
         pass
     # Apply default OpenSourceMalware rate limit configuration if not already set
     # (applies even if no YAML config is loaded)
-    if "api.opensourcemalware.com" not in Constants.HTTP_RATE_POLICY_PER_SERVICE:  # type: ignore[attr-defined]
-        Constants.HTTP_RATE_POLICY_PER_SERVICE["api.opensourcemalware.com"] = {  # type: ignore[attr-defined]
-            "max_retries": 5,
-            "initial_backoff_sec": 1.0,
-            "multiplier": 1.5,
-            "max_backoff_sec": 60.0,
-            "respect_retry_after": True,
-            "strategy": "exponential_jitter",
+    if hasattr(Constants, "HTTP_RATE_POLICY_PER_SERVICE") and isinstance(
+        getattr(Constants, "HTTP_RATE_POLICY_PER_SERVICE", None), dict
+    ):
+        if "api.opensourcemalware.com" not in Constants.HTTP_RATE_POLICY_PER_SERVICE:  # type: ignore[attr-defined]
+            Constants.HTTP_RATE_POLICY_PER_SERVICE["api.opensourcemalware.com"] = {  # type: ignore[attr-defined]
+                "max_retries": 5,
+                "initial_backoff_sec": 1.0,
+                "multiplier": 1.5,
+                "max_backoff_sec": 60.0,
+                "respect_retry_after": True,
+                "strategy": "exponential_jitter",
+            }
+    else:
+        # Initialize if it doesn't exist or is not a dict
+        Constants.HTTP_RATE_POLICY_PER_SERVICE = {  # type: ignore[attr-defined]
+            "api.opensourcemalware.com": {
+                "max_retries": 5,
+                "initial_backoff_sec": 1.0,
+                "multiplier": 1.5,
+                "max_backoff_sec": 60.0,
+                "respect_retry_after": True,
+                "strategy": "exponential_jitter",
+            }
         }
 except Exception:  # pylint: disable=broad-exception-caught
     # Never fail import due to config issues
