@@ -1,14 +1,14 @@
 # DepGate — Dependency Supply‑Chain Risk & Confusion Checker
 
-DepGate is a modular CLI that detects dependency confusion and related supply‑chain risks across npm, Maven, and PyPI projects. It analyzes dependencies from manifests, checks public registries, and flags potential risks with a simple, scriptable interface.
+DepGate is a modular CLI that detects dependency confusion and related supply‑chain risks across npm, Maven, PyPI, and NuGet projects. It analyzes dependencies from manifests, checks public registries, and flags potential risks with a simple, scriptable interface.
 
 DepGate is a fork of Apiiro’s “Dependency Combobulator”, maintained going forward by cognitivegears. See Credits & Attribution below.
 
 ## Features
 
 - Pluggable analysis: compare, heuristics, policy, and linked levels (`compare/comp`, `heuristics/heur`, `policy/pol`, `linked`).
-- Multiple ecosystems: npm (`package.json`), Maven (`pom.xml`), PyPI (`requirements.txt`).
-- Cross‑ecosystem version resolution with strict prerelease policies (npm/PyPI exclude prereleases by default; Maven latest excludes SNAPSHOT).
+- Multiple ecosystems: npm (`package.json`), Maven (`pom.xml`), PyPI (`requirements.txt`), NuGet (`.csproj`, `packages.config`, `project.json`).
+- Cross‑ecosystem version resolution with strict prerelease policies (npm/PyPI exclude prereleases by default; Maven latest excludes SNAPSHOT; NuGet respects semantic versioning).
 - Repository discovery and version validation (GitHub/GitLab): provenance, metrics (stars, last activity, contributors), and version match strategies (exact, pattern, exact‑bare, v‑prefix, suffix‑normalized).
 - **OpenSourceMalware integration**: Optional malicious package detection via OpenSourceMalware.com API. Automatically flags malicious packages in heuristics (score = 0.0), available in policy rules, and included in MCP output. Requires API token (see Configuration).
 - Flexible inputs: single package, manifest scan, or list from file.
@@ -27,7 +27,7 @@ Quickstart:
 depgate mcp
 ```
 
-2. Or start a local TCP endpoint for testing (non-standard transport used by this repo for convenience):
+1. Or start a local TCP endpoint for testing (non-standard transport used by this repo for convenience):
 
 ```bash
 depgate mcp --host 127.0.0.1 --port 8765
@@ -35,7 +35,7 @@ depgate mcp --host 127.0.0.1 --port 8765
 
 Tools exposed:
 
-- Lookup_Latest_Version: Resolve latest stable version for npm/pypi/maven per DepGate rules.
+- Lookup_Latest_Version: Resolve latest stable version for npm/pypi/maven/nuget per DepGate rules.
 - Scan_Project: Equivalent to `depgate scan` on a project directory.
 - Scan_Dependency: Analyze a single coordinate without changing your project.
 
@@ -64,7 +64,7 @@ Notes:
 
 ## Requirements
 
-- Python 3.8+
+- Python 3.10+
 - Network access for registry lookups when running analysis
 - OpenSourceMalware API token (optional, for malicious package detection)
 
@@ -86,6 +86,7 @@ From PyPI (after publishing):
 - Single package (npm): `depgate scan -t npm -p left-pad`
 - Scan a repo (Maven): `depgate scan -t maven -d ./tests`
 - Heuristics + JSON: `depgate scan -t pypi -a heur -o out.json`
+- Single package (NuGet): `depgate scan -t nuget -p Newtonsoft.Json`
 - Linked verification: `depgate scan -t npm -p left-pad -a linked -o out.json`
 - With OpenSourceMalware (requires API token): `DEPGATE_OSM_API_TOKEN=your_token depgate scan -t npm -p package-name -a heur`
 
@@ -93,19 +94,22 @@ With uv during development:
 
 - `uv run depgate scan -t npm -d ./tests`
 - `uv run depgate scan -t pypi -a heur -o out.json`
+- `uv run depgate scan -t nuget -d ./tests`
 
 ## Inputs and Scanning
 
 - `-p, --package <name>`: single package name
   - npm: package name (e.g., `left-pad`)
   - PyPI: project name (e.g., `requests`)
-  - Maven: not used (see below)
+  - Maven: `groupId:artifactId` (e.g., `org.apache.commons:commons-lang3`)
+  - NuGet: package ID (e.g., `Newtonsoft.Json`)
 - `-d, --directory <path>`: scan local source
   - npm: finds `package.json` (and `devDependencies`)
   - Maven: finds `pom.xml`, emits `groupId:artifactId`
   - PyPI: finds `requirements.txt`
+  - NuGet: finds `.csproj`, `packages.config`, or `project.json`
 - `-l, --load_list <file>`: newline‑delimited identifiers
-  - npm/PyPI: package names per line
+  - npm/PyPI/NuGet: package names per line
   - Maven: `groupId:artifactId` per line
 
 ## Analysis Levels
@@ -132,6 +136,7 @@ Examples:
 - npm: `depgate scan -t npm -p left-pad -a linked -o out.json`
 - pypi: `depgate scan -t pypi -p requests -a linked -o out.json`
 - maven: `depgate scan -t maven -p org.apache.commons:commons-lang3 -a linked -o out.json`
+- nuget: `depgate scan -t nuget -p Newtonsoft.Json -a linked -o out.json`
 
 ## Repository discovery & version validation
 
@@ -141,6 +146,7 @@ DepGate discovers canonical source repositories from registry metadata, normaliz
   - npm: versions[dist‑tags.latest].repository (string or object), fallbacks to homepage and bugs.url
   - PyPI: info.project_urls (Repository/Source/Code preferred), fallback Homepage/Documentation; Read the Docs URLs are resolved to backing repos
   - Maven: POM scm (url/connection/developerConnection) with parent traversal; fallback url when repo‑like
+  - NuGet: package metadata projectUrl and repository metadata; fallback to projectUrl when repository-like
 - URL normalization: canonical host/owner/repo form (strip .git), host detection (github|gitlab), monorepo directory hints preserved in provenance
 - Metrics: stars, last activity timestamp, approximate contributors
 - Version matching strategies (in order):
@@ -155,7 +161,6 @@ Notes:
 
 - Exact‑unsatisfiable guard: when an exact spec cannot be resolved to a concrete version (e.g., CLI requested exact but no resolved_version), matching is disabled (empty version passed to matcher). Metrics still populate and provenance is recorded.
 
-
 ### Configuration (optional but recommended)
 
 - export GITHUB_TOKEN and/or GITLAB_TOKEN to raise rate limits for provider API calls.
@@ -167,9 +172,9 @@ DepGate includes optional integration with the OpenSourceMalware.com API for mal
 - Automatically flags malicious packages in heuristics analysis (score = 0.0)
 - Supports version-specific checks (critical for accurate detection)
 - Integrates with policy rules and MCP output
-- Works across all ecosystems (npm, PyPI, Maven) and analysis types
+- Works across all ecosystems (npm, PyPI, Maven, NuGet) and analysis types
 
-**Quick start**: Set `DEPGATE_OSM_API_TOKEN` environment variable or use `--osm-api-token` flag. 
+**Quick start**: Set `DEPGATE_OSM_API_TOKEN` environment variable or use `--osm-api-token` flag.
 
 ### Configuration
 
@@ -220,7 +225,7 @@ policy:
 
 ## CLI Options (summary)
 
-- `-t, --type {npm,pypi,maven}`: package manager
+- `-t, --type {npm,pypi,maven,nuget}`: package manager
 - `-p/‑d/‑l`: input source (mutually exclusive)
 - `-a, --analysis {compare,comp,heuristics,heur,policy,pol,linked}`: analysis level
 - Output: `-o, --output <path>` and `-f, --format {json,csv}`
@@ -232,11 +237,12 @@ policy:
 
 ## Resolution semantics (overview)
 
-- Rightmost‑colon token parsing for Maven coordinates (groupId:artifactId) while preserving ecosystem normalization for npm/PyPI names.
+- Rightmost‑colon token parsing for Maven coordinates (groupId:artifactId) while preserving ecosystem normalization for npm/PyPI/NuGet names.
 - Ecosystem‑aware resolution:
   - npm: ranges respect semver; prereleases excluded from latest/ranges unless explicitly included
   - PyPI: PEP 440; prereleases excluded unless explicitly requested
   - Maven: latest excludes SNAPSHOT; ranges honor bracket semantics
+  - NuGet: semantic versioning (SemVer 2.0); prereleases excluded from latest unless explicitly included
 
 ## YAML configuration
 
@@ -264,6 +270,8 @@ registry:
   npm_base_url: "https://registry.npmjs.org/"
   npm_stats_url: "https://api.npms.io/v2/package/mget"
   maven_search_url: "https://search.maven.org/solrsearch/select"
+  nuget_v3_base_url: "https://api.nuget.org/v3/index.json"
+  nuget_v2_base_url: "https://www.nuget.org/api/v2/"
 
 provider:
   github_api_base: "https://api.github.com"
