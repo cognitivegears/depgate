@@ -50,7 +50,7 @@ def _fetch_v3_service_index() -> Optional[Dict[str, Any]]:
         if res.status_code == 200:
             return json.loads(res.text)
     except Exception:
-        pass
+        logger.exception("Failed to fetch NuGet V3 service index")
     return None
 
 
