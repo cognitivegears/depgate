@@ -46,8 +46,11 @@ def get_osm_token() -> Optional[str]:
     Priority:
     1. CLI argument (handled in apply_osm_overrides)
     2. Environment variable DEPGATE_OSM_API_TOKEN
-    3. Command execution: DEPGATE_OSM_TOKEN_COMMAND env var or config token_command
+    3. Command execution: config token_command (YAML config only, not from env var for security)
     4. YAML config (already loaded into Constants.OSM_API_TOKEN)
+
+    Note: Command execution is only allowed from trusted sources (CLI args and YAML config),
+    not from environment variables to prevent arbitrary command execution.
 
     Returns:
         API token string or None if not available
@@ -57,13 +60,11 @@ def get_osm_token() -> Optional[str]:
     if env_token and env_token.strip():
         return env_token.strip()
 
-    # Check command execution (from environment variable)
-    token_command = os.environ.get("DEPGATE_OSM_TOKEN_COMMAND")
-    # Also check Constants for token_command from YAML config
-    if not token_command:
-        # Check if token_command is in Constants (from YAML config)
-        if hasattr(Constants, "OSM_TOKEN_COMMAND") and Constants.OSM_TOKEN_COMMAND:  # type: ignore[attr-defined]
-            token_command = Constants.OSM_TOKEN_COMMAND  # type: ignore[attr-defined]
+    # Check command execution (from YAML config only - trusted source)
+    # Security: Do NOT read from environment variable to prevent arbitrary command execution
+    token_command = None
+    if hasattr(Constants, "OSM_TOKEN_COMMAND") and Constants.OSM_TOKEN_COMMAND:  # type: ignore[attr-defined]
+        token_command = Constants.OSM_TOKEN_COMMAND  # type: ignore[attr-defined]
 
     if token_command:
         try:
