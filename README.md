@@ -7,7 +7,7 @@ DepGate is a fork of Apiiro’s “Dependency Combobulator”, maintained going 
 ## Features
 
 - Pluggable analysis: compare, heuristics, policy, and linked levels (`compare/comp`, `heuristics/heur`, `policy/pol`, `linked`).
-- Multiple ecosystems: npm (`package.json`), Maven (`pom.xml`), PyPI (`requirements.txt`), NuGet (`.csproj`, `packages.config`, `project.json`, `Directory.Build.props`).
+- Multiple ecosystems: npm (`package.json`), Maven (`pom.xml`), PyPI (`requirements.txt`).
 - Cross‑ecosystem version resolution with strict prerelease policies (npm/PyPI exclude prereleases by default; Maven latest excludes SNAPSHOT).
 - Repository discovery and version validation (GitHub/GitLab): provenance, metrics (stars, last activity, contributors), and version match strategies (exact, pattern, exact‑bare, v‑prefix, suffix‑normalized).
 - **OpenSourceMalware integration**: Optional malicious package detection via OpenSourceMalware.com API. Automatically flags malicious packages in heuristics (score = 0.0), available in policy rules, and included in MCP output. Requires API token (see Configuration).
@@ -35,7 +35,7 @@ depgate mcp --host 127.0.0.1 --port 8765
 
 Tools exposed:
 
-- Lookup_Latest_Version: Resolve latest stable version for npm/pypi/maven/nuget per DepGate rules.
+- Lookup_Latest_Version: Resolve latest stable version for npm/pypi/maven per DepGate rules.
 - Scan_Project: Equivalent to `depgate scan` on a project directory.
 - Scan_Dependency: Analyze a single coordinate without changing your project.
 
@@ -44,43 +44,6 @@ Common client examples:
 - Claude Desktop / IDEs with MCP: Add a server entry pointing to the `depgate mcp` executable (stdio). The client handles the stdio handshake automatically.
 - Node/JS agents (stdio): Spawn `depgate mcp` with stdio pipes and speak JSON‑RPC 2.0. List tools via `tools/list`, then call with `tools/call`.
 - Python agents: Use the official MCP client libs; connect over stdio to `depgate mcp`.
-
-Try it quickly (stdio, JSON-RPC):
-
-- List tools
-
-```bash
-printf '%s\n' \
-'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","clientInfo":{"name":"cli","version":"0"},"capabilities":{}}}' \
-'{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
-| depgate mcp
-```
-
-- Call Lookup_Latest_Version and Scan_Dependency
-
-```bash
-# npm (left-pad)
-printf '%s\n' \
-'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","clientInfo":{"name":"cli","version":"0"},"capabilities":{}}}' \
-'{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"Lookup_Latest_Version","arguments":{"name":"left-pad","ecosystem":"npm","versionRange":"^1.0.0"}}}' \
-'{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"Scan_Dependency","arguments":{"name":"left-pad","version":"1.3.0","ecosystem":"npm"}}}' \
-| depgate mcp
-
-# PyPI (requests)
-# Use PEP 440 specifiers (e.g., ">=2,<3"); caret (^) is not valid for PyPI.
-printf '%s\n' \
-'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","clientInfo":{"name":"cli","version":"0"},"capabilities":{}}}' \
-'{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"Lookup_Latest_Version","arguments":{"name":"requests","ecosystem":"pypi","versionRange":">=2,<3"}}}' \
-'{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"Scan_Dependency","arguments":{"name":"requests","version":"2.32.5","ecosystem":"pypi"}}}' \
-| depgate mcp
-
-# Maven (groupId:artifactId coordinates)
-printf '%s\n' \
-'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","clientInfo":{"name":"cli","version":"0"},"capabilities":{}}}' \
-'{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"Lookup_Latest_Version","arguments":{"name":"org.apache.commons:commons-lang3","ecosystem":"maven"}}}' \
-'{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"Scan_Dependency","arguments":{"name":"org.apache.commons:commons-lang3","version":"3.19.0","ecosystem":"maven"}}}' \
-| depgate mcp
-```
 
 Sandboxing and environment:
 
@@ -123,8 +86,6 @@ From PyPI (after publishing):
 - Single package (npm): `depgate scan -t npm -p left-pad`
 - Scan a repo (Maven): `depgate scan -t maven -d ./tests`
 - Heuristics + JSON: `depgate scan -t pypi -a heur -o out.json`
-- NuGet package: `depgate scan -t nuget -p Newtonsoft.Json -a heur -o out.json`
-- NuGet scan directory: `depgate scan -t nuget -d ./src -a heur`
 - Linked verification: `depgate scan -t npm -p left-pad -a linked -o out.json`
 - With OpenSourceMalware (requires API token): `DEPGATE_OSM_API_TOKEN=your_token depgate scan -t npm -p package-name -a heur`
 
@@ -138,15 +99,13 @@ With uv during development:
 - `-p, --package <name>`: single package name
   - npm: package name (e.g., `left-pad`)
   - PyPI: project name (e.g., `requests`)
-  - NuGet: package ID (e.g., `Newtonsoft.Json`)
   - Maven: not used (see below)
 - `-d, --directory <path>`: scan local source
   - npm: finds `package.json` (and `devDependencies`)
   - Maven: finds `pom.xml`, emits `groupId:artifactId`
   - PyPI: finds `requirements.txt`
-  - NuGet: finds `.csproj`, `packages.config`, `project.json`, `Directory.Build.props`
 - `-l, --load_list <file>`: newline‑delimited identifiers
-  - npm/PyPI/NuGet: package names per line
+  - npm/PyPI: package names per line
   - Maven: `groupId:artifactId` per line
 
 ## Analysis Levels
@@ -173,7 +132,6 @@ Examples:
 - npm: `depgate scan -t npm -p left-pad -a linked -o out.json`
 - pypi: `depgate scan -t pypi -p requests -a linked -o out.json`
 - maven: `depgate scan -t maven -p org.apache.commons:commons-lang3 -a linked -o out.json`
-- nuget: `depgate scan -t nuget -p Newtonsoft.Json -a linked -o out.json`
 
 ## Repository discovery & version validation
 
@@ -183,7 +141,6 @@ DepGate discovers canonical source repositories from registry metadata, normaliz
   - npm: versions[dist‑tags.latest].repository (string or object), fallbacks to homepage and bugs.url
   - PyPI: info.project_urls (Repository/Source/Code preferred), fallback Homepage/Documentation; Read the Docs URLs are resolved to backing repos
   - Maven: POM scm (url/connection/developerConnection) with parent traversal; fallback url when repo‑like
-  - NuGet: nuspec repositoryUrl (primary), fallback to projectUrl; supports both V3 API (primary) and V2 API (fallback)
 - URL normalization: canonical host/owner/repo form (strip .git), host detection (github|gitlab), monorepo directory hints preserved in provenance
 - Metrics: stars, last activity timestamp, approximate contributors
 - Version matching strategies (in order):
@@ -203,8 +160,6 @@ Notes:
 
 - export GITHUB_TOKEN and/or GITLAB_TOKEN to raise rate limits for provider API calls.
 
-See detailed design in [docs/repository-integration.md](docs/repository-integration.md:1) and architecture in [docs/provider-architecture.md](docs/provider-architecture.md:1).
-
 ## OpenSourceMalware Integration
 
 DepGate includes optional integration with the OpenSourceMalware.com API for malicious package detection. This integration:
@@ -214,7 +169,7 @@ DepGate includes optional integration with the OpenSourceMalware.com API for mal
 - Integrates with policy rules and MCP output
 - Works across all ecosystems (npm, PyPI, Maven) and analysis types
 
-**Quick start**: Set `DEPGATE_OSM_API_TOKEN` environment variable or use `--osm-api-token` flag. See [docs/opensourcemalware-integration.md](docs/opensourcemalware-integration.md) for complete documentation.
+**Quick start**: Set `DEPGATE_OSM_API_TOKEN` environment variable or use `--osm-api-token` flag. 
 
 ### Configuration
 
