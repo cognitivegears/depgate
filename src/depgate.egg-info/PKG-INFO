@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: depgate
-Version: 0.7.0
+Version: 0.8.0
 Summary: DepGate detects and prevents dependency confusion and supply-chain risks. (Hard fork of Apiiro's Dependency Combobulator)
 Author: cognitivegears
 License: Apache-2.0

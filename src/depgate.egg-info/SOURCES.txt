@@ -106,6 +106,7 @@ tests/test_logging_utils_formatters.py
 tests/test_logging_utils_redaction.py
 tests/test_maven_repo_discovery.py
 tests/test_mcp_findings_comprehensive.py
+tests/test_mcp_nuget_integration.py
 tests/test_mcp_scan_project_integration.py
 tests/test_mcp_server_basic.py
 tests/test_mcp_stdio_integration.py
