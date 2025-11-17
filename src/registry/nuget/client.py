@@ -162,7 +162,8 @@ def _fetch_v3_package_metadata(package_id: str) -> Tuple[Optional[Dict[str, Any]
 
             return metadata, "v3"
     except Exception:
-        pass
+        # Log the exception and fall back to V2 API
+        logger.exception("Failed to fetch package metadata from NuGet V3 API, falling back to V2 API.")
 
     return None, "v2"
 
