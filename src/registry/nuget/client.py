@@ -244,8 +244,8 @@ def _fetch_v2_package_metadata(package_id: str) -> Optional[Dict[str, Any]]:
                     if license_url_elem is not None and license_url_elem.text:
                         metadata["licenseUrl"] = license_url_elem.text
                 return metadata
-    except Exception:
-        pass
+    except Exception as e:
+        logger.exception(f"Exception occurred while fetching V2 package metadata for '{package_id}': {e}")
 
     return None
 
