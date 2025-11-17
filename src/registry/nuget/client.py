@@ -128,8 +128,18 @@ def _fetch_v3_package_metadata(package_id: str) -> Tuple[Optional[Dict[str, Any]
                                 if latest_date is None or pub_date > latest_date:
                                     latest_date = pub_date
                                     latest_entry = catalog_entry
-                            except Exception:
-                                pass
+                            except Exception as e:
+                                logger.warning(
+                                    "Failed to parse published date '%s' for package '%s': %s",
+                                    published, package_id, e,
+                                    extra=extra_context(
+                                        event="date_parse_error",
+                                        component="client",
+                                        package_manager="nuget",
+                                        published_value=published,
+                                        package_id=package_id,
+                                    ),
+                                )
 
             metadata["versions"] = all_versions
             if latest_entry:
