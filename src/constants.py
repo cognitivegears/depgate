@@ -94,6 +94,16 @@ class Constants:  # pylint: disable=too-few-public-methods
     DEPSDEV_MAX_RESPONSE_BYTES = 1048576
     DEPSDEV_STRICT_OVERRIDE: bool = False
 
+    # OpenSourceMalware integration defaults
+    OSM_ENABLED: bool = False
+    OSM_API_BASE_URL = "https://api.opensourcemalware.com/functions/v1"
+    OSM_API_TOKEN: Optional[str] = None
+    OSM_CACHE_TTL_SEC = 3600
+    OSM_REQUEST_TIMEOUT = 30
+    OSM_AUTH_METHOD = "header"  # "header" or "query"
+    OSM_MAX_RETRIES = 5
+    OSM_RATE_LIMIT_RETRY_DELAY_SEC = 1.0
+
     # HTTP rate limit and retry policy defaults (fail-fast to preserve existing behavior)
     HTTP_RATE_POLICY_DEFAULT_MAX_RETRIES = 0
     HTTP_RATE_POLICY_DEFAULT_INITIAL_BACKOFF_SEC = 0.5
@@ -379,6 +389,11 @@ def _apply_config_overrides(cfg: Dict[str, Any]) -> None:  # pylint: disable=too
     # Apply per-service overrides
     if isinstance(per_service_cfg, dict):
         merged_per_service: Dict[str, Any] = {}
+        # Start with existing per-service config (may include OSM defaults)
+        existing = getattr(Constants, "HTTP_RATE_POLICY_PER_SERVICE", {})  # type: ignore[attr-defined]
+        if isinstance(existing, dict):
+            merged_per_service.update(existing)
+        # Apply YAML overrides
         for host, service_config in per_service_cfg.items():
             if isinstance(service_config, dict):
                 merged_per_service[host] = service_config
@@ -428,6 +443,51 @@ def _apply_config_overrides(cfg: Dict[str, Any]) -> None:  # pylint: disable=too
         "api_base", Constants.READTHEDOCS_API_BASE
     )
 
+    # OpenSourceMalware configuration
+    osm = cfg.get("opensourcemalware", {}) or {}
+    try:
+        Constants.OSM_ENABLED = bool(  # type: ignore[attr-defined]
+            osm.get("enabled", Constants.OSM_ENABLED)
+        )
+    except Exception:  # pylint: disable=broad-exception-caught
+        pass
+    try:
+        base = osm.get("base_url", Constants.OSM_API_BASE_URL)
+        if isinstance(base, str) and base.strip():
+            Constants.OSM_API_BASE_URL = base  # type: ignore[attr-defined]
+    except Exception:  # pylint: disable=broad-exception-caught
+        pass
+    try:
+        token = osm.get("api_token")
+        if isinstance(token, str) and token.strip():
+            Constants.OSM_API_TOKEN = token.strip()  # type: ignore[attr-defined]
+    except Exception:  # pylint: disable=broad-exception-caught
+        pass
+    try:
+        Constants.OSM_CACHE_TTL_SEC = int(  # type: ignore[attr-defined]
+            osm.get("cache_ttl_sec", Constants.OSM_CACHE_TTL_SEC)
+        )
+    except Exception:  # pylint: disable=broad-exception-caught
+        pass
+    try:
+        auth_method = osm.get("auth_method", Constants.OSM_AUTH_METHOD)
+        if isinstance(auth_method, str) and auth_method.lower() in ("header", "query"):
+            Constants.OSM_AUTH_METHOD = auth_method.lower()  # type: ignore[attr-defined]
+    except Exception:  # pylint: disable=broad-exception-caught
+        pass
+    try:
+        Constants.OSM_MAX_RETRIES = int(  # type: ignore[attr-defined]
+            osm.get("max_retries", Constants.OSM_MAX_RETRIES)
+        )
+    except Exception:  # pylint: disable=broad-exception-caught
+        pass
+    try:
+        Constants.OSM_RATE_LIMIT_RETRY_DELAY_SEC = float(  # type: ignore[attr-defined]
+            osm.get("rate_limit_retry_delay_sec", Constants.OSM_RATE_LIMIT_RETRY_DELAY_SEC)
+        )
+    except Exception:  # pylint: disable=broad-exception-caught
+        pass
+
 
 def _parse_bool_env(value: str) -> Optional[bool]:
     """Parse common boolean-like environment variable values."""
@@ -440,7 +500,7 @@ def _parse_bool_env(value: str) -> Optional[bool]:
 
 
 def _apply_env_overrides() -> None:
-    """Apply environment variable overrides for deps.dev integration."""
+    """Apply environment variable overrides for deps.dev and OpenSourceMalware integration."""
     # Precedence model: env overrides YAML/defaults; CLI overrides env in main()
     enabled = os.environ.get("DEPGATE_DEPSDEV_ENABLED")
     if enabled is not None:
@@ -479,6 +539,39 @@ def _apply_env_overrides() -> None:
         if parsed is not None:
             Constants.DEPSDEV_STRICT_OVERRIDE = parsed  # type: ignore[attr-defined]
 
+    # OpenSourceMalware environment overrides
+    osm_enabled = os.environ.get("DEPGATE_OSM_ENABLED")
+    if osm_enabled is not None:
+        parsed = _parse_bool_env(osm_enabled)
+        if parsed is not None:
+            Constants.OSM_ENABLED = parsed  # type: ignore[attr-defined]
+
+    osm_base = os.environ.get("DEPGATE_OSM_BASE_URL")
+    if osm_base:
+        Constants.OSM_API_BASE_URL = osm_base  # type: ignore[attr-defined]
+
+    osm_token = os.environ.get("DEPGATE_OSM_API_TOKEN")
+    if osm_token:
+        Constants.OSM_API_TOKEN = osm_token  # type: ignore[attr-defined]
+
+    osm_ttl = os.environ.get("DEPGATE_OSM_CACHE_TTL_SEC")
+    if osm_ttl:
+        try:
+            Constants.OSM_CACHE_TTL_SEC = int(osm_ttl)  # type: ignore[attr-defined]
+        except Exception:  # pylint: disable=broad-exception-caught
+            pass
+
+    osm_auth = os.environ.get("DEPGATE_OSM_AUTH_METHOD")
+    if osm_auth and osm_auth.lower() in ("header", "query"):
+        Constants.OSM_AUTH_METHOD = osm_auth.lower()  # type: ignore[attr-defined]
+
+    osm_max_retries = os.environ.get("DEPGATE_OSM_MAX_RETRIES")
+    if osm_max_retries:
+        try:
+            Constants.OSM_MAX_RETRIES = int(osm_max_retries)  # type: ignore[attr-defined]
+        except Exception:  # pylint: disable=broad-exception-caught
+            pass
+
 
 # Attempt to load and apply YAML configuration on import (no-op if unavailable)
 try:
@@ -490,6 +583,32 @@ try:
         _apply_env_overrides()
     except Exception:  # pylint: disable=broad-exception-caught
         pass
+    # Apply default OpenSourceMalware rate limit configuration if not already set
+    # (applies even if no YAML config is loaded)
+    if hasattr(Constants, "HTTP_RATE_POLICY_PER_SERVICE") and isinstance(
+        getattr(Constants, "HTTP_RATE_POLICY_PER_SERVICE", None), dict
+    ):
+        if "api.opensourcemalware.com" not in Constants.HTTP_RATE_POLICY_PER_SERVICE:  # type: ignore[attr-defined]
+            Constants.HTTP_RATE_POLICY_PER_SERVICE["api.opensourcemalware.com"] = {  # type: ignore[attr-defined]
+                "max_retries": 5,
+                "initial_backoff_sec": 1.0,
+                "multiplier": 1.5,
+                "max_backoff_sec": 60.0,
+                "respect_retry_after": True,
+                "strategy": "exponential_jitter",
+            }
+    else:
+        # Initialize if it doesn't exist or is not a dict
+        Constants.HTTP_RATE_POLICY_PER_SERVICE = {  # type: ignore[attr-defined]
+            "api.opensourcemalware.com": {
+                "max_retries": 5,
+                "initial_backoff_sec": 1.0,
+                "multiplier": 1.5,
+                "max_backoff_sec": 60.0,
+                "respect_retry_after": True,
+                "strategy": "exponential_jitter",
+            }
+        }
 except Exception:  # pylint: disable=broad-exception-caught
     # Never fail import due to config issues
     pass

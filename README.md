@@ -10,6 +10,7 @@ DepGate is a fork of Apiiro’s “Dependency Combobulator”, maintained going 
 - Multiple ecosystems: npm (`package.json`), Maven (`pom.xml`), PyPI (`requirements.txt`).
 - Cross‑ecosystem version resolution with strict prerelease policies (npm/PyPI exclude prereleases by default; Maven latest excludes SNAPSHOT).
 - Repository discovery and version validation (GitHub/GitLab): provenance, metrics (stars, last activity, contributors), and version match strategies (exact, pattern, exact‑bare, v‑prefix, suffix‑normalized).
+- **OpenSourceMalware integration**: Optional malicious package detection via OpenSourceMalware.com API. Automatically flags malicious packages in heuristics (score = 0.0), available in policy rules, and included in MCP output. Requires API token (see Configuration).
 - Flexible inputs: single package, manifest scan, or list from file.
 - Structured outputs: human‑readable logs plus CSV/JSON exports for CI.
 - Designed for automation: predictable exit codes and quiet/log options.
@@ -102,6 +103,7 @@ Notes:
 
 - Python 3.8+
 - Network access for registry lookups when running analysis
+- OpenSourceMalware API token (optional, for malicious package detection)
 
 ## Install
 
@@ -122,6 +124,7 @@ From PyPI (after publishing):
 - Scan a repo (Maven): `depgate scan -t maven -d ./tests`
 - Heuristics + JSON: `depgate scan -t pypi -a heur -o out.json`
 - Linked verification: `depgate scan -t npm -p left-pad -a linked -o out.json`
+- With OpenSourceMalware (requires API token): `DEPGATE_OSM_API_TOKEN=your_token depgate scan -t npm -p package-name -a heur`
 
 With uv during development:
 
@@ -196,13 +199,63 @@ Notes:
 
 See detailed design in [docs/repository-integration.md](docs/repository-integration.md:1) and architecture in [docs/provider-architecture.md](docs/provider-architecture.md:1).
 
+## OpenSourceMalware Integration
+
+DepGate includes optional integration with the OpenSourceMalware.com API for malicious package detection. This integration:
+
+- Automatically flags malicious packages in heuristics analysis (score = 0.0)
+- Supports version-specific checks (critical for accurate detection)
+- Integrates with policy rules and MCP output
+- Works across all ecosystems (npm, PyPI, Maven) and analysis types
+
+**Quick start**: Set `DEPGATE_OSM_API_TOKEN` environment variable or use `--osm-api-token` flag. See [docs/opensourcemalware-integration.md](docs/opensourcemalware-integration.md) for complete documentation.
+
+### Configuration
+
+The integration requires an API token. Provide it via:
+
+- **Environment variable**: `DEPGATE_OSM_API_TOKEN=your_token`
+- **CLI argument**: `--osm-api-token your_token`
+- **Command execution**: `--osm-token-command "cat ~/.osm_token"`
+- **YAML config**: See `docs/depgate.example.yml` for options
+
+**Priority**: CLI > Environment variable > Command execution > YAML config
+
+### Version-Specific Checks
+
+The integration performs version-specific checks, which is critical for accurate detection:
+
+```bash
+# Check specific vulnerable version (will be flagged)
+depgate scan -t npm -p 'synckit:0.11.9' -a heur
+
+# Check specific safe version (will not be flagged)
+depgate scan -t npm -p 'synckit:0.11.11' -a heur
+
+# Check latest version (uses resolved version, not package-level check)
+depgate scan -t npm -p 'synckit' -a heur
+```
+
+When no version is specified, the integration uses the resolved/latest version (not a package-level check that might incorrectly flag safe packages).
+
+### Policy Integration
+
+Use malware detection in policy rules:
+
+```yaml
+policy:
+  rules:
+    - type: malware
+      fail_on_malicious: true
+```
+
 ## Output
 
 - Default: logs to stdout (respecting `--loglevel` and `--quiet`)
 - File export: `-o, --output <path>` and `-f, --format {json,csv}`
   - If `--format` is omitted, inferred from `--output` extension (`.json` / `.csv`), otherwise defaults to JSON.
   - CSV columns: `Package Name, Package Type, Exists on External, Org/Group ID, Score, Version Count, Timestamp, Risk: Missing, Risk: Low Score, Risk: Min Versions, Risk: Too New, Risk: Any Risks, [policy fields], [license fields]`
-  - JSON schema: objects with keys: `packageName, orgId, packageType, exists, score, versionCount, createdTimestamp, risk.{hasRisk,isMissing,hasLowScore,minVersions,isNew}, policy.{decision,violated_rules,evaluated_metrics}, license.{id,available,source}`. When `-a linked` is used, the JSON also includes: `repositoryUrl`, `tagMatch`, `releaseMatch`, and `linked`.
+  - JSON schema: objects with keys: `packageName, orgId, packageType, exists, score, versionCount, createdTimestamp, risk.{hasRisk,isMissing,hasLowScore,minVersions,isNew}, policy.{decision,violated_rules,evaluated_metrics}, license.{id,available,source}, osmMalicious, osmReason, osmThreatCount, osmSeverity`. When `-a linked` is used, the JSON also includes: `repositoryUrl`, `tagMatch`, `releaseMatch`, and `linked`.
 
 ## CLI Options (summary)
 
@@ -214,6 +267,7 @@ See detailed design in [docs/repository-integration.md](docs/repository-integrat
 - Logging: `--loglevel {DEBUG,INFO,WARNING,ERROR,CRITICAL}`, `--logfile <path>`, `-q, --quiet`
 - Scanning: `-r, --recursive` (for `--directory` scans)
 - CI: `--error-on-warnings` (non‑zero exit if risks detected)
+- OpenSourceMalware: `--osm-disable`, `--osm-api-token <token>`, `--osm-token-command <cmd>`, `--osm-base-url <url>`, `--osm-cache-ttl <seconds>`, `--osm-auth-method {header,query}`, `--osm-max-retries <count>`
 
 ## Resolution semantics (overview)
 

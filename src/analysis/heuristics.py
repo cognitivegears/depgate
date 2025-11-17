@@ -314,7 +314,30 @@ def run_heuristics(pkgs):
         if x.exists is True:
             # Compute final normalized score in [0,1] using available metrics
             final_score, breakdown, weights_used = compute_final_score(x)
-            x.score = final_score
+
+            # Check OpenSourceMalware status - auto-fail if malicious (high priority)
+            osm_malicious = getattr(x, "osm_malicious", None)
+            if osm_malicious is True:
+                # Override score to 0.0 for malicious packages
+                final_score = 0.0
+                x.score = final_score
+                logger.critical(
+                    "%sPackage flagged as MALICIOUS by OpenSourceMalware: %s (reason: %s)",
+                    STG,
+                    str(x),
+                    getattr(x, "osm_reason", "unknown"),
+                )
+                # Update breakdown to include OSM result
+                breakdown["osm_malicious"] = {"raw": True, "normalized": 0.0}
+            else:
+                x.score = final_score
+                # Add OSM status to breakdown if checked
+                if getattr(x, "osm_checked", None) is True:
+                    breakdown["osm_malicious"] = {
+                        "raw": osm_malicious,
+                        "normalized": 0.0 if osm_malicious is True else (1.0 if osm_malicious is False else None),
+                    }
+
             if is_debug_enabled(logger):
                 logger.debug(
                     "Heuristics score breakdown",

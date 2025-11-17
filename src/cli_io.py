@@ -172,7 +172,11 @@ def export_json(instances, path):
                 "id": getattr(x, "license_id", None),
                 "available": getattr(x, "license_available", None),
                 "source": getattr(x, "license_source", None),
-            }
+            },
+            "osmMalicious": getattr(x, "osm_malicious", None),
+            "osmReason": getattr(x, "osm_reason", None),
+            "osmThreatCount": getattr(x, "osm_threat_count", None),
+            "osmSeverity": getattr(x, "osm_severity", None),
         }
         # Conditionally include linked-analysis fields without altering legacy outputs
         if getattr(x, "_linked_mode", False):

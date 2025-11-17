@@ -100,6 +100,28 @@ def add_mcp_arguments(parser: argparse.ArgumentParser) -> None:
         default=None,
     )
 
+    # OpenSourceMalware arguments (same as scan action)
+    parser.add_argument(
+        "--osm-disable",
+        dest="OSM_DISABLE",
+        help="Disable OpenSourceMalware checks (feature flag; requires API token when enabled)",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--osm-api-token",
+        dest="OSM_API_TOKEN",
+        help="OpenSourceMalware API token (required for checks)",
+        action="store",
+        type=str,
+    )
+    parser.add_argument(
+        "--osm-token-command",
+        dest="OSM_TOKEN_COMMAND",
+        help="Command to execute to retrieve OpenSourceMalware API token",
+        action="store",
+        type=str,
+    )
+
 
 def add_scan_arguments(parser: argparse.ArgumentParser) -> None:
     """Register all existing CLI options under the 'scan' action."""
@@ -271,6 +293,57 @@ def add_scan_arguments(parser: argparse.ArgumentParser) -> None:
         dest="DEPSDEV_STRICT_OVERRIDE",
         help="Override existing values with deps.dev values (off by default; backfill-only when off)",
         action="store_true",
+    )
+
+    # OpenSourceMalware feature flags and tunables
+    parser.add_argument(
+        "--osm-disable",
+        dest="OSM_DISABLE",
+        help="Disable OpenSourceMalware checks (feature flag; requires API token when enabled)",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--osm-api-token",
+        dest="OSM_API_TOKEN",
+        help="OpenSourceMalware API token (required for checks)",
+        action="store",
+        type=str,
+    )
+    parser.add_argument(
+        "--osm-token-command",
+        dest="OSM_TOKEN_COMMAND",
+        help="Command to execute to retrieve OpenSourceMalware API token",
+        action="store",
+        type=str,
+    )
+    parser.add_argument(
+        "--osm-base-url",
+        dest="OSM_BASE_URL",
+        help="Override OpenSourceMalware base API URL (default: https://api.opensourcemalware.com/functions/v1)",
+        action="store",
+        type=str,
+    )
+    parser.add_argument(
+        "--osm-cache-ttl",
+        dest="OSM_CACHE_TTL",
+        help="OpenSourceMalware cache TTL in seconds (default: 3600)",
+        action="store",
+        type=int,
+    )
+    parser.add_argument(
+        "--osm-auth-method",
+        dest="OSM_AUTH_METHOD",
+        help="OpenSourceMalware authentication method: 'header' or 'query' (default: header)",
+        action="store",
+        type=str,
+        choices=["header", "query"],
+    )
+    parser.add_argument(
+        "--osm-max-retries",
+        dest="OSM_MAX_RETRIES",
+        help="Maximum retries for OpenSourceMalware API requests (default: 5)",
+        action="store",
+        type=int,
     )
 
 

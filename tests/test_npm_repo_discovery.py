@@ -244,7 +244,8 @@ class TestEnrichWithRepo:
                 'artifact': {'name': '4.17.21'},
                 'tag_or_release': '4.17.21'
             }
-            assert mp.provenance == {'npm_repository_field': 'git+https://github.com/lodash/lodash.git'}
+            # Check that expected provenance is present (OSM enrichment may add additional keys)
+            assert mp.provenance.get('npm_repository_field') == 'git+https://github.com/lodash/lodash.git'
 
     @patch('registry.npm.normalize_repo_url')
     @patch('registry.npm.GitHubClient')
@@ -312,11 +313,9 @@ class TestEnrichWithRepo:
                 'artifact': {'name': '7.20.0'},
                 'tag_or_release': '7.20.0'
             }
-            expected_provenance = {
-                'npm_repository_field': 'git+ssh://git@github.com:babel/babel.git',
-                'npm_repository_directory': 'packages/babel-core'
-            }
-            assert mp.provenance == expected_provenance
+            # Check that expected provenance is present (OSM enrichment may add additional keys)
+            assert mp.provenance.get('npm_repository_field') == 'git+ssh://git@github.com:babel/babel.git'
+            assert mp.provenance.get('npm_repository_directory') == 'packages/babel-core'
 
     @patch('registry.npm.normalize_repo_url')
     @patch('registry.npm.GitLabClient')
@@ -380,7 +379,8 @@ class TestEnrichWithRepo:
                 'artifact': {'name': '1.2.0'},
                 'tag_or_release': '1.2.0'
             }
-            assert mp.provenance == {'npm_homepage': 'https://gitlab.com/inkscape/inkscape'}
+            # Check that expected provenance is present (OSM enrichment may add additional keys)
+            assert mp.provenance.get('npm_homepage') == 'https://gitlab.com/inkscape/inkscape'
 
     @patch('registry.npm.normalize_repo_url')
     @patch('registry.npm.GitHubClient')
@@ -444,7 +444,8 @@ class TestEnrichWithRepo:
                 'artifact': {'name': '4.18.2'},
                 'tag_or_release': '4.18.2'
             }
-            assert mp.provenance == {'npm_bugs_url': 'https://github.com/expressjs/express/issues'}
+            # Check that expected provenance is present (OSM enrichment may add additional keys)
+            assert mp.provenance.get('npm_bugs_url') == 'https://github.com/expressjs/express/issues'
 
     def test_handles_no_repo_found(self):
         """Test handling when no repository is resolvable."""

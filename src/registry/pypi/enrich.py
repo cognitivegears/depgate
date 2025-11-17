@@ -10,6 +10,7 @@ from repository.providers import ProviderType, map_host_to_type
 from repository.provider_registry import ProviderRegistry
 from repository.provider_validation import ProviderValidationService
 from registry.depsdev.enrich import enrich_metapackage as depsdev_enrich
+from registry.opensourcemalware.enrich import enrich_metapackage as osm_enrich
 
 from .discovery import _extract_repo_candidates
 
@@ -298,6 +299,44 @@ def _enrich_with_repo(mp, _name: str, info: Dict[str, Any], version: str) -> Non
         depsdev_enrich(mp, "pypi", getattr(mp, "pkg_name", None) or "", deps_version)
     except Exception:
         # Defensive: never fail PyPI enrichment due to deps.dev issues
+        pass
+
+    # OpenSourceMalware enrichment (feature flag enforced inside function)
+    try:
+        # Prefer resolved_version, then try to extract from requested_spec, fallback to version parameter
+        osm_version = getattr(mp, "resolved_version", None)
+        if not osm_version:
+            # If resolution failed, try to use requested_spec if it's an exact version
+            requested_spec = getattr(mp, "requested_spec", None)
+            if requested_spec and isinstance(requested_spec, str):
+                # Strip whitespace before checking
+                requested_spec = requested_spec.strip()
+                # Check if it's an exact version (no range operators)
+                if requested_spec and not any(op in requested_spec for op in ['>=', '<=', '>', '<', '~=', '!=', ',']):
+                    osm_version = requested_spec
+                elif requested_spec:
+                    # requested_spec is a range, not an exact version - warn user
+                    logger.warning(
+                        "OpenSourceMalware check using resolved version (%s) instead of requested range '%s' for package %s. "
+                        "For accurate version-specific malware detection, use an exact version.",
+                        version,
+                        requested_spec,
+                        getattr(mp, "pkg_name", None) or "",
+                        extra=extra_context(
+                            event="osm_version_fallback",
+                            component="enrich",
+                            action="enrich_with_repo",
+                            package_manager="pypi",
+                            requested_spec=requested_spec,
+                            fallback_version=version,
+                            pkg=getattr(mp, "pkg_name", None) or "",
+                        ),
+                    )
+        if not osm_version:
+            osm_version = version
+        osm_enrich(mp, "pypi", getattr(mp, "pkg_name", None) or "", osm_version)
+    except Exception:
+        # Defensive: never fail PyPI enrichment due to OSM issues
         pass
 
     logger.info("PyPI enrichment completed", extra=extra_context(

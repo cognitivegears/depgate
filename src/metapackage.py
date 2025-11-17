@@ -88,6 +88,13 @@ class MetaPackage:  # pylint: disable=too-many-instance-attributes, too-many-pub
         self._dependency_requirement = None
         self._dependency_scope = None
 
+        # OpenSourceMalware fields
+        self._osm_checked = None
+        self._osm_malicious = None
+        self._osm_reason = None
+        self._osm_threat_count = None
+        self._osm_severity = None
+
     def __repr__(self):
         return self._pkg_name
 
@@ -488,6 +495,72 @@ class MetaPackage:  # pylint: disable=too-many-instance-attributes, too-many-pub
     @dependency_scope.setter
     def dependency_scope(self, value):
         self._dependency_scope = value
+
+    # OpenSourceMalware properties
+    @property
+    def osm_checked(self):
+        """Property for OpenSourceMalware check status.
+
+        Returns:
+            bool or None: True if check was performed, None if not checked
+        """
+        return self._osm_checked
+
+    @osm_checked.setter
+    def osm_checked(self, value):
+        self._osm_checked = value
+
+    @property
+    def osm_malicious(self):
+        """Property for OpenSourceMalware malicious status.
+
+        Returns:
+            bool or None: True if malicious, False if safe, None if unknown
+        """
+        return self._osm_malicious
+
+    @osm_malicious.setter
+    def osm_malicious(self, value):
+        self._osm_malicious = value
+
+    @property
+    def osm_reason(self):
+        """Property for OpenSourceMalware reason/description.
+
+        Returns:
+            str or None: Reason why package is flagged as malicious
+        """
+        return self._osm_reason
+
+    @osm_reason.setter
+    def osm_reason(self, value):
+        self._osm_reason = value
+
+    @property
+    def osm_threat_count(self):
+        """Property for OpenSourceMalware threat count.
+
+        Returns:
+            int or None: Number of threats detected
+        """
+        return self._osm_threat_count
+
+    @osm_threat_count.setter
+    def osm_threat_count(self, value):
+        self._osm_threat_count = value
+
+    @property
+    def osm_severity(self):
+        """Property for OpenSourceMalware severity level.
+
+        Returns:
+            str or None: Severity level (e.g., "critical", "high", "medium", "low")
+        """
+        return self._osm_severity
+
+    @osm_severity.setter
+    def osm_severity(self, value):
+        self._osm_severity = value
 
     @property
     def timestamp(self):

@@ -50,6 +50,9 @@ src/registry/npm/client.py
 src/registry/npm/discovery.py
 src/registry/npm/enrich.py
 src/registry/npm/scan.py
+src/registry/opensourcemalware/__init__.py
+src/registry/opensourcemalware/client.py
+src/registry/opensourcemalware/enrich.py
 src/registry/pypi/__init__.py
 src/registry/pypi/client.py
 src/registry/pypi/discovery.py
@@ -103,6 +106,11 @@ tests/test_mcp_stdio_integration.py
 tests/test_mcp_version_mismatch.py
 tests/test_npm_exists_preservation.py
 tests/test_npm_repo_discovery.py
+tests/test_opensourcemalware_client.py
+tests/test_opensourcemalware_config.py
+tests/test_opensourcemalware_enrich.py
+tests/test_opensourcemalware_heuristics.py
+tests/test_opensourcemalware_policy.py
 tests/test_parse_tokens.py
 tests/test_policy_comparators.py
 tests/test_policy_engine_integration.py

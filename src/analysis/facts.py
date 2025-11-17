@@ -75,7 +75,11 @@ class FactBuilder:
                 "id": getattr(package, "license_id", None),
                 "available": getattr(package, "license_available", None),
                 "source": getattr(package, "license_source", None)
-            }
+            },
+            "osm_malicious": getattr(package, "osm_malicious", None),
+            "osm_reason": getattr(package, "osm_reason", None),
+            "osm_threat_count": getattr(package, "osm_threat_count", None),
+            "osm_severity": getattr(package, "osm_severity", None),
         }
 
 
