@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: depgate
-Version: 0.9.0
+Version: 0.9.1
 Summary: DepGate detects and prevents dependency confusion and supply-chain risks. (Hard fork of Apiiro's Dependency Combobulator)
 Author: cognitivegears
 License: Apache-2.0
@@ -125,7 +125,7 @@ uvx depgate --help
   depgate scan -t npm -l packages.txt
   ```
 
-See [Supported Package Managers](docs/supported-package-managers.md) for format details and examples.
+See [Supported Package Managers](https://github.com/cognitivegears/depgate/blob/main/docs/supported-package-managers.md) for format details and examples.
 
 ### Analysis Levels
 
@@ -134,7 +134,7 @@ See [Supported Package Managers](docs/supported-package-managers.md) for format 
 - **`policy`** (or `pol`): Declarative rule-based evaluation
 - **`linked`**: Repository linkage verification
 
-See [Analysis Levels](docs/analysis-levels.md) for detailed explanations.
+See [Analysis Levels](https://github.com/cognitivegears/depgate/blob/main/docs/analysis-levels.md) for detailed explanations.
 
 ## Supported Package Managers
 
@@ -145,7 +145,7 @@ See [Analysis Levels](docs/analysis-levels.md) for detailed explanations.
 | **Maven** | Java/Kotlin/Scala | `pom.xml` |
 | **NuGet** | .NET/C# | `.csproj`, `packages.config`, `project.json` |
 
-See [Supported Package Managers](docs/supported-package-managers.md) for complete details, lock file support, package formats, and examples.
+See [Supported Package Managers](https://github.com/cognitivegears/depgate/blob/main/docs/supported-package-managers.md) for complete details, lock file support, package formats, and examples.
 
 ## Major Modes
 
@@ -165,7 +165,7 @@ DepGate includes an MCP server that exposes analysis capabilities via three tool
 - `Scan_Project` - Analyze project dependencies
 - `Scan_Dependency` - Analyze single dependencies
 
-See [MCP Server](docs/mcp-server.md) for setup, tools, and client examples.
+See [MCP Server](https://github.com/cognitivegears/depgate/blob/main/docs/mcp-server.md) for setup, tools, and client examples.
 
 ## Output Formats
 
@@ -180,7 +180,7 @@ depgate scan -t npm -p left-pad -a heur -o results.json
 depgate scan -t npm -p left-pad -a heur -o results.csv
 ```
 
-See [Output Formats](docs/output-formats.md) for complete schema and field descriptions.
+See [Output Formats](https://github.com/cognitivegears/depgate/blob/main/docs/output-formats.md) for complete schema and field descriptions.
 
 ## Configuration
 
@@ -192,7 +192,7 @@ DepGate supports configuration via YAML files, environment variables, and CLI ar
 - Policy rules
 - OpenSourceMalware settings
 
-See [Configuration](docs/configuration.md) for details and examples.
+See [Configuration](https://github.com/cognitivegears/depgate/blob/main/docs/configuration.md) for details and examples.
 
 ## Additional Features
 
@@ -204,7 +204,7 @@ Optional malicious package detection via OpenSourceMalware.com API:
 DEPGATE_OSM_API_TOKEN=token depgate scan -t npm -p package-name -a heur
 ```
 
-See [OpenSourceMalware Integration](docs/opensourcemalware.md) for setup and usage.
+See [OpenSourceMalware Integration](https://github.com/cognitivegears/depgate/blob/main/docs/opensourcemalware.md) for setup and usage.
 
 ### Policy Rules
 
@@ -214,7 +214,7 @@ Declarative rule-based evaluation with allow/deny decisions:
 depgate scan -t npm -d ./project -a policy -c policy.yml
 ```
 
-See [Policy Configuration](docs/policy-configuration.md) for schema and examples.
+See [Policy Configuration](https://github.com/cognitivegears/depgate/blob/main/docs/policy-configuration.md) for schema and examples.
 
 ### Repository Discovery
 
@@ -224,11 +224,11 @@ Automatic discovery and validation of upstream source repositories:
 depgate scan -t npm -p left-pad -a linked
 ```
 
-See [Repository Discovery](docs/repository-discovery.md) for discovery sources and version matching.
+See [Repository Discovery](https://github.com/cognitivegears/depgate/blob/main/docs/repository-discovery.md) for discovery sources and version matching.
 
 ### Version Resolution
 
-Ecosystem-aware version resolution with strict prerelease policies. See [Version Resolution](docs/version-resolution.md) for details per ecosystem.
+Ecosystem-aware version resolution with strict prerelease policies. See [Version Resolution](https://github.com/cognitivegears/depgate/blob/main/docs/version-resolution.md) for details per ecosystem.
 
 ## CLI Options
 
@@ -272,15 +272,15 @@ Run `depgate scan --help` for complete option list.
 
 ### Detailed Guides
 
-- [Supported Package Managers](docs/supported-package-managers.md) - Complete package manager reference
-- [Analysis Levels](docs/analysis-levels.md) - Understanding analysis types
-- [Configuration](docs/configuration.md) - YAML config and environment variables
-- [Policy Configuration](docs/policy-configuration.md) - Policy rules and schema
-- [OpenSourceMalware](docs/opensourcemalware.md) - Malicious package detection
-- [Repository Discovery](docs/repository-discovery.md) - Repository discovery and version matching
-- [Version Resolution](docs/version-resolution.md) - Ecosystem-specific resolution semantics
-- [MCP Server](docs/mcp-server.md) - MCP server setup and tools
-- [Output Formats](docs/output-formats.md) - CSV and JSON schemas
+- [Supported Package Managers](https://github.com/cognitivegears/depgate/blob/main/docs/supported-package-managers.md) - Complete package manager reference
+- [Analysis Levels](https://github.com/cognitivegears/depgate/blob/main/docs/analysis-levels.md) - Understanding analysis types
+- [Configuration](https://github.com/cognitivegears/depgate/blob/main/docs/configuration.md) - YAML config and environment variables
+- [Policy Configuration](https://github.com/cognitivegears/depgate/blob/main/docs/policy-configuration.md) - Policy rules and schema
+- [OpenSourceMalware](https://github.com/cognitivegears/depgate/blob/main/docs/opensourcemalware.md) - Malicious package detection
+- [Repository Discovery](https://github.com/cognitivegears/depgate/blob/main/docs/repository-discovery.md) - Repository discovery and version matching
+- [Version Resolution](https://github.com/cognitivegears/depgate/blob/main/docs/version-resolution.md) - Ecosystem-specific resolution semantics
+- [MCP Server](https://github.com/cognitivegears/depgate/blob/main/docs/mcp-server.md) - MCP server setup and tools
+- [Output Formats](https://github.com/cognitivegears/depgate/blob/main/docs/output-formats.md) - CSV and JSON schemas
 
 ## Contributing
 
