@@ -63,6 +63,7 @@ src/registry/pypi/__init__.py
 src/registry/pypi/client.py
 src/registry/pypi/discovery.py
 src/registry/pypi/enrich.py
+src/registry/pypi/lockfile_parser.py
 src/registry/pypi/scan.py
 src/repository/__init__.py
 src/repository/github.py
@@ -92,6 +93,7 @@ tests/test_client_logging.py
 tests/test_depsdev_client_unit.py
 tests/test_depsdev_enrich_unit.py
 tests/test_depsdev_enrich_unit_maven.py
+tests/test_direct_only_scan.py
 tests/test_discovery_enrichment_logging.py
 tests/test_github_client.py
 tests/test_gitlab_client.py
@@ -106,6 +108,8 @@ tests/test_logging_integration_e2e.py
 tests/test_logging_utils_formatters.py
 tests/test_logging_utils_redaction.py
 tests/test_maven_repo_discovery.py
+tests/test_maven_scan_coverage.py
+tests/test_mcp_direct_only_require_lockfile.py
 tests/test_mcp_findings_comprehensive.py
 tests/test_mcp_nuget_integration.py
 tests/test_mcp_scan_project_integration.py
@@ -121,6 +125,7 @@ tests/test_nuget_discovery.py
 tests/test_nuget_enrich.py
 tests/test_nuget_integration.py
 tests/test_nuget_scan.py
+tests/test_nuget_scan_coverage.py
 tests/test_nuget_version_resolver.py
 tests/test_opensourcemalware_client.py
 tests/test_opensourcemalware_config.py
@@ -134,8 +139,11 @@ tests/test_policy_evaluators.py
 tests/test_policy_example_yaml.py
 tests/test_provider_validation_matching.py
 tests/test_pypi_license_enrichment.py
+tests/test_pypi_lockfile_parser.py
 tests/test_pypi_repo_discovery.py
+tests/test_pypi_scan_lockfiles.py
 tests/test_repo_url_normalize.py
+tests/test_require_lockfile.py
 tests/test_resolver_maven.py
 tests/test_resolver_npm.py
 tests/test_resolver_pypi.py
