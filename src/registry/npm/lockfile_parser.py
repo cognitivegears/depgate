@@ -11,7 +11,6 @@ import logging
 import re
 from typing import List, Set
 
-from constants import Constants
 
 logger = logging.getLogger(__name__)
 
