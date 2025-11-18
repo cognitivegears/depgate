@@ -58,7 +58,12 @@ Equivalent to `depgate scan` on a project directory.
 - `ecosystem` (string, optional) - Ecosystem hint (auto-detected if not provided)
 - `analysisLevel` (string, optional) - Analysis level (default: "compare")
 - `includeDevDependencies` (boolean, optional) - Include dev dependencies
-- `includeTransitive` (boolean, optional) - Include transitive dependencies
+- `includeTransitive` (boolean, optional) - Include transitive dependencies (default: true). When `false`, only scans direct dependencies from manifests, even when lockfiles exist
+- `requireLockfile` (boolean, optional) - Require a lockfile for package managers that support it (default: false). When `true`, fails if lockfile is missing:
+  - **npm**: Requires `package-lock.json`, `yarn.lock`, or `bun.lock`
+  - **pypi**: Requires `uv.lock` or `poetry.lock` (only for pyproject.toml, not requirements.txt)
+  - **nuget**: Requires `packages.lock.json`
+  - **maven**: Ignored (Maven has no standard lockfile format)
 - `respectLockfiles` (boolean, optional) - Respect lock files
 - `offline` (boolean, optional) - Disable network calls
 - `strictProvenance` (boolean, optional) - Strict provenance checking
@@ -233,7 +238,9 @@ PYTHONPATH=tests/e2e_mocks depgate mcp
 # Arguments: {
 #   "projectDir": "/path/to/project",
 #   "ecosystem": "npm",
-#   "analysisLevel": "heur"
+#   "analysisLevel": "heur",
+#   "includeTransitive": false,  # Only scan direct dependencies
+#   "requireLockfile": true      # Require lockfile to be present
 # }
 ```
 

@@ -9,7 +9,7 @@ DepGate supports dependency analysis across multiple package managers and ecosys
 | **npm** | JavaScript/TypeScript | `package.json` | `package-lock.json`, `yarn.lock`, `bun.lock` | Package name (e.g., `left-pad`) | `https://registry.npmjs.org/` |
 | **PyPI** | Python | `requirements.txt`, `pyproject.toml` | `uv.lock`, `poetry.lock` | Project name (e.g., `requests`) | `https://pypi.org/pypi/` |
 | **Maven** | Java/Kotlin/Scala | `pom.xml` | N/A | `groupId:artifactId` (e.g., `org.apache.commons:commons-lang3`) | `https://search.maven.org/solrsearch/select` |
-| **NuGet** | .NET/C# | `.csproj`, `packages.config`, `project.json`, `Directory.Build.props` | N/A | Package ID (e.g., `Newtonsoft.Json`) | `https://api.nuget.org/v3/index.json` (V3), `https://www.nuget.org/api/v2/` (V2) |
+| **NuGet** | .NET/C# | `.csproj`, `packages.config`, `project.json`, `Directory.Build.props` | `packages.lock.json` | Package ID (e.g., `Newtonsoft.Json`) | `https://api.nuget.org/v3/index.json` (V3), `https://www.nuget.org/api/v2/` (V2) |
 
 ## File Format Detection and Precedence
 
@@ -24,6 +24,8 @@ DepGate supports dependency analysis across multiple package managers and ecosys
 - **Dependencies**:
   - When lockfile is present: Extracted from lockfile (includes all dependencies: direct + transitive)
   - When no lockfile: Extracted from `dependencies` and `devDependencies` fields in `package.json` (direct only)
+  - **Direct-only mode** (`--direct-only`): When enabled, only extracts direct dependencies from `package.json`, even when lockfiles exist. Lockfiles are still discovered for version resolution.
+  - **Require lockfile** (`--require-lockfile`): When enabled, requires `package-lock.json`, `yarn.lock`, or `bun.lock` to be present, otherwise the scan fails.
 - **Lockfile Support**:
   - `package-lock.json`: Supports lockfileVersion 1, 2, and 3
   - `yarn.lock`: Supports Yarn v1 format (uses yarnlock library)
@@ -40,6 +42,8 @@ DepGate supports dependency analysis across multiple package managers and ecosys
 - **Dependencies**:
   - When lockfile is present: Extracted from lockfile (includes all dependencies: direct + transitive)
   - When no lockfile: Extracted from `pyproject.toml` or `requirements.txt` (direct only)
+  - **Direct-only mode** (`--direct-only`): When enabled, only extracts direct dependencies from manifest files, even when lockfiles exist. Lockfiles are still discovered for version resolution.
+  - **Require lockfile** (`--require-lockfile`): When enabled, requires `uv.lock` or `poetry.lock` to be present for `pyproject.toml` projects (not applicable to `requirements.txt`), otherwise the scan fails.
 - **Lockfile Support**:
   - `uv.lock`: TOML format with `[[package]]` sections
   - `poetry.lock`: TOML format with `[[package]]` sections
@@ -48,8 +52,11 @@ DepGate supports dependency analysis across multiple package managers and ecosys
 ### Maven
 
 - **Manifest**: `pom.xml` is required
+- **Lock File**: N/A (Maven has no standard lockfile format)
 - **Parent POMs**: Parent POMs are traversed for dependency resolution
-- **Dependencies**: Extracted from `<dependencies>` section, including transitive dependencies
+- **Dependencies**: Extracted from `<dependencies>` section (direct only)
+  - **Direct-only mode** (`--direct-only`): Maven already scans direct dependencies only, so this option has no effect (maintains existing behavior).
+  - **Require lockfile** (`--require-lockfile`): Ignored for Maven projects (logs a warning). Maven has no standard lockfile format.
 - **Recursive Scanning**: When `-r/--recursive` is used, scans subdirectories for multiple `pom.xml` files
 
 ### NuGet
@@ -59,8 +66,11 @@ DepGate supports dependency analysis across multiple package managers and ecosys
   - `packages.config` (legacy format)
   - `project.json` (project.json format)
   - `Directory.Build.props` (MSBuild directory-level props)
+- **Lock File**: `packages.lock.json` (optional, used when `--require-lockfile` is enabled)
 - **Recursive Scanning**: Enabled by default for NuGet projects (often have multiple `.csproj` files)
-- **Dependencies**: Extracted from all discovered manifest files
+- **Dependencies**: Extracted from all discovered manifest files (direct only)
+  - **Direct-only mode** (`--direct-only`): NuGet already scans direct dependencies only, so this option has no effect (maintains existing behavior).
+  - **Require lockfile** (`--require-lockfile`): When enabled, requires `packages.lock.json` to be present, otherwise the scan fails.
 
 ## Package Name Formats
 

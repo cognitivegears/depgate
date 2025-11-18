@@ -70,8 +70,14 @@ def safe_parse_token(token: str, eco: Ecosystem):
         return _Req()
 
 
-def build_pkglist(args):
-    """Build the package list from CLI inputs, stripping any optional version spec."""
+def build_pkglist(args, direct_only: bool = None, require_lockfile: bool = None):
+    """Build the package list from CLI inputs, stripping any optional version spec.
+
+    Args:
+        args: CLI arguments namespace
+        direct_only: Optional override for direct_only mode (if None, reads from args or config)
+        require_lockfile: Optional override for require_lockfile mode (if None, reads from args or config)
+    """
     if args.RECURSIVE and not args.FROM_SRC:
         logging.warning("Recursive option is only applicable to source scans.")
     eco = to_ecosystem(args.package_type)
@@ -87,16 +93,19 @@ def build_pkglist(args):
 
     # From source directory
     if args.FROM_SRC:
-        # CLI args take precedence over config file values
-        # For store_true actions, if True it was explicitly set; otherwise use config/default
-        direct_only = getattr(args, "DIRECT_ONLY", False)
-        if not direct_only:
-            # Not explicitly enabled via CLI, use config file value or default
-            direct_only = getattr(Constants, "DIRECT_ONLY", False)
-        require_lockfile = getattr(args, "REQUIRE_LOCKFILE", False)
-        if not require_lockfile:
-            # Not explicitly enabled via CLI, use config file value or default
-            require_lockfile = getattr(Constants, "REQUIRE_LOCKFILE", False)
+        # Runtime parameters take precedence over CLI args, which take precedence over config
+        if direct_only is None:
+            # CLI args take precedence over config file values
+            # For store_true actions, if True it was explicitly set; otherwise use config/default
+            direct_only = getattr(args, "DIRECT_ONLY", False)
+            if not direct_only:
+                # Not explicitly enabled via CLI, use config file value or default
+                direct_only = getattr(Constants, "DIRECT_ONLY", False)
+        if require_lockfile is None:
+            require_lockfile = getattr(args, "REQUIRE_LOCKFILE", False)
+            if not require_lockfile:
+                # Not explicitly enabled via CLI, use config file value or default
+                require_lockfile = getattr(Constants, "REQUIRE_LOCKFILE", False)
         return scan_source(
             args.package_type,
             args.FROM_SRC[0],
