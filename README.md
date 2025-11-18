@@ -16,18 +16,30 @@ DepGate is a fork of Apiiro's "Dependency Combobulator", maintained going forwar
 
 ## Quick Start
 
+**Option 1: Run without installation** (using uvx):
+
 ```bash
 # Single package (npm)
-depgate scan -t npm -p left-pad
+uvx depgate scan -t npm -p left-pad
 
 # Scan a project directory (Maven)
-depgate scan -t maven -d ./my-project
+uvx depgate scan -t maven -d ./my-project
 
 # Heuristics analysis with JSON output
-depgate scan -t pypi -a heur -o results.json
+uvx depgate scan -t pypi -a heur -o results.json
+```
 
-# Linked verification (supply chain security)
-depgate scan -t npm -p left-pad -a linked -o out.json
+**Option 2: Install first** (using pipx or pip):
+
+```bash
+# Install
+pipx install depgate
+# or: pip install depgate
+
+# Then use depgate directly
+depgate scan -t npm -p left-pad
+depgate scan -t maven -d ./my-project
+depgate scan -t pypi -a heur -o results.json
 ```
 
 ## Installation
@@ -50,12 +62,17 @@ uv sync
 **From PyPI:**
 
 ```bash
+# Install globally
 pip install depgate
-# or
+
+# Install in isolated environment
 pipx install depgate
-# or
+
+# Run without installation (requires uv)
 uvx depgate --help
 ```
+
+**Note**: After installation via `pip` or `pipx`, you can use `depgate` directly. Without installation, use `uvx depgate`.
 
 ## Basic Usage
 
