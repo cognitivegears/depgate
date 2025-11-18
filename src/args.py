@@ -346,6 +346,20 @@ def add_scan_arguments(parser: argparse.ArgumentParser) -> None:
         type=int,
     )
 
+    # Dependency scanning options
+    parser.add_argument(
+        "--direct-only",
+        dest="DIRECT_ONLY",
+        help="Only scan direct dependencies from manifests, even when lockfiles exist. Lockfiles are still used for version resolution. (default: False)",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--require-lockfile",
+        dest="REQUIRE_LOCKFILE",
+        help="Require a lockfile for package managers that support it (npm, pypi, nuget). (default: False)",
+        action="store_true",
+    )
+
 
 def build_root_parser() -> Tuple[argparse.ArgumentParser, argparse._SubParsersAction]:
     """Build the root parser and subparsers (actions)."""

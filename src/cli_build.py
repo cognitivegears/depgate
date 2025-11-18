@@ -87,7 +87,23 @@ def build_pkglist(args):
 
     # From source directory
     if args.FROM_SRC:
-        return scan_source(args.package_type, args.FROM_SRC[0], recursive=args.RECURSIVE)
+        # CLI args take precedence over config file values
+        # For store_true actions, if True it was explicitly set; otherwise use config/default
+        direct_only = getattr(args, "DIRECT_ONLY", False)
+        if not direct_only:
+            # Not explicitly enabled via CLI, use config file value or default
+            direct_only = getattr(Constants, "DIRECT_ONLY", False)
+        require_lockfile = getattr(args, "REQUIRE_LOCKFILE", False)
+        if not require_lockfile:
+            # Not explicitly enabled via CLI, use config file value or default
+            require_lockfile = getattr(Constants, "REQUIRE_LOCKFILE", False)
+        return scan_source(
+            args.package_type,
+            args.FROM_SRC[0],
+            recursive=args.RECURSIVE,
+            direct_only=direct_only,
+            require_lockfile=require_lockfile,
+        )
 
     # Single package CLI
     if args.SINGLE:

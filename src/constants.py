@@ -96,6 +96,10 @@ class Constants:  # pylint: disable=too-few-public-methods
     HTTP_RETRY_BASE_DELAY_SEC = 0.3
     HTTP_CACHE_TTL_SEC = 300
 
+    # Dependency scanning defaults
+    DIRECT_ONLY: bool = False
+    REQUIRE_LOCKFILE: bool = False
+
     # deps.dev integration defaults
     DEPSDEV_ENABLED: bool = True
     DEPSDEV_BASE_URL = "https://api.deps.dev/v3"
@@ -500,6 +504,21 @@ def _apply_config_overrides(cfg: Dict[str, Any]) -> None:  # pylint: disable=too
     try:
         Constants.OSM_RATE_LIMIT_RETRY_DELAY_SEC = float(  # type: ignore[attr-defined]
             osm.get("rate_limit_retry_delay_sec", Constants.OSM_RATE_LIMIT_RETRY_DELAY_SEC)
+        )
+    except Exception:  # pylint: disable=broad-exception-caught
+        pass
+
+    # Dependency scanning options
+    scan_opts = cfg.get("scan", {}) or {}
+    try:
+        Constants.DIRECT_ONLY = bool(  # type: ignore[attr-defined]
+            scan_opts.get("direct_only", False)
+        )
+    except Exception:  # pylint: disable=broad-exception-caught
+        pass
+    try:
+        Constants.REQUIRE_LOCKFILE = bool(  # type: ignore[attr-defined]
+            scan_opts.get("require_lockfile", False)
         )
     except Exception:  # pylint: disable=broad-exception-caught
         pass

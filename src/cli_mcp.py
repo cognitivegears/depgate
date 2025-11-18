@@ -467,6 +467,8 @@ def _build_cli_args_for_project_scan(
     project_dir: str,
     ecosystem_hint: Optional[str],
     analysis_level: Optional[str],
+    direct_only: Optional[bool] = None,
+    require_lockfile: Optional[bool] = None,
 ) -> Any:
     args = argparse.Namespace()
     # Map into existing CLI surfaces used by build_pkglist/create_metapackages
@@ -529,6 +531,9 @@ def _build_cli_args_for_project_scan(
     args.DEPSDEV_MAX_CONCURRENCY = Constants.DEPSDEV_MAX_CONCURRENCY
     args.DEPSDEV_MAX_RESPONSE_BYTES = Constants.DEPSDEV_MAX_RESPONSE_BYTES
     args.DEPSDEV_STRICT_OVERRIDE = Constants.DEPSDEV_STRICT_OVERRIDE
+    # Set direct_only and require_lockfile from MCP parameters or defaults
+    args.DIRECT_ONLY = direct_only if direct_only is not None else getattr(Constants, "DIRECT_ONLY", False)
+    args.REQUIRE_LOCKFILE = require_lockfile if require_lockfile is not None else getattr(Constants, "REQUIRE_LOCKFILE", False)
     return args
 
 
@@ -793,6 +798,7 @@ def run_mcp_server(args) -> None:
         includeDevDependencies: Optional[bool] = None,
         includeTransitive: Optional[bool] = None,
         respectLockfiles: Optional[bool] = None,
+        requireLockfile: Optional[bool] = None,
         offline: Optional[bool] = None,
         strictProvenance: Optional[bool] = None,
         paths: Optional[List[str]] = None,
@@ -804,6 +810,11 @@ def run_mcp_server(args) -> None:
         # Map camelCase to internal names
         project_dir = projectDir
         analysis_level = analysisLevel
+        # Map includeTransitive to direct_only (inverted logic)
+        # includeTransitive=False means direct_only=True
+        direct_only = None
+        if includeTransitive is not None:
+            direct_only = not includeTransitive
         _validate(
             "project",
             {
@@ -811,6 +822,7 @@ def run_mcp_server(args) -> None:
                 "includeDevDependencies": includeDevDependencies,
                 "includeTransitive": includeTransitive,
                 "respectLockfiles": respectLockfiles,
+                "requireLockfile": requireLockfile,
                 "offline": offline,
                 "strictProvenance": strictProvenance,
                 "paths": paths,
@@ -822,7 +834,9 @@ def run_mcp_server(args) -> None:
             _sandbox_project_dir(args.MCP_PROJECT_DIR, project_dir)
         _require_online(args, offline)
         _reset_state()
-        scan_args = _build_cli_args_for_project_scan(project_dir, ecosystem, analysis_level)
+        scan_args = _build_cli_args_for_project_scan(
+            project_dir, ecosystem, analysis_level, direct_only=direct_only, require_lockfile=requireLockfile
+        )
         result = _run_scan_pipeline(scan_args)
         try:
             _validate_output_strict(result)

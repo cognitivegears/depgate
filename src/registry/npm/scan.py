@@ -141,7 +141,7 @@ def _parse_package_json(package_json_path: str) -> List[str]:
         return []
 
 
-def scan_source(dir_name: str, recursive: bool = False) -> List[str]:
+def scan_source(dir_name: str, recursive: bool = False, direct_only: bool = False, require_lockfile: bool = False) -> List[str]:
     """Scan the source code for dependencies.
 
     Discovers package.json and lockfiles (package-lock.json, yarn.lock, bun.lock).
@@ -157,6 +157,8 @@ def scan_source(dir_name: str, recursive: bool = False) -> List[str]:
     Args:
         dir_name: Directory to scan.
         recursive: Whether to scan recursively.
+        direct_only: If True, only extract direct dependencies from package.json, even if lockfile exists.
+        require_lockfile: If True, require a lockfile to be present (raises error if missing).
 
     Returns:
         List of dependencies found in the source code (all dependencies from lockfile,
@@ -185,11 +187,25 @@ def scan_source(dir_name: str, recursive: bool = False) -> List[str]:
                     # Select lockfile based on precedence
                     lockfile_path, rationale = _select_lockfile(lockfiles)
 
+                    # Require lockfile validation
+                    if require_lockfile and not lockfile_path:
+                        expected_lockfiles = f"{Constants.PACKAGE_LOCK_FILE}, {Constants.YARN_LOCK_FILE}, or {Constants.BUN_LOCK_FILE}"
+                        logger.error(
+                            "Lockfile required but not found in '%s'. Expected one of: %s",
+                            root,
+                            expected_lockfiles,
+                        )
+                        sys.exit(ExitCodes.FILE_ERROR.value)
+
                     # Log selection
                     log_selection(logger, "npm", package_json_path, lockfile_path, rationale)
 
                     # Parse dependencies
-                    if lockfile_path:
+                    if direct_only:
+                        # Direct-only mode: use package.json even if lockfile exists
+                        deps = _parse_package_json(package_json_path)
+                        all_deps.extend(deps)
+                    elif lockfile_path:
                         deps = _parse_lockfile(lockfile_path)
                         if deps:
                             all_deps.extend(deps)
@@ -221,11 +237,25 @@ def scan_source(dir_name: str, recursive: bool = False) -> List[str]:
             # Select lockfile based on precedence
             lockfile_path, rationale = _select_lockfile(lockfiles)
 
+            # Require lockfile validation
+            if require_lockfile and not lockfile_path:
+                expected_lockfiles = f"{Constants.PACKAGE_LOCK_FILE}, {Constants.YARN_LOCK_FILE}, or {Constants.BUN_LOCK_FILE}"
+                logger.error(
+                    "Lockfile required but not found in '%s'. Expected one of: %s",
+                    dir_name,
+                    expected_lockfiles,
+                )
+                sys.exit(ExitCodes.FILE_ERROR.value)
+
             # Log selection
             log_selection(logger, "npm", package_json_path, lockfile_path, rationale)
 
             # Parse dependencies
-            if lockfile_path:
+            if direct_only:
+                # Direct-only mode: use package.json even if lockfile exists
+                deps = _parse_package_json(package_json_path)
+                all_deps.extend(deps)
+            elif lockfile_path:
                 deps = _parse_lockfile(lockfile_path)
                 if deps:
                     all_deps.extend(deps)

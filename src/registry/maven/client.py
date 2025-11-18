@@ -127,17 +127,21 @@ def recv_pkg_info(pkgs, url: str = Constants.REGISTRY_URL_MAVEN) -> None:
                 pass
 
 
-def scan_source(dir_name: str, recursive: bool = False) -> List[str]:  # pylint: disable=too-many-locals
+def scan_source(dir_name: str, recursive: bool = False, direct_only: bool = False, require_lockfile: bool = False) -> List[str]:  # pylint: disable=too-many-locals
     """Scan the source directory for pom.xml files.
 
     Args:
         dir_name (str): Directory to scan.
         recursive (bool, optional): Whether to scan recursively. Defaults to False.
+        direct_only (bool, optional): If True, only extract direct dependencies (default behavior for Maven, no-op).
+        require_lockfile (bool, optional): If True, require a lockfile (Maven has no standard lockfile, logs warning if set).
 
     Returns:
         List of discovered Maven coordinates in "group:artifact" form.
     """
     try:
+        if require_lockfile:
+            logging.warning("Maven does not have a standard lockfile format. The --require-lockfile option is ignored for Maven projects.")
         logging.info("Maven scanner engaged.")
         pom_files: List[str] = []
         if recursive:

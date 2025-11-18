@@ -79,6 +79,11 @@ opensourcemalware:
   max_retries: 5
   rate_limit_retry_delay_sec: 1.0
 
+# Dependency scanning options
+scan:
+  direct_only: false        # Only scan direct dependencies from manifests, even when lockfiles exist
+  require_lockfile: false  # Require a lockfile for package managers that support it (npm, pypi, nuget)
+
 # HTTP rate limit and retry policy
 http:
   rate_policy:
@@ -186,6 +191,24 @@ opensourcemalware:
 
 **Security Note**: Never commit API tokens in YAML files. Use environment variables or CLI arguments instead.
 
+### Dependency Scanning Options
+
+```yaml
+scan:
+  direct_only: false        # Only scan direct dependencies from manifests, even when lockfiles exist
+  require_lockfile: false  # Require a lockfile for package managers that support it (npm, pypi, nuget)
+```
+
+- **`direct_only`**: When `true`, only scans direct dependencies from manifest files (package.json, pyproject.toml, requirements.txt, pom.xml, .csproj). Lockfiles are still discovered and can be used for version resolution, but transitive dependencies are not extracted. Default: `false` (scans all dependencies from lockfiles when available).
+
+- **`require_lockfile`**: When `true`, requires a lockfile to be present for package managers that support it:
+  - **npm**: Requires `package-lock.json`, `yarn.lock`, or `bun.lock`
+  - **pypi**: Requires `uv.lock` or `poetry.lock` (only for pyproject.toml, not requirements.txt)
+  - **nuget**: Requires `packages.lock.json`
+  - **maven**: Ignored (Maven has no standard lockfile format)
+
+  Default: `false` (lockfile is optional).
+
 ## Environment Variables
 
 ### deps.dev
@@ -246,6 +269,16 @@ depgate scan -t npm -p left-pad --osm-base-url https://custom.url
 ```bash
 depgate scan -t npm -p left-pad --depsdev-disable
 depgate scan -t npm -p left-pad --depsdev-base-url https://custom.url
+```
+
+### Dependency Scanning Options
+
+```bash
+# Only scan direct dependencies (ignore transitive dependencies from lockfiles)
+depgate scan -t npm -d ./project --direct-only
+
+# Require a lockfile for package managers that support it
+depgate scan -t npm -d ./project --require-lockfile
 ```
 
 ## Using Configuration

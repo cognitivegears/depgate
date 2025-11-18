@@ -28,6 +28,7 @@ def _parse_dependencies_for_directory(
     manifest_path: str,
     lockfile_path: Optional[str],
     logger: logging.Logger,
+    direct_only: bool = False,
 ) -> List[str]:
     """Parse dependencies from lockfile or manifest for a single directory.
 
@@ -35,10 +36,20 @@ def _parse_dependencies_for_directory(
         manifest_path: Path to manifest file (pyproject.toml or requirements.txt)
         lockfile_path: Path to lockfile (uv.lock or poetry.lock), or None
         logger: Logger instance for debug messages
+        direct_only: If True, only extract direct dependencies from manifest, even if lockfile exists
 
     Returns:
         List of dependency names (all from lockfile, or direct from manifest)
     """
+    if direct_only:
+        # Direct-only mode: use manifest even if lockfile exists
+        direct_deps: Dict[str, DependencyRecord] = {}
+        if manifest_path.endswith(Constants.PYPROJECT_TOML_FILE):
+            direct_deps = parse_pyproject_for_direct_pypi(manifest_path)
+        elif manifest_path.endswith(Constants.REQUIREMENTS_FILE):
+            direct_deps = parse_requirements_txt(manifest_path)
+        return list(direct_deps.keys())
+
     if lockfile_path:
         # Parse lockfile to get all dependencies (direct + transitive)
         if lockfile_path.endswith(Constants.UV_LOCK_FILE):
@@ -64,7 +75,7 @@ def _parse_dependencies_for_directory(
     return list(direct_deps.keys())
 
 
-def scan_source(dir_name: str, recursive: bool = False) -> List[str]:
+def scan_source(dir_name: str, recursive: bool = False, direct_only: bool = False, require_lockfile: bool = False) -> List[str]:
     """Scan a directory for PyPI manifests and lockfiles, apply precedence rules,
     and return the set of all dependency names (direct + transitive from lockfiles).
 
@@ -81,6 +92,12 @@ def scan_source(dir_name: str, recursive: bool = False) -> List[str]:
         pyproject.toml is missing.
       * When lockfile is present: extracts all dependencies (direct + transitive) from lockfile.
       * When no lockfile: extracts direct dependencies only from manifest.
+
+    Args:
+        dir_name: Directory to scan
+        recursive: Whether to scan recursively
+        direct_only: If True, only extract direct dependencies from manifests, even if lockfile exists
+        require_lockfile: If True, require a lockfile to be present (raises error if missing)
 
     Missing manifests result in a WARN and graceful exit (no exception).
 
@@ -154,11 +171,21 @@ def scan_source(dir_name: str, recursive: bool = False) -> List[str]:
                             warn_multiple_lockfiles(logger, "pypi", uv_lock_path, [poetry_lock_path])
                 # For requirements.txt, no lockfile support
 
+                # Require lockfile validation (only for pyproject.toml, not requirements.txt)
+                if require_lockfile and manifest_path.endswith(Constants.PYPROJECT_TOML_FILE) and not lockfile_path:
+                    expected_lockfiles = f"{Constants.UV_LOCK_FILE} or {Constants.POETRY_LOCK_FILE}"
+                    logger.error(
+                        "Lockfile required but not found in '%s'. Expected one of: %s",
+                        root,
+                        expected_lockfiles,
+                    )
+                    sys.exit(ExitCodes.FILE_ERROR.value)
+
                 # Log selection
                 log_selection(logger, "pypi", manifest_path, lockfile_path, lockfile_rationale or "no lockfile")
 
                 # Parse dependencies for this directory
-                deps = _parse_dependencies_for_directory(manifest_path, lockfile_path, logger)
+                deps = _parse_dependencies_for_directory(manifest_path, lockfile_path, logger, direct_only=direct_only)
                 all_deps.extend(deps)
         else:
             # Non-recursive scan: single directory
@@ -227,12 +254,22 @@ def scan_source(dir_name: str, recursive: bool = False) -> List[str]:
                 warn_missing_expected(logger, "pypi", [Constants.PYPROJECT_TOML_FILE, Constants.REQUIREMENTS_FILE])
                 sys.exit(ExitCodes.FILE_ERROR.value)
 
+            # Require lockfile validation (only for pyproject.toml, not requirements.txt)
+            if require_lockfile and manifest_path and manifest_path.endswith(Constants.PYPROJECT_TOML_FILE) and not lockfile_path:
+                expected_lockfiles = f"{Constants.UV_LOCK_FILE} or {Constants.POETRY_LOCK_FILE}"
+                logger.error(
+                    "Lockfile required but not found in '%s'. Expected one of: %s",
+                    dir_name,
+                    expected_lockfiles,
+                )
+                sys.exit(ExitCodes.FILE_ERROR.value)
+
             # Log selection
             log_selection(logger, "pypi", manifest_path, lockfile_path, lockfile_rationale or "no lockfile")
 
             # Parse dependencies: prefer lockfile (all dependencies) over manifest (direct only)
             if manifest_path:
-                deps = _parse_dependencies_for_directory(manifest_path, lockfile_path, logger)
+                deps = _parse_dependencies_for_directory(manifest_path, lockfile_path, logger, direct_only=direct_only)
                 all_deps.extend(deps)
 
         return sorted(list(set(all_deps)))
