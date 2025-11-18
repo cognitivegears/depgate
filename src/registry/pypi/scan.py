@@ -105,7 +105,6 @@ def scan_source(dir_name: str, recursive: bool = False, direct_only: bool = Fals
         List of unique dependency names (all dependencies from lockfile, or direct from manifest).
     """
     logger = logging.getLogger(__name__)
-    discovered = {"manifest": [], "lockfile": []}
 
     try:
         logger.info("PyPI scanner engaged.")
