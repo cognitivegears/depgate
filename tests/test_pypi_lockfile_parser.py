@@ -1,9 +1,5 @@
 """Tests for PyPI lockfile parsers (uv.lock, poetry.lock)."""
 
-from pathlib import Path
-
-import pytest
-
 from registry.pypi.lockfile_parser import parse_uv_lock, parse_poetry_lock
 
 

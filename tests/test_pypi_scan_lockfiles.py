@@ -1,9 +1,5 @@
 """Tests for PyPI scanner with lockfile support."""
 
-from pathlib import Path
-
-import pytest
-
 from registry.pypi.scan import scan_source
 
 

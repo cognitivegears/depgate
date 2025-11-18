@@ -4,7 +4,6 @@ from __future__ import annotations
 import os
 import tempfile
 import json
-import pytest
 
 from registry.npm.scan import scan_source as npm_scan_source
 from registry.pypi.scan import scan_source as pypi_scan_source

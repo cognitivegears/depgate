@@ -6,7 +6,7 @@ import tempfile
 import json
 import pytest
 
-from cli_mcp import _build_cli_args_for_project_scan, _run_scan_pipeline
+from cli_mcp import _build_cli_args_for_project_scan
 from cli_build import build_pkglist
 
 

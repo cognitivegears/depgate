@@ -4,7 +4,6 @@ from __future__ import annotations
 import os
 import tempfile
 import pytest
-import sys
 
 from constants import ExitCodes
 from registry.maven.client import scan_source as maven_scan_source
