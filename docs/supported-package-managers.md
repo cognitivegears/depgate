@@ -6,7 +6,7 @@ DepGate supports dependency analysis across multiple package managers and ecosys
 
 | Package Manager | Language | Manifest Files | Lock Files | Package Format | Registry URL |
 |----------------|----------|---------------|------------|----------------|--------------|
-| **npm** | JavaScript/TypeScript | `package.json` | `package-lock.json`, `yarn.lock` (detected but not parsed) | Package name (e.g., `left-pad`) | `https://registry.npmjs.org/` |
+| **npm** | JavaScript/TypeScript | `package.json` | `package-lock.json`, `yarn.lock`, `bun.lock` | Package name (e.g., `left-pad`) | `https://registry.npmjs.org/` |
 | **PyPI** | Python | `requirements.txt`, `pyproject.toml` | `uv.lock`, `poetry.lock` | Project name (e.g., `requests`) | `https://pypi.org/pypi/` |
 | **Maven** | Java/Kotlin/Scala | `pom.xml` | N/A | `groupId:artifactId` (e.g., `org.apache.commons:commons-lang3`) | `https://search.maven.org/solrsearch/select` |
 | **NuGet** | .NET/C# | `.csproj`, `packages.config`, `project.json`, `Directory.Build.props` | N/A | Package ID (e.g., `Newtonsoft.Json`) | `https://api.nuget.org/v3/index.json` (V3), `https://www.nuget.org/api/v2/` (V2) |
@@ -16,9 +16,19 @@ DepGate supports dependency analysis across multiple package managers and ecosys
 ### npm
 
 - **Manifest**: `package.json` is required
-- **Lock Files**: `package-lock.json` and `yarn.lock` are detected but not currently parsed for dependency extraction
-- **Dependencies**: Extracted from `dependencies` and `devDependencies` fields
-- **Recursive Scanning**: When `-r/--recursive` is used, scans subdirectories for multiple `package.json` files
+- **Lock File Precedence**:
+  1. `package-lock.json` (preferred)
+  2. `yarn.lock` (if package-lock.json not found)
+  3. `bun.lock` (if neither package-lock.json nor yarn.lock found)
+  4. `package.json` (fallback if no lockfile or parsing fails)
+- **Dependencies**:
+  - When lockfile is present: Extracted from lockfile (includes all dependencies: direct + transitive)
+  - When no lockfile: Extracted from `dependencies` and `devDependencies` fields in `package.json` (direct only)
+- **Lockfile Support**:
+  - `package-lock.json`: Supports lockfileVersion 1, 2, and 3
+  - `yarn.lock`: Supports Yarn v1 format (uses yarnlock library)
+  - `bun.lock`: Supports JSONC format (text-based, not binary bun.lockb)
+- **Recursive Scanning**: When `-r/--recursive` is used, scans subdirectories for multiple `package.json` files and their associated lockfiles
 
 ### PyPI
 

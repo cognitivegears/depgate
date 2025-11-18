@@ -49,6 +49,7 @@ src/registry/npm/__init__.py
 src/registry/npm/client.py
 src/registry/npm/discovery.py
 src/registry/npm/enrich.py
+src/registry/npm/lockfile_parser.py
 src/registry/npm/scan.py
 src/registry/nuget/__init__.py
 src/registry/nuget/client.py
@@ -112,7 +113,9 @@ tests/test_mcp_server_basic.py
 tests/test_mcp_stdio_integration.py
 tests/test_mcp_version_mismatch.py
 tests/test_npm_exists_preservation.py
+tests/test_npm_lockfile_parser.py
 tests/test_npm_repo_discovery.py
+tests/test_npm_scan_lockfiles.py
 tests/test_nuget_client.py
 tests/test_nuget_discovery.py
 tests/test_nuget_enrich.py

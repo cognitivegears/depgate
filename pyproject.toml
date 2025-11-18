@@ -27,6 +27,7 @@ dependencies = [
    "PyYAML>=6.0",
   "mcp[cli]>=1.18.0",
   "jsonschema>=4.19.0",
+  "yarnlock==1.2.0",
 ]
 
 [project.urls]
@@ -48,4 +49,5 @@ dev = [
   "pytest>=7.0",
   "pylint>=3.0",
   "behave>=1.2.6",
+  "pytest-cov>=7.0.0",
 ]
