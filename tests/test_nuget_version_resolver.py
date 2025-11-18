@@ -199,3 +199,4 @@ class TestNuGetVersionResolver:
         assert version is None
         assert count == 0
         assert "no versions" in error.lower()
+

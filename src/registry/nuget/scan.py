@@ -208,3 +208,4 @@ def scan_source(dir_name: str, recursive: bool = False) -> List[str]:
     except (FileNotFoundError, IOError, json.JSONDecodeError, ET.ParseError) as e:
         logging.error("Couldn't import from given path, error: %s", e)
         sys.exit(ExitCodes.FILE_ERROR.value)
+

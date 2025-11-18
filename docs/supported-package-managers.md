@@ -32,14 +32,18 @@ DepGate supports dependency analysis across multiple package managers and ecosys
 
 ### PyPI
 
-- **Manifest Precedence**:
-  1. `pyproject.toml` (authoritative if present)
-  2. `requirements.txt` (fallback if `pyproject.toml` is missing)
+- **Manifest**: `pyproject.toml` (preferred) or `requirements.txt` (fallback)
 - **Lock File Precedence**:
-  1. If `pyproject.toml` contains `[tool.uv]` → prefer `uv.lock`
-  2. Else if `pyproject.toml` contains `[tool.poetry]` → prefer `poetry.lock`
-  3. If both lockfiles exist without tool section → prefer `uv.lock` (warning emitted)
-- **Dependencies**: Extracted from `[project.dependencies]` in `pyproject.toml` or from `requirements.txt` lines
+  1. `uv.lock` (preferred if `[tool.uv]` section in pyproject.toml, or if both exist without tool section)
+  2. `poetry.lock` (if `[tool.poetry]` section in pyproject.toml, or if uv.lock not found)
+  3. Manifest (fallback if no lockfile or parsing fails)
+- **Dependencies**:
+  - When lockfile is present: Extracted from lockfile (includes all dependencies: direct + transitive)
+  - When no lockfile: Extracted from `pyproject.toml` or `requirements.txt` (direct only)
+- **Lockfile Support**:
+  - `uv.lock`: TOML format with `[[package]]` sections
+  - `poetry.lock`: TOML format with `[[package]]` sections
+- **Recursive Scanning**: When `-r/--recursive` is used, scans subdirectories for multiple manifest files and their associated lockfiles
 
 ### Maven
 

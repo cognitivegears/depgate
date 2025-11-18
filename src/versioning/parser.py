@@ -158,14 +158,21 @@ def _split_spec(req: str) -> Tuple[str, Optional[str]]:
     s = s.split(";", 1)[0].strip()
 
     # Separate extras (PEP 508) from the base name section
-    if "[" in s:
+    has_extras = "[" in s
+    if has_extras:
         name_base = s.split("[", 1)[0].strip()
+        # When extras are present, search for comparators after the name_base
+        # (e.g., "package[extra]>=1.0" - comparator comes after the closing bracket)
+        start = len(name_base)
     else:
         name_base = s
+        # When no extras, search from the beginning. Package names per PEP 508 don't
+        # contain version comparators (>=, ==, etc.), so we can safely search from position 0
+        # to find where the name ends and the specifier begins (e.g., "requests>=2.28.0")
+        start = 0
 
     # Find first comparator occurrence after the base name segment
     comparators = ["===", ">=", "<=", "==", "~=", "!=", ">", "<", " "]
-    start = len(name_base)
     first_idx: Optional[int] = None
     for op in comparators:
         idx = s.find(op, start)
@@ -174,7 +181,11 @@ def _split_spec(req: str) -> Tuple[str, Optional[str]]:
     spec: Optional[str] = None
     if first_idx is not None and first_idx >= start and first_idx < len(s):
         spec = s[first_idx:].strip()
-        name_text = s[:first_idx].strip()
+        # When extras are present, use name_base (without extras); otherwise use the text before the comparator
+        if has_extras:
+            name_text = name_base.strip()
+        else:
+            name_text = s[:first_idx].strip()
     else:
         name_text = name_base.strip()
 

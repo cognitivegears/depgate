@@ -91,3 +91,4 @@ def _extract_license_from_metadata(metadata: Dict[str, Any]) -> Tuple[Optional[s
                 license_source = "nuget_licenseUrl"
 
     return license_id, license_source, license_url
+

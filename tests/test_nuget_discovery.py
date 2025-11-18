@@ -105,3 +105,4 @@ class TestExtractLicenseFromMetadata:
 
         assert license_id == "MIT"
         assert license_source == "nuget_license"
+
