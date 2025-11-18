@@ -222,3 +222,4 @@ def _enrich_with_repo(pkg, metadata: Dict[str, Any]) -> None:
             outcome="success", count=len(candidates), duration_ms=t.duration_ms(),
             package_manager="nuget"
         ))
+

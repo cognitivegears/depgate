@@ -192,8 +192,24 @@ opensourcemalware:
   # Initial retry delay in seconds for rate limit handling (default: 1.0)
   rate_limit_retry_delay_sec: 1.0
 
+# Dependency scanning options
+scan:
+  # Only scan direct dependencies from manifests, even when lockfiles exist.
+  # Lockfiles are still used for version resolution, but transitive dependencies are not extracted.
+  direct_only: false
+  # Require a lockfile for package managers that support it (npm, pypi, nuget).
+  # For npm: requires package-lock.json, yarn.lock, or bun.lock
+  # For pypi: requires uv.lock or poetry.lock (only for pyproject.toml, not requirements.txt)
+  # For nuget: requires packages.lock.json
+  # For maven: ignored (Maven has no standard lockfile format)
+  require_lockfile: false
+
 # CLI examples:
 #   Run policy analysis using internal defaults (no YAML loading for policy yet):
 #     depgate scan -t npm -p left-pad -a policy
 #   Load this file for other sections (http/registry/provider/heuristics):
 #     depgate scan -t npm -p left-pad -a policy --config ./depgate.example.yml
+#   Scan only direct dependencies:
+#     depgate scan -t npm -d ./project --direct-only
+#   Require lockfile:
+#     depgate scan -t npm -d ./project --require-lockfile

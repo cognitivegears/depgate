@@ -151,12 +151,14 @@ def _scan_directory_build_props(dir_name: str, recursive: bool) -> List[str]:
     return packages
 
 
-def scan_source(dir_name: str, recursive: bool = False) -> List[str]:
+def scan_source(dir_name: str, recursive: bool = False, direct_only: bool = False, require_lockfile: bool = False) -> List[str]:
     """Scan the source code for NuGet dependencies.
 
     Args:
         dir_name: Directory to scan.
         recursive: Whether to scan recursively.
+        direct_only: If True, only extract direct dependencies (default behavior for NuGet, no-op).
+        require_lockfile: If True, require a packages.lock.json file to be present (raises error if missing).
 
     Returns:
         List of package identifiers found in the source code.
@@ -164,6 +166,34 @@ def scan_source(dir_name: str, recursive: bool = False) -> List[str]:
     try:
         logging.info("NuGet scanner engaged.")
         all_packages: List[str] = []
+
+        # Check for lockfile if required
+        if require_lockfile:
+            lockfile_name = "packages.lock.json"
+            if recursive:
+                # For recursive scans, check if any lockfile exists
+                lockfile_found = False
+                for root, _, files in os.walk(dir_name):
+                    if lockfile_name in files:
+                        lockfile_found = True
+                        break
+                if not lockfile_found:
+                    logger.error(
+                        "Lockfile required but not found in '%s' or subdirectories. Expected: %s",
+                        dir_name,
+                        lockfile_name,
+                    )
+                    sys.exit(ExitCodes.FILE_ERROR.value)
+            else:
+                # For non-recursive scans, check in the directory
+                lockfile_path = os.path.join(dir_name, lockfile_name)
+                if not os.path.isfile(lockfile_path):
+                    logger.error(
+                        "Lockfile required but not found in '%s'. Expected: %s",
+                        dir_name,
+                        lockfile_name,
+                    )
+                    sys.exit(ExitCodes.FILE_ERROR.value)
 
         if recursive:
             if is_debug_enabled(logger):

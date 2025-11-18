@@ -1,408 +1,272 @@
 # DepGate — Dependency Supply‑Chain Risk & Confusion Checker
 
-DepGate is a modular CLI that detects dependency confusion and related supply‑chain risks across npm, Maven, and PyPI projects. It analyzes dependencies from manifests, checks public registries, and flags potential risks with a simple, scriptable interface.
+DepGate is a modular CLI that detects dependency confusion and related supply‑chain risks across npm, Maven, PyPI, and NuGet projects. It analyzes dependencies from manifests, checks public registries, and flags potential risks with a simple, scriptable interface.
 
-DepGate is a fork of Apiiro’s “Dependency Combobulator”, maintained going forward by cognitivegears. See Credits & Attribution below.
+DepGate is a fork of Apiiro's "Dependency Combobulator", maintained going forward by cognitivegears. See [Credits & Attribution](#credits--attribution) below.
 
 ## Features
 
-- Pluggable analysis: compare, heuristics, policy, and linked levels (`compare/comp`, `heuristics/heur`, `policy/pol`, `linked`).
-- Multiple ecosystems: npm (`package.json`), Maven (`pom.xml`), PyPI (`requirements.txt`), NuGet (`.csproj`, `packages.config`, `project.json`, `Directory.Build.props`).
-- Cross‑ecosystem version resolution with strict prerelease policies (npm/PyPI exclude prereleases by default; Maven latest excludes SNAPSHOT).
-- Repository discovery and version validation (GitHub/GitLab): provenance, metrics (stars, last activity, contributors), and version match strategies (exact, pattern, exact‑bare, v‑prefix, suffix‑normalized).
-- **OpenSourceMalware integration**: Optional malicious package detection via OpenSourceMalware.com API. Automatically flags malicious packages in heuristics (score = 0.0), available in policy rules, and included in MCP output. Requires API token (see Configuration).
-- Flexible inputs: single package, manifest scan, or list from file.
-- Structured outputs: human‑readable logs plus CSV/JSON exports for CI.
-- Designed for automation: predictable exit codes and quiet/log options.
-
-## MCP server (experimental, additive)
-
-DepGate includes an MCP server mode that exposes existing analysis via three tools using the official MCP Python SDK.
-
-Quickstart:
-
-1. Start the server over stdio (default):
-
-```bash
-depgate mcp
-```
-
-2. Or start a local TCP endpoint for testing (non-standard transport used by this repo for convenience):
-
-```bash
-depgate mcp --host 127.0.0.1 --port 8765
-```
-
-Tools exposed:
-
-- Lookup_Latest_Version: Resolve latest stable version for npm/pypi/maven/nuget per DepGate rules.
-- Scan_Project: Equivalent to `depgate scan` on a project directory.
-- Scan_Dependency: Analyze a single coordinate without changing your project.
-
-Common client examples:
-
-- Claude Desktop / IDEs with MCP: Add a server entry pointing to the `depgate mcp` executable (stdio). The client handles the stdio handshake automatically.
-- Node/JS agents (stdio): Spawn `depgate mcp` with stdio pipes and speak JSON‑RPC 2.0. List tools via `tools/list`, then call with `tools/call`.
-- Python agents: Use the official MCP client libs; connect over stdio to `depgate mcp`.
-
-Try it quickly (stdio, JSON-RPC):
-
-- List tools
-
-```bash
-printf '%s\n' \
-'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","clientInfo":{"name":"cli","version":"0"},"capabilities":{}}}' \
-'{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
-| depgate mcp
-```
-
-- Call Lookup_Latest_Version and Scan_Dependency
-
-```bash
-# npm (left-pad)
-printf '%s\n' \
-'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","clientInfo":{"name":"cli","version":"0"},"capabilities":{}}}' \
-'{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"Lookup_Latest_Version","arguments":{"name":"left-pad","ecosystem":"npm","versionRange":"^1.0.0"}}}' \
-'{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"Scan_Dependency","arguments":{"name":"left-pad","version":"1.3.0","ecosystem":"npm"}}}' \
-| depgate mcp
-
-# PyPI (requests)
-# Use PEP 440 specifiers (e.g., ">=2,<3"); caret (^) is not valid for PyPI.
-printf '%s\n' \
-'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","clientInfo":{"name":"cli","version":"0"},"capabilities":{}}}' \
-'{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"Lookup_Latest_Version","arguments":{"name":"requests","ecosystem":"pypi","versionRange":">=2,<3"}}}' \
-'{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"Scan_Dependency","arguments":{"name":"requests","version":"2.32.5","ecosystem":"pypi"}}}' \
-| depgate mcp
-
-# Maven (groupId:artifactId coordinates)
-printf '%s\n' \
-'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","clientInfo":{"name":"cli","version":"0"},"capabilities":{}}}' \
-'{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"Lookup_Latest_Version","arguments":{"name":"org.apache.commons:commons-lang3","ecosystem":"maven"}}}' \
-'{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"Scan_Dependency","arguments":{"name":"org.apache.commons:commons-lang3","version":"3.19.0","ecosystem":"maven"}}}' \
-| depgate mcp
-```
-
-Sandboxing and environment:
-
-- The server restricts filesystem access to a sandbox root. By default, it's the current working directory.
-  - If you pass absolute paths (e.g., to Scan_Project), run `depgate mcp --project-dir "/abs/path"` with a root that contains those paths.
-- When developing with this repo installed in editable mode, avoid adding `src/` to PYTHONPATH when launching the server; it may shadow the external `mcp` SDK package. For tests that need mocks, add only `tests/e2e_mocks` to PYTHONPATH.
-
-Flags & env:
-
-- `--project-dir`: sandbox root for file access
-- Networking: `--offline`, `--no-network`, cache TTL/dir
-- Runtime: `--log-level`, `--max-concurrency`, `--request-timeout`
-
-Notes:
-
-- This mode is additive; existing commands and exit codes are unchanged.
-- Tests and local development can use mocks via `FAKE_REGISTRY=1` with `PYTHONPATH=src:tests/e2e_mocks`.
-
-## Requirements
-
-- Python 3.8+
-- Network access for registry lookups when running analysis
-- OpenSourceMalware API token (optional, for malicious package detection)
-
-## Install
-
-Using uv (development):
-
-- `uv venv && source .venv/bin/activate`
-- `uv sync`
-
-From PyPI (after publishing):
-
-- pip: `pip install depgate`
-- pipx: `pipx install depgate`
-- uvx: `uvx depgate --help`
+- **Multiple ecosystems**: npm, PyPI, Maven, NuGet
+- **Pluggable analysis**: compare, heuristics, policy, and linked levels
+- **Repository verification**: Discovers and validates upstream source repositories
+- **OpenSourceMalware integration**: Optional malicious package detection
+- **Flexible inputs**: Single package, manifest scan, or list from file
+- **Structured outputs**: Human-readable logs plus CSV/JSON exports for CI
+- **Designed for automation**: Predictable exit codes and quiet/log options
 
 ## Quick Start
 
-- Single package (npm): `depgate scan -t npm -p left-pad`
-- Scan a repo (Maven): `depgate scan -t maven -d ./tests`
-- Heuristics + JSON: `depgate scan -t pypi -a heur -o out.json`
-- NuGet package: `depgate scan -t nuget -p Newtonsoft.Json -a heur -o out.json`
-- NuGet scan directory: `depgate scan -t nuget -d ./src -a heur`
-- Linked verification: `depgate scan -t npm -p left-pad -a linked -o out.json`
-- With OpenSourceMalware (requires API token): `DEPGATE_OSM_API_TOKEN=your_token depgate scan -t npm -p package-name -a heur`
-
-With uv during development:
-
-- `uv run depgate scan -t npm -d ./tests`
-- `uv run depgate scan -t pypi -a heur -o out.json`
-
-## Inputs and Scanning
-
-- `-p, --package <name>`: single package name
-  - npm: package name (e.g., `left-pad`)
-  - PyPI: project name (e.g., `requests`)
-  - NuGet: package ID (e.g., `Newtonsoft.Json`)
-  - Maven: not used (see below)
-- `-d, --directory <path>`: scan local source
-  - npm: finds `package.json` (and `devDependencies`)
-  - Maven: finds `pom.xml`, emits `groupId:artifactId`
-  - PyPI: finds `requirements.txt`
-  - NuGet: finds `.csproj`, `packages.config`, `project.json`, `Directory.Build.props`
-- `-l, --load_list <file>`: newline‑delimited identifiers
-  - npm/PyPI/NuGet: package names per line
-  - Maven: `groupId:artifactId` per line
-
-## Analysis Levels
-
-- `compare` or `comp`: presence/metadata checks against public registries
-- `heuristics` or `heur`: adds scoring, version count, age signals
-- `policy` or `pol`: declarative rule-based evaluation with allow/deny decisions
-- `linked`: mirrors compare baseline and verifies repository linkage to an upstream source (GitHub/GitLab) and a tag or release matching the package version (including v‑prefix). Exits with code 0 only when all packages pass linkage; otherwise 1.
-
-### Linked analysis (repository linkage verification)
-
-Supply‑chain context: recent attacks, particularly in the npm ecosystem, have involved attackers compromising developer credentials (for example, via phishing) and publishing malicious versions of popular libraries. Linked analysis helps mitigate this risk by verifying that each analyzed package:
-
-- Has a resolvable upstream source repository (GitHub/GitLab)
-- Contains a tag or release that exactly corresponds to the package’s published version (including v‑prefix compatibility)
-
-Behavior and outputs:
-
-- Strict exit semantics: process exits 0 only if all packages are linked; otherwise 1
-- When `-a linked` is used, JSON includes: `repositoryUrl`, `tagMatch`, `releaseMatch`, and `linked`.
-
-Examples:
-
-- npm: `depgate scan -t npm -p left-pad -a linked -o out.json`
-- pypi: `depgate scan -t pypi -p requests -a linked -o out.json`
-- maven: `depgate scan -t maven -p org.apache.commons:commons-lang3 -a linked -o out.json`
-- nuget: `depgate scan -t nuget -p Newtonsoft.Json -a linked -o out.json`
-
-## Repository discovery & version validation
-
-DepGate discovers canonical source repositories from registry metadata, normalizes URLs, fetches metrics, and attempts to match the published version against repository releases/tags.
-
-- Discovery sources:
-  - npm: versions[dist‑tags.latest].repository (string or object), fallbacks to homepage and bugs.url
-  - PyPI: info.project_urls (Repository/Source/Code preferred), fallback Homepage/Documentation; Read the Docs URLs are resolved to backing repos
-  - Maven: POM scm (url/connection/developerConnection) with parent traversal; fallback url when repo‑like
-  - NuGet: nuspec repositoryUrl (primary), fallback to projectUrl; supports both V3 API (primary) and V2 API (fallback)
-- URL normalization: canonical host/owner/repo form (strip .git), host detection (github|gitlab), monorepo directory hints preserved in provenance
-- Metrics: stars, last activity timestamp, approximate contributors
-- Version matching strategies (in order):
-  1) exact (raw label equality)
-  2) pattern (custom patterns, run against raw labels)
-  3) exact‑bare (extracted version token equality; e.g., 'v1.0.0' tag matches '1.0.0' request)
-  4) v‑prefix (vX.Y.Z ↔ X.Y.Z)
-  5) suffix‑normalized (e.g., Maven .RELEASE/.Final/.GA stripped)
-- Tag/release name returned prefers the bare token unless both v‑prefixed and bare forms co‑exist, in which case the raw label is preserved.
-
-Notes:
-
-- Exact‑unsatisfiable guard: when an exact spec cannot be resolved to a concrete version (e.g., CLI requested exact but no resolved_version), matching is disabled (empty version passed to matcher). Metrics still populate and provenance is recorded.
-
-
-### Configuration (optional but recommended)
-
-- export GITHUB_TOKEN and/or GITLAB_TOKEN to raise rate limits for provider API calls.
-
-See detailed design in [docs/repository-integration.md](docs/repository-integration.md:1) and architecture in [docs/provider-architecture.md](docs/provider-architecture.md:1).
-
-## OpenSourceMalware Integration
-
-DepGate includes optional integration with the OpenSourceMalware.com API for malicious package detection. This integration:
-
-- Automatically flags malicious packages in heuristics analysis (score = 0.0)
-- Supports version-specific checks (critical for accurate detection)
-- Integrates with policy rules and MCP output
-- Works across all ecosystems (npm, PyPI, Maven) and analysis types
-
-**Quick start**: Set `DEPGATE_OSM_API_TOKEN` environment variable or use `--osm-api-token` flag. See [docs/opensourcemalware-integration.md](docs/opensourcemalware-integration.md) for complete documentation.
-
-### Configuration
-
-The integration requires an API token. Provide it via:
-
-- **Environment variable**: `DEPGATE_OSM_API_TOKEN=your_token`
-- **CLI argument**: `--osm-api-token your_token`
-- **Command execution**: `--osm-token-command "cat ~/.osm_token"`
-- **YAML config**: See `docs/depgate.example.yml` for options
-
-**Priority**: CLI > Environment variable > Command execution > YAML config
-
-### Version-Specific Checks
-
-The integration performs version-specific checks, which is critical for accurate detection:
+**Option 1: Run without installation** (using uvx):
 
 ```bash
-# Check specific vulnerable version (will be flagged)
-depgate scan -t npm -p 'synckit:0.11.9' -a heur
+# Single package (npm)
+uvx depgate scan -t npm -p left-pad
 
-# Check specific safe version (will not be flagged)
-depgate scan -t npm -p 'synckit:0.11.11' -a heur
+# Scan a project directory (Maven)
+uvx depgate scan -t maven -d ./my-project
 
-# Check latest version (uses resolved version, not package-level check)
-depgate scan -t npm -p 'synckit' -a heur
+# Heuristics analysis with JSON output
+uvx depgate scan -t pypi -a heur -o results.json
 ```
 
-When no version is specified, the integration uses the resolved/latest version (not a package-level check that might incorrectly flag safe packages).
-
-### Policy Integration
-
-Use malware detection in policy rules:
-
-```yaml
-policy:
-  rules:
-    - type: malware
-      fail_on_malicious: true
-```
-
-## Output
-
-- Default: logs to stdout (respecting `--loglevel` and `--quiet`)
-- File export: `-o, --output <path>` and `-f, --format {json,csv}`
-  - If `--format` is omitted, inferred from `--output` extension (`.json` / `.csv`), otherwise defaults to JSON.
-  - CSV columns: `Package Name, Package Type, Exists on External, Org/Group ID, Score, Version Count, Timestamp, Risk: Missing, Risk: Low Score, Risk: Min Versions, Risk: Too New, Risk: Any Risks, [policy fields], [license fields]`
-  - JSON schema: objects with keys: `packageName, orgId, packageType, exists, score, versionCount, createdTimestamp, risk.{hasRisk,isMissing,hasLowScore,minVersions,isNew}, policy.{decision,violated_rules,evaluated_metrics}, license.{id,available,source}, osmMalicious, osmReason, osmThreatCount, osmSeverity`. When `-a linked` is used, the JSON also includes: `repositoryUrl`, `tagMatch`, `releaseMatch`, and `linked`.
-
-## CLI Options (summary)
-
-- `-t, --type {npm,pypi,maven}`: package manager
-- `-p/‑d/‑l`: input source (mutually exclusive)
-- `-a, --analysis {compare,comp,heuristics,heur,policy,pol,linked}`: analysis level
-- Output: `-o, --output <path>` and `-f, --format {json,csv}`
-- Config: `-c, --config <path>` (YAML/JSON/YML), `--set KEY=VALUE` (dot-path overrides)
-- Logging: `--loglevel {DEBUG,INFO,WARNING,ERROR,CRITICAL}`, `--logfile <path>`, `-q, --quiet`
-- Scanning: `-r, --recursive` (for `--directory` scans)
-- CI: `--error-on-warnings` (non‑zero exit if risks detected)
-- OpenSourceMalware: `--osm-disable`, `--osm-api-token <token>`, `--osm-token-command <cmd>`, `--osm-base-url <url>`, `--osm-cache-ttl <seconds>`, `--osm-auth-method {header,query}`, `--osm-max-retries <count>`
-
-## Resolution semantics (overview)
-
-- Rightmost‑colon token parsing for Maven coordinates (groupId:artifactId) while preserving ecosystem normalization for npm/PyPI names.
-- Ecosystem‑aware resolution:
-  - npm: ranges respect semver; prereleases excluded from latest/ranges unless explicitly included
-  - PyPI: PEP 440; prereleases excluded unless explicitly requested
-  - Maven: latest excludes SNAPSHOT; ranges honor bracket semantics
-
-## YAML configuration
-
-DepGate optionally reads a YAML configuration file to override defaults such as registry URLs and HTTP behavior.
-
-Search order (first found wins):
-
-1. DEPGATE_CONFIG environment variable (absolute path)
-2. ./depgate.yml (or ./.depgate.yml)
-3. $XDG_CONFIG_HOME/depgate/depgate.yml (or ~/.config/depgate/depgate.yml)
-4. macOS: ~/Library/Application Support/depgate/depgate.yml
-5. Windows: %APPDATA%\\depgate\\depgate.yml
-
-Example:
-
-```yaml
-http:
-  request_timeout: 30        # seconds
-  retry_max: 3
-  retry_base_delay_sec: 0.3
-  cache_ttl_sec: 300
-
-registry:
-  pypi_base_url: "https://pypi.org/pypi/"
-  npm_base_url: "https://registry.npmjs.org/"
-  npm_stats_url: "https://api.npms.io/v2/package/mget"
-  maven_search_url: "https://search.maven.org/solrsearch/select"
-
-provider:
-  github_api_base: "https://api.github.com"
-  gitlab_api_base: "https://gitlab.com/api/v4"
-  per_page: 100
-
-heuristics:
-  weights:
-    base_score: 0.30
-    repo_version_match: 0.30
-    repo_stars: 0.15
-    repo_contributors: 0.10
-    repo_last_activity: 0.10
-    repo_present_in_registry: 0.05
-
-rtd:
-  api_base: "https://readthedocs.org/api/v3"
-```
-
-All keys are optional; unspecified values fall back to built‑in defaults. Additional options may be added over time.
-
-Heuristics weights are non‑negative numbers expressing relative priority for each signal. They are automatically re‑normalized across the metrics that are available for a given package, so the absolute values do not need to sum to 1. Unknown keys are ignored; missing metrics are excluded from the normalization set.
-
-## Policy Configuration
-
-The `policy` analysis level uses declarative configuration to evaluate allow/deny rules against package facts. Policy configuration can be provided via `-c, --config` (YAML/JSON/YML file) and overridden with `--set KEY=VALUE` options.
-
-### Policy Configuration Schema
-
-```yaml
-policy:
-  enabled: true                    # Global policy enable/disable
-  fail_fast: true                  # Stop at first violation (default: false)
-  metrics:                         # Declarative metric constraints
-    stars_count: { min: 5 }        # Minimum stars
-    heuristic_score: { min: 0.6 }  # Minimum heuristic score
-    version_count: { min: 3 }      # Minimum version count
-  regex:                           # Regex-based rules
-    include: ["^@myorg/"]          # Must match at least one include pattern
-    exclude: ["-beta$"]            # Must not match any exclude pattern
-  license_check:                   # License validation
-    enabled: true                  # Enable license discovery/checking
-    disallowed_licenses: ["GPL-3.0-only", "AGPL-3.0-only"]
-    allow_unknown: false           # Allow packages with unknown licenses
-  output:
-    include_license_fields: true   # Include license fields in output
-```
-
-### Dot-path Override Examples
+**Option 2: Install first** (using pipx or pip):
 
 ```bash
-# Override specific metric constraints
-depgate scan -t npm -p left-pad -a policy --set policy.metrics.heuristic_score.min=0.8
+# Install
+pipx install depgate
+# or: pip install depgate
 
-# Disable license checking
-depgate scan -t npm -p left-pad -a policy --set policy.license_check.enabled=false
-
-# Change fail_fast behavior
-depgate scan -t npm -p left-pad -a policy --set policy.fail_fast=true
+# Then use depgate directly
+depgate scan -t npm -p left-pad
+depgate scan -t maven -d ./my-project
+depgate scan -t pypi -a heur -o results.json
 ```
 
-### Implicit Heuristics Trigger
+## Installation
 
-When policy rules reference heuristic-derived metrics (e.g., `heuristic_score`, `is_license_available`), the system automatically runs heuristics analysis for affected packages if those metrics are missing. This ensures policy evaluation has access to all required data without manual intervention.
+### Requirements
 
-### License Discovery Performance
+- Python 3.10+
+- Network access for registry lookups (when running analysis)
+- OpenSourceMalware API token (optional, for malicious package detection)
 
-License discovery uses LRU caching (default maxsize: 256) to minimize network calls. It follows a metadata-first strategy:
+### Install
 
-1. Check registry metadata for license information
-2. Optionally fall back to repository file parsing (LICENSE, LICENSE.md)
-3. Cache results per (repo_url, ref) combination
+**Using uv (development):**
 
-Set `policy.license_check.enabled=false` to disable all license-related network calls.
+```bash
+uv venv && source .venv/bin/activate
+uv sync
+```
 
-### New Heuristic: is_license_available
+**From PyPI:**
 
-The `is_license_available` heuristic indicates whether license information is available for a package. This boolean value is computed from existing registry enrichment data and is automatically included when heuristics run.
+```bash
+# Install globally
+pip install depgate
+
+# Install in isolated environment
+pipx install depgate
+
+# Run without installation (requires uv)
+uvx depgate --help
+```
+
+**Note**: After installation via `pip` or `pipx`, you can use `depgate` directly. Without installation, use `uvx depgate`.
+
+## Basic Usage
+
+### Input Methods
+
+- **Single package** (`-p, --package`): Analyze one package
+
+  ```bash
+  depgate scan -t npm -p left-pad
+  depgate scan -t maven -p org.apache.commons:commons-lang3
+  ```
+
+- **Directory scan** (`-d, --directory`): Scan project for dependencies
+
+  ```bash
+  depgate scan -t npm -d ./my-project
+  depgate scan -t pypi -d ./my-project
+  ```
+
+- **File list** (`-l, --load_list`): Analyze packages from a file
+
+  ```bash
+  depgate scan -t npm -l packages.txt
+  ```
+
+See [Supported Package Managers](docs/supported-package-managers.md) for format details and examples.
+
+### Analysis Levels
+
+- **`compare`** (or `comp`): Basic presence and metadata checks
+- **`heuristics`** (or `heur`): Adds scoring and risk signals
+- **`policy`** (or `pol`): Declarative rule-based evaluation
+- **`linked`**: Repository linkage verification
+
+See [Analysis Levels](docs/analysis-levels.md) for detailed explanations.
+
+## Supported Package Managers
+
+| Package Manager | Language | Manifest Files |
+|----------------|----------|---------------|
+| **npm** | JavaScript/TypeScript | `package.json` |
+| **PyPI** | Python | `requirements.txt`, `pyproject.toml` |
+| **Maven** | Java/Kotlin/Scala | `pom.xml` |
+| **NuGet** | .NET/C# | `.csproj`, `packages.config`, `project.json` |
+
+See [Supported Package Managers](docs/supported-package-managers.md) for complete details, lock file support, package formats, and examples.
+
+## Major Modes
+
+### CLI Scan Mode (Primary)
+
+The primary mode for dependency analysis:
+
+```bash
+depgate scan -t <ecosystem> -p <package> -a <level> -o <output>
+```
+
+### MCP Server Mode (Experimental)
+
+DepGate includes an MCP server that exposes analysis capabilities via three tools:
+
+- `Lookup_Latest_Version` - Resolve latest stable versions
+- `Scan_Project` - Analyze project dependencies
+- `Scan_Dependency` - Analyze single dependencies
+
+See [MCP Server](docs/mcp-server.md) for setup, tools, and client examples.
+
+## Output Formats
+
+DepGate supports multiple output formats:
+
+- **stdout**: Human-readable logs (default)
+- **JSON**: Structured data for programmatic use
+- **CSV**: Tabular format for spreadsheets
+
+```bash
+depgate scan -t npm -p left-pad -a heur -o results.json
+depgate scan -t npm -p left-pad -a heur -o results.csv
+```
+
+See [Output Formats](docs/output-formats.md) for complete schema and field descriptions.
+
+## Configuration
+
+DepGate supports configuration via YAML files, environment variables, and CLI arguments. Configuration can customize:
+
+- Registry URLs
+- HTTP behavior
+- Heuristics weights
+- Policy rules
+- OpenSourceMalware settings
+
+See [Configuration](docs/configuration.md) for details and examples.
+
+## Additional Features
+
+### OpenSourceMalware Integration
+
+Optional malicious package detection via OpenSourceMalware.com API:
+
+```bash
+DEPGATE_OSM_API_TOKEN=token depgate scan -t npm -p package-name -a heur
+```
+
+See [OpenSourceMalware Integration](docs/opensourcemalware.md) for setup and usage.
+
+### Policy Rules
+
+Declarative rule-based evaluation with allow/deny decisions:
+
+```bash
+depgate scan -t npm -d ./project -a policy -c policy.yml
+```
+
+See [Policy Configuration](docs/policy-configuration.md) for schema and examples.
+
+### Repository Discovery
+
+Automatic discovery and validation of upstream source repositories:
+
+```bash
+depgate scan -t npm -p left-pad -a linked
+```
+
+See [Repository Discovery](docs/repository-discovery.md) for discovery sources and version matching.
+
+### Version Resolution
+
+Ecosystem-aware version resolution with strict prerelease policies. See [Version Resolution](docs/version-resolution.md) for details per ecosystem.
+
+## CLI Options
+
+### Main Options
+
+- `-t, --type {npm,pypi,maven,nuget}`: Package manager
+- `-p/‑d/‑l`: Input source (mutually exclusive)
+- `-a, --analysis {compare,comp,heuristics,heur,policy,pol,linked}`: Analysis level
+- `-o, --output <path>`: Output file path
+- `-f, --format {json,csv}`: Output format (auto-detected from extension)
+- `-c, --config <path>`: Configuration file (YAML/JSON/YML)
+- `--set KEY=VALUE`: Override configuration values
+- `--loglevel {DEBUG,INFO,WARNING,ERROR,CRITICAL}`: Logging level
+- `--logfile <path>`: Log to file
+- `-q, --quiet`: Suppress stdout output
+- `-r, --recursive`: Recursively scan directories
+- `--error-on-warnings`: Exit with non-zero code if risks detected
+
+### OpenSourceMalware Options
+
+- `--osm-disable`: Disable OpenSourceMalware checks
+- `--osm-api-token <token>`: API token
+- `--osm-token-command <cmd>`: Command to retrieve token
+- `--osm-base-url <url>`: Override API URL
+- `--osm-cache-ttl <seconds>`: Cache TTL
+- `--osm-auth-method {header,query}`: Authentication method
+- `--osm-max-retries <count>`: Maximum retries
+
+Run `depgate scan --help` for complete option list.
 
 ## Exit Codes
 
-- `0`: success (no risks or informational only)
-- `1`: file/IO error
-- `2`: connection error
-- `3`: risks found and `--error-on-warnings` set
+- `0`: Success (no risks or informational only)
+- `1`: File/IO error (or policy denial, or linked analysis failure)
+- `2`: Connection error
+- `3`: Risks found and `--error-on-warnings` set
 
-Note: For `-a linked`, the process exits with `0` only when all analyzed packages are linked (repository resolved+exists and version tag/release match); otherwise it exits with `1`.
+**Note**: For `-a linked`, exits with `0` only when all packages are linked; otherwise `1`.
+
+## Documentation
+
+### Detailed Guides
+
+- [Supported Package Managers](docs/supported-package-managers.md) - Complete package manager reference
+- [Analysis Levels](docs/analysis-levels.md) - Understanding analysis types
+- [Configuration](docs/configuration.md) - YAML config and environment variables
+- [Policy Configuration](docs/policy-configuration.md) - Policy rules and schema
+- [OpenSourceMalware](docs/opensourcemalware.md) - Malicious package detection
+- [Repository Discovery](docs/repository-discovery.md) - Repository discovery and version matching
+- [Version Resolution](docs/version-resolution.md) - Ecosystem-specific resolution semantics
+- [MCP Server](docs/mcp-server.md) - MCP server setup and tools
+- [Output Formats](docs/output-formats.md) - CSV and JSON schemas
 
 ## Contributing
 
-- See `AGENTS.md` for repo layout, dev commands, and linting.
-- Lint: `uv run pylint src`
+See `AGENTS.md` for repository layout, development commands, and linting guidelines.
+
+**Lint:**
+
+```bash
+uv run pylint src
+```
 
 ## Credits & Attribution
 
-- DepGate is a fork of “Dependency Combobulator” originally developed by Apiiro and its contributors: <https://github.com/apiiro/combobulator> - see `CONTRIBUTORS.md`.
-- Licensed under the Apache License 2.0. See `LICENSE` and `NOTICE`.
+DepGate is a fork of "Dependency Combobulator" originally developed by Apiiro and its contributors: <https://github.com/apiiro/combobulator> - see `CONTRIBUTORS.md`.
+
+Licensed under the Apache License 2.0. See `LICENSE` and `NOTICE`.

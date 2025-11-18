@@ -46,6 +46,7 @@ SCAN_PROJECT_INPUT = {
         "includeDevDependencies": {"type": ["boolean", "null"]},
         "includeTransitive": {"type": ["boolean", "null"]},
         "respectLockfiles": {"type": ["boolean", "null"]},
+        "requireLockfile": {"type": ["boolean", "null"]},
         "offline": {"type": ["boolean", "null"]},
         "strictProvenance": {"type": ["boolean", "null"]},
         "paths": {"type": ["array", "null"], "items": {"type": "string"}},

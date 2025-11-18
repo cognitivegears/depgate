@@ -366,16 +366,21 @@ def _handle_lookup_latest_version(
     return result
 
 
-def _run_scan_pipeline(scan_args: Any) -> Dict[str, Any]:
+def _run_scan_pipeline(scan_args: Any, direct_only: bool = None, require_lockfile: bool = None) -> Dict[str, Any]:
     """Run the scan pipeline, catching SystemExit and converting to RuntimeError for MCP context.
 
     This function handles various FILE_ERROR scenarios by providing specific error messages
     based on where in the pipeline the error occurred.
+
+    Args:
+        scan_args: CLI arguments namespace
+        direct_only: Optional override for direct_only mode (passed directly to build_pkglist)
+        require_lockfile: Optional override for require_lockfile mode (passed directly to build_pkglist)
     """
     try:
         # Step 1: Build package list (may fail if no dependency files found, file I/O errors, or parse errors)
         try:
-            pkglist = build_pkglist(scan_args)
+            pkglist = build_pkglist(scan_args, direct_only=direct_only, require_lockfile=require_lockfile)
         except SystemExit as se:
             exit_code = se.code if hasattr(se, 'code') and se.code is not None else 1
             if exit_code == ExitCodes.FILE_ERROR.value:
@@ -467,6 +472,8 @@ def _build_cli_args_for_project_scan(
     project_dir: str,
     ecosystem_hint: Optional[str],
     analysis_level: Optional[str],
+    direct_only: Optional[bool] = None,
+    require_lockfile: Optional[bool] = None,
 ) -> Any:
     args = argparse.Namespace()
     # Map into existing CLI surfaces used by build_pkglist/create_metapackages
@@ -529,6 +536,8 @@ def _build_cli_args_for_project_scan(
     args.DEPSDEV_MAX_CONCURRENCY = Constants.DEPSDEV_MAX_CONCURRENCY
     args.DEPSDEV_MAX_RESPONSE_BYTES = Constants.DEPSDEV_MAX_RESPONSE_BYTES
     args.DEPSDEV_STRICT_OVERRIDE = Constants.DEPSDEV_STRICT_OVERRIDE
+    # Note: direct_only and require_lockfile are now passed directly to _run_scan_pipeline
+    # as runtime parameters, not stored in args namespace
     return args
 
 
@@ -793,6 +802,7 @@ def run_mcp_server(args) -> None:
         includeDevDependencies: Optional[bool] = None,
         includeTransitive: Optional[bool] = None,
         respectLockfiles: Optional[bool] = None,
+        requireLockfile: Optional[bool] = None,
         offline: Optional[bool] = None,
         strictProvenance: Optional[bool] = None,
         paths: Optional[List[str]] = None,
@@ -804,6 +814,11 @@ def run_mcp_server(args) -> None:
         # Map camelCase to internal names
         project_dir = projectDir
         analysis_level = analysisLevel
+        # Map includeTransitive to direct_only (inverted logic)
+        # includeTransitive=False means direct_only=True
+        direct_only = None
+        if includeTransitive is not None:
+            direct_only = not includeTransitive
         _validate(
             "project",
             {
@@ -811,6 +826,7 @@ def run_mcp_server(args) -> None:
                 "includeDevDependencies": includeDevDependencies,
                 "includeTransitive": includeTransitive,
                 "respectLockfiles": respectLockfiles,
+                "requireLockfile": requireLockfile,
                 "offline": offline,
                 "strictProvenance": strictProvenance,
                 "paths": paths,
@@ -822,8 +838,11 @@ def run_mcp_server(args) -> None:
             _sandbox_project_dir(args.MCP_PROJECT_DIR, project_dir)
         _require_online(args, offline)
         _reset_state()
-        scan_args = _build_cli_args_for_project_scan(project_dir, ecosystem, analysis_level)
-        result = _run_scan_pipeline(scan_args)
+        scan_args = _build_cli_args_for_project_scan(
+            project_dir, ecosystem, analysis_level, direct_only=None, require_lockfile=None
+        )
+        # Pass direct_only and require_lockfile directly to pipeline (runtime parameters, not CLI args)
+        result = _run_scan_pipeline(scan_args, direct_only=direct_only, require_lockfile=requireLockfile)
         try:
             _validate_output_strict(result)
         except Exception as se:

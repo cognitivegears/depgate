@@ -78,6 +78,9 @@ class Constants:  # pylint: disable=too-few-public-methods
     PROJECT_JSON_FILE = "project.json"
     UV_LOCK_FILE = "uv.lock"
     POETRY_LOCK_FILE = "poetry.lock"
+    PACKAGE_LOCK_FILE = "package-lock.json"
+    YARN_LOCK_FILE = "yarn.lock"
+    BUN_LOCK_FILE = "bun.lock"
     LOG_FORMAT = "[%(levelname)s] %(message)s"  # Added LOG_FORMAT constant
     ANALYSIS = "[ANALYSIS]"
     REQUEST_TIMEOUT = 30  # Timeout in seconds for all HTTP requests
@@ -92,6 +95,10 @@ class Constants:  # pylint: disable=too-few-public-methods
     HTTP_RETRY_MAX = 3
     HTTP_RETRY_BASE_DELAY_SEC = 0.3
     HTTP_CACHE_TTL_SEC = 300
+
+    # Dependency scanning defaults
+    DIRECT_ONLY: bool = False
+    REQUIRE_LOCKFILE: bool = False
 
     # deps.dev integration defaults
     DEPSDEV_ENABLED: bool = True
@@ -497,6 +504,21 @@ def _apply_config_overrides(cfg: Dict[str, Any]) -> None:  # pylint: disable=too
     try:
         Constants.OSM_RATE_LIMIT_RETRY_DELAY_SEC = float(  # type: ignore[attr-defined]
             osm.get("rate_limit_retry_delay_sec", Constants.OSM_RATE_LIMIT_RETRY_DELAY_SEC)
+        )
+    except Exception:  # pylint: disable=broad-exception-caught
+        pass
+
+    # Dependency scanning options
+    scan_opts = cfg.get("scan", {}) or {}
+    try:
+        Constants.DIRECT_ONLY = bool(  # type: ignore[attr-defined]
+            scan_opts.get("direct_only", False)
+        )
+    except Exception:  # pylint: disable=broad-exception-caught
+        pass
+    try:
+        Constants.REQUIRE_LOCKFILE = bool(  # type: ignore[attr-defined]
+            scan_opts.get("require_lockfile", False)
         )
     except Exception:  # pylint: disable=broad-exception-caught
         pass
