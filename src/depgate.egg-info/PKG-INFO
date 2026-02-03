@@ -23,6 +23,7 @@ Requires-Dist: PyYAML>=6.0
 Requires-Dist: mcp[cli]>=1.18.0
 Requires-Dist: jsonschema>=4.19.0
 Requires-Dist: yarnlock==1.2.0
+Requires-Dist: aiohttp>=3.9.0
 Dynamic: license-file
 
 # DepGate — Dependency Supply‑Chain Risk & Confusion Checker

@@ -11,6 +11,12 @@ Policy analysis evaluates packages against configurable rules and makes allow/de
 - License compliance
 - Custom rules
 
+Policy configuration is used by both:
+- **CLI scan mode**: `depgate scan -a policy -c policy.yml`
+- **Proxy server mode**: `depgate proxy --config policy.yml`
+
+See [Proxy Server](proxy-server.md) for using policies with the registry proxy.
+
 ## Policy Configuration Schema
 
 Policy configuration can be provided via `-c, --config` (YAML/JSON/YML file) and overridden with `--set KEY=VALUE` options.
@@ -276,5 +282,6 @@ When a package is denied:
 - [Analysis Levels](analysis-levels.md) - Understanding policy analysis
 - [Configuration](configuration.md) - General configuration options
 - [Output Formats](output-formats.md) - Policy output schema
+- [Proxy Server](proxy-server.md) - Using policies with registry proxy
 
 [← Back to README](../README.md)

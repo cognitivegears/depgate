@@ -1,0 +1,189 @@
+"""Upstream client for forwarding requests to real registries."""
+
+from __future__ import annotations
+
+import logging
+from typing import Any, Dict, Optional, Tuple
+
+import aiohttp
+
+from .request_parser import RegistryType
+from .cache import ResponseCache
+
+logger = logging.getLogger(__name__)
+
+
+class UpstreamClient:
+    """Client for forwarding requests to upstream registries."""
+
+    # Default upstream registry URLs
+    DEFAULT_UPSTREAMS = {
+        RegistryType.NPM: "https://registry.npmjs.org",
+        RegistryType.PYPI: "https://pypi.org",
+        RegistryType.MAVEN: "https://repo1.maven.org/maven2",
+        RegistryType.NUGET: "https://api.nuget.org",
+    }
+
+    def __init__(
+        self,
+        upstreams: Optional[Dict[RegistryType, str]] = None,
+        timeout: int = 30,
+        response_cache: Optional[ResponseCache] = None,
+    ):
+        """Initialize the upstream client.
+
+        Args:
+            upstreams: Override upstream URLs by registry type.
+            timeout: Request timeout in seconds.
+            response_cache: Optional response cache.
+        """
+        self._upstreams = {**self.DEFAULT_UPSTREAMS}
+        if upstreams:
+            self._upstreams.update(upstreams)
+        self._timeout = aiohttp.ClientTimeout(total=timeout)
+        self._response_cache = response_cache
+        self._session: Optional[aiohttp.ClientSession] = None
+
+    def set_upstream(self, registry_type: RegistryType, url: str) -> None:
+        """Set upstream URL for a registry type.
+
+        Args:
+            registry_type: Registry type.
+            url: Upstream URL.
+        """
+        self._upstreams[registry_type] = url.rstrip("/")
+
+    def get_upstream(self, registry_type: RegistryType) -> str:
+        """Get upstream URL for a registry type.
+
+        Args:
+            registry_type: Registry type.
+
+        Returns:
+            Upstream URL.
+        """
+        return self._upstreams.get(registry_type, self.DEFAULT_UPSTREAMS.get(registry_type, ""))
+
+    async def start(self) -> None:
+        """Start the HTTP session."""
+        if self._session is None:
+            self._session = aiohttp.ClientSession(timeout=self._timeout)
+
+    async def stop(self) -> None:
+        """Stop the HTTP session."""
+        if self._session:
+            await self._session.close()
+            self._session = None
+
+    async def forward(
+        self,
+        registry_type: RegistryType,
+        path: str,
+        method: str = "GET",
+        headers: Optional[Dict[str, str]] = None,
+        body: Optional[bytes] = None,
+        use_cache: bool = True,
+    ) -> Tuple[int, Dict[str, str], bytes]:
+        """Forward a request to the upstream registry.
+
+        Args:
+            registry_type: Registry type.
+            path: Request path.
+            method: HTTP method.
+            headers: Optional request headers.
+            body: Optional request body.
+            use_cache: Whether to use response cache for GET requests.
+
+        Returns:
+            Tuple of (status code, response headers, response body).
+        """
+        upstream_base = self.get_upstream(registry_type)
+        if not upstream_base:
+            return 502, {}, b'{"error": "No upstream configured for registry type"}'
+
+        url = f"{upstream_base}{path}"
+
+        # Check cache for GET requests
+        if method == "GET" and use_cache and self._response_cache:
+            cached = self._response_cache.get(url)
+            if cached:
+                logger.debug(f"Cache hit for {url}")
+                return 200, cached[1], cached[0]
+
+        # Ensure session is started
+        if self._session is None:
+            await self.start()
+
+        # Prepare headers
+        request_headers = {
+            "User-Agent": "DepGate-Proxy/1.0",
+            "Accept": "*/*",
+        }
+        if headers:
+            # Forward select headers
+            for key in ["Accept", "Accept-Encoding", "If-None-Match", "If-Modified-Since"]:
+                if key in headers:
+                    request_headers[key] = headers[key]
+
+        try:
+            assert self._session is not None
+            async with self._session.request(
+                method,
+                url,
+                headers=request_headers,
+                data=body,
+                allow_redirects=True,
+            ) as response:
+                response_body = await response.read()
+                response_headers = dict(response.headers)
+
+                # Filter response headers
+                filtered_headers = self._filter_response_headers(response_headers)
+
+                # Cache successful GET responses
+                if method == "GET" and response.status == 200 and use_cache and self._response_cache:
+                    self._response_cache.set(url, response_body, filtered_headers)
+
+                return response.status, filtered_headers, response_body
+
+        except aiohttp.ClientError as e:
+            logger.error(f"Upstream request failed: {e}")
+            return 502, {}, f'{{"error": "Upstream request failed: {str(e)}"}}'.encode()
+        except Exception as e:
+            logger.exception(f"Unexpected error forwarding request: {e}")
+            return 500, {}, f'{{"error": "Internal error: {str(e)}"}}'.encode()
+
+    def _filter_response_headers(self, headers: Dict[str, Any]) -> Dict[str, str]:
+        """Filter response headers to forward to client.
+
+        Args:
+            headers: Raw response headers.
+
+        Returns:
+            Filtered headers dict.
+        """
+        # Headers to forward
+        forward_headers = [
+            "Content-Type",
+            "Content-Length",
+            "ETag",
+            "Last-Modified",
+            "Cache-Control",
+            "Content-Encoding",
+        ]
+
+        filtered = {}
+        for key, value in headers.items():
+            if key in forward_headers:
+                filtered[key] = str(value)
+
+        return filtered
+
+    async def __aenter__(self) -> "UpstreamClient":
+        """Async context manager entry."""
+        await self.start()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        """Async context manager exit."""
+        await self.stop()

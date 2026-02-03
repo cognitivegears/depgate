@@ -10,6 +10,7 @@ DepGate is a fork of Apiiro's "Dependency Combobulator", maintained going forwar
 - **Pluggable analysis**: compare, heuristics, policy, and linked levels
 - **Repository verification**: Discovers and validates upstream source repositories
 - **OpenSourceMalware integration**: Optional malicious package detection
+- **Registry proxy server**: Drop-in registry replacement with policy enforcement
 - **Flexible inputs**: Single package, manifest scan, or list from file
 - **Structured outputs**: Human-readable logs plus CSV/JSON exports for CI
 - **Designed for automation**: Predictable exit codes and quiet/log options
@@ -140,6 +141,28 @@ DepGate includes an MCP server that exposes analysis capabilities via three tool
 
 See [MCP Server](https://github.com/cognitivegears/depgate/blob/main/docs/mcp-server.md) for setup, tools, and client examples.
 
+### Proxy Server Mode
+
+DepGate can act as a registry proxy, intercepting package manager requests and evaluating packages against policies:
+
+```bash
+# Start proxy server with policy enforcement
+depgate proxy --port 8080 --config policy.yml
+
+# Configure npm to use proxy
+npm config set registry http://localhost:8080
+
+# All npm install commands are now evaluated
+npm install lodash  # Allowed or blocked based on policy
+```
+
+The proxy supports three decision modes:
+- **block**: Return 403 for policy violations (default)
+- **warn**: Allow but log violations
+- **audit**: Allow all, log for review
+
+See [Proxy Server](https://github.com/cognitivegears/depgate/blob/main/docs/proxy-server.md) for setup and configuration.
+
 ## Output Formats
 
 DepGate supports multiple output formats:
@@ -253,6 +276,7 @@ Run `depgate scan --help` for complete option list.
 - [Repository Discovery](https://github.com/cognitivegears/depgate/blob/main/docs/repository-discovery.md) - Repository discovery and version matching
 - [Version Resolution](https://github.com/cognitivegears/depgate/blob/main/docs/version-resolution.md) - Ecosystem-specific resolution semantics
 - [MCP Server](https://github.com/cognitivegears/depgate/blob/main/docs/mcp-server.md) - MCP server setup and tools
+- [Proxy Server](https://github.com/cognitivegears/depgate/blob/main/docs/proxy-server.md) - Registry proxy for policy enforcement
 - [Output Formats](https://github.com/cognitivegears/depgate/blob/main/docs/output-formats.md) - CSV and JSON schemas
 
 ## Contributing

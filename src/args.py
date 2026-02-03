@@ -9,6 +9,111 @@ from typing import List, Optional, Tuple
 from constants import Constants
 
 
+def add_proxy_arguments(parser: argparse.ArgumentParser) -> None:
+    """Register arguments for the 'proxy' action (registry proxy server)."""
+    # Server
+    parser.add_argument(
+        "--host",
+        dest="PROXY_HOST",
+        help="Host address to bind the proxy server (default: 127.0.0.1)",
+        action="store",
+        type=str,
+        default="127.0.0.1",
+    )
+    parser.add_argument(
+        "--port",
+        dest="PROXY_PORT",
+        help="Port to bind the proxy server (default: 8080)",
+        action="store",
+        type=int,
+        default=8080,
+    )
+
+    # Upstream registries
+    parser.add_argument(
+        "--upstream-npm",
+        dest="PROXY_UPSTREAM_NPM",
+        help="Upstream NPM registry URL (default: https://registry.npmjs.org)",
+        action="store",
+        type=str,
+        default=Constants.REGISTRY_URL_NPM.rstrip("/"),
+    )
+    parser.add_argument(
+        "--upstream-pypi",
+        dest="PROXY_UPSTREAM_PYPI",
+        help="Upstream PyPI registry URL (default: https://pypi.org)",
+        action="store",
+        type=str,
+        default="https://pypi.org",
+    )
+    parser.add_argument(
+        "--upstream-maven",
+        dest="PROXY_UPSTREAM_MAVEN",
+        help="Upstream Maven registry URL (default: https://repo1.maven.org/maven2)",
+        action="store",
+        type=str,
+        default="https://repo1.maven.org/maven2",
+    )
+    parser.add_argument(
+        "--upstream-nuget",
+        dest="PROXY_UPSTREAM_NUGET",
+        help="Upstream NuGet registry URL (default: https://api.nuget.org)",
+        action="store",
+        type=str,
+        default="https://api.nuget.org",
+    )
+
+    # Policy
+    parser.add_argument(
+        "-c",
+        "--config",
+        dest="PROXY_CONFIG",
+        help="Path to policy configuration file (YAML or JSON)",
+        action="store",
+        type=str,
+    )
+    parser.add_argument(
+        "--decision-mode",
+        dest="PROXY_DECISION_MODE",
+        help="How to handle policy violations: block (403), warn (allow with log), audit (allow, log only)",
+        action="store",
+        type=str,
+        choices=["block", "warn", "audit"],
+        default="block",
+    )
+
+    # Caching
+    parser.add_argument(
+        "--cache-ttl",
+        dest="PROXY_CACHE_TTL",
+        help="Decision cache TTL in seconds (default: 3600)",
+        action="store",
+        type=int,
+        default=3600,
+    )
+
+    # Timeouts
+    parser.add_argument(
+        "--timeout",
+        dest="PROXY_TIMEOUT",
+        help="Upstream request timeout in seconds (default: 30)",
+        action="store",
+        type=int,
+        default=30,
+    )
+
+    # Logging
+    parser.add_argument(
+        "--log-level",
+        dest="LOG_LEVEL",
+        help="Set logging level (default: INFO)",
+        action="store",
+        type=str,
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        default="INFO",
+    )
+
+
 def add_mcp_arguments(parser: argparse.ArgumentParser) -> None:
     """Register arguments for the 'mcp' action (Model Context Protocol server)."""
     # Transport
@@ -375,7 +480,9 @@ def build_root_parser() -> Tuple[argparse.ArgumentParser, argparse._SubParsersAc
         title="Actions",
         description=(
             "Available actions:\n"
-            "  scan    Analyze dependencies from a package, manifest, or directory\n\n"
+            "  scan    Analyze dependencies from a package, manifest, or directory\n"
+            "  mcp     Launch an MCP server exposing DepGate tools\n"
+            "  proxy   Start a registry proxy server for policy enforcement\n\n"
             "Use 'depgate <action> --help' for action-specific options.\n"
         ),
         required=False,  # we handle legacy mapping below
@@ -402,6 +509,24 @@ def build_root_parser() -> Tuple[argparse.ArgumentParser, argparse._SubParsersAc
         formatter_class=argparse.RawTextHelpFormatter,
     )
     add_mcp_arguments(mcp)
+
+    # Register 'proxy' action
+    proxy = subparsers.add_parser(
+        "proxy",
+        help="Start a registry proxy server that evaluates packages against policies",
+        description=(
+            "Start an HTTP proxy server that acts as a drop-in replacement for "
+            "package registries (npm, PyPI, Maven, NuGet). Requests are intercepted, "
+            "packages are evaluated against policy rules, and allowed or blocked "
+            "based on the configured decision mode.\n\n"
+            "Example:\n"
+            "  depgate proxy --port 8080 --config policy.yml\n"
+            "  npm config set registry http://localhost:8080\n"
+            "  npm install lodash  # evaluated against policy"
+        ),
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+    add_proxy_arguments(proxy)
 
     return parser, subparsers
 

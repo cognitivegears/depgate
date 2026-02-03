@@ -8,3 +8,4 @@ PyYAML>=6.0
 mcp[cli]>=1.18.0
 jsonschema>=4.19.0
 yarnlock==1.2.0
+aiohttp>=3.9.0
