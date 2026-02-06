@@ -29,7 +29,7 @@ def _load_policy_config(config_path: Optional[str]) -> Dict[str, Any]:
         return {}
 
     if not os.path.isfile(config_path):
-        logger.warning(f"Config file not found: {config_path}")
+        logger.warning("Config file not found: %s", config_path)
         return {}
 
     try:
@@ -51,7 +51,7 @@ def _load_policy_config(config_path: Optional[str]) -> Dict[str, Any]:
                 return data.get("policy", data)
             return {}
     except Exception as e:
-        logger.error(f"Failed to load config: {e}")
+        logger.error("Failed to load config: %s", e)
         return {}
 
 
@@ -74,6 +74,17 @@ def _setup_logging(args: Any) -> None:
         logging.getLogger().setLevel(level_value)
     except Exception:
         pass
+
+    # Add file handler if --logfile specified
+    log_file = getattr(args, "LOG_FILE", None)
+    if log_file:
+        file_handler = logging.FileHandler(log_file)
+        formatter = logging.Formatter(
+            "%(asctime)s %(levelname)s %(name)s %(message)s"
+        )
+        file_handler.setFormatter(formatter)
+        logging.getLogger().addHandler(file_handler)
+        logger.info("Logging to file: %s", log_file)
 
 
 def run_proxy_server(args: Any) -> None:
@@ -99,7 +110,7 @@ def run_proxy_server(args: Any) -> None:
     policy_config = _load_policy_config(config_path)
 
     if policy_config:
-        logger.info(f"Loaded policy config from: {config_path}")
+        logger.info("Loaded policy config from: %s", config_path)
     else:
         logger.info("No policy config loaded - all packages will be allowed")
 

@@ -67,7 +67,12 @@ class UpstreamClient:
     async def start(self) -> None:
         """Start the HTTP session."""
         if self._session is None:
-            self._session = aiohttp.ClientSession(timeout=self._timeout)
+            connector = aiohttp.TCPConnector(limit=100)
+            self._session = aiohttp.ClientSession(
+                timeout=self._timeout,
+                connector=connector,
+                auto_decompress=False,
+            )
 
     async def stop(self) -> None:
         """Stop the HTTP session."""
@@ -107,8 +112,9 @@ class UpstreamClient:
         if method == "GET" and use_cache and self._response_cache:
             cached = self._response_cache.get(url)
             if cached:
-                logger.debug(f"Cache hit for {url}")
-                return 200, cached[1], cached[0]
+                logger.debug("Cache hit for %s", url)
+                body, headers = cached
+                return 200, headers, body
 
         # Ensure session is started
         if self._session is None:
@@ -139,11 +145,11 @@ class UpstreamClient:
                 return response.status, filtered_headers, response_body
 
         except aiohttp.ClientError as e:
-            logger.error(f"Upstream request failed: {e}")
-            return 502, {}, f'{{"error": "Upstream request failed: {str(e)}"}}'.encode()
+            logger.error("Upstream request failed: %s", e)
+            return 502, {}, b'{"error": "Upstream request failed"}'
         except Exception as e:
-            logger.exception(f"Unexpected error forwarding request: {e}")
-            return 500, {}, f'{{"error": "Internal error: {str(e)}"}}'.encode()
+            logger.exception("Unexpected error forwarding request: %s", e)
+            return 500, {}, b'{"error": "Internal proxy error"}'
 
     def _build_url(self, registry_type: RegistryType, upstream_base: str, path: str) -> str:
         """Build the upstream URL from base and path."""
@@ -179,8 +185,11 @@ class UpstreamClient:
         }
 
         connection_tokens = set()
-        if headers and "Connection" in headers:
-            connection_tokens = {token.strip().lower() for token in headers["Connection"].split(",")}
+        if headers:
+            for k, v in headers.items():
+                if k.lower() == "connection":
+                    connection_tokens = {token.strip().lower() for token in v.split(",")}
+                    break
 
         if headers:
             for key, value in headers.items():

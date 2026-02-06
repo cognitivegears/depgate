@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import signal
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
 
@@ -49,6 +50,7 @@ class ProxyConfig:
             port=getattr(args, "PROXY_PORT", 8080),
             decision_mode=getattr(args, "PROXY_DECISION_MODE", "block"),
             cache_ttl=getattr(args, "PROXY_CACHE_TTL", 3600),
+            response_cache_ttl=getattr(args, "PROXY_RESPONSE_CACHE_TTL", 300),
             timeout=getattr(args, "PROXY_TIMEOUT", 30),
         )
 
@@ -111,16 +113,25 @@ class RegistryProxyServer:
 
     def _create_app(self) -> web.Application:
         """Create the aiohttp application."""
-        app = web.Application()
+        app = web.Application(client_max_size=10 * 1024 * 1024)  # 10MB body limit
+        app.router.add_get("/_depgate/health", self._health_check)
         app.router.add_route("*", "/{path:.*}", self._handle_request)
         app.on_startup.append(self._on_startup)
         app.on_cleanup.append(self._on_cleanup)
         return app
 
+    async def _health_check(self, request: web.Request) -> web.Response:
+        """Health check endpoint."""
+        return web.json_response({
+            "status": "ok",
+            "decision_mode": self._config.decision_mode,
+            "cache": self.cache_stats(),
+        })
+
     async def _on_startup(self, app: web.Application) -> None:
         """Called when the server starts."""
         await self._upstream.start()
-        logger.info(f"Proxy server starting on {self._config.host}:{self._config.port}")
+        logger.info("Proxy server starting on %s:%s", self._config.host, self._config.port)
 
     async def _on_cleanup(self, app: web.Application) -> None:
         """Called when the server stops."""
@@ -148,12 +159,20 @@ class RegistryProxyServer:
 
         if not parsed.package_name:
             # Could not parse package info, pass through to upstream
-            logger.debug(f"Unparseable request, passing through: {path}")
+            logger.debug("Unparseable request, passing through: %s", path)
             return await self._forward_request(request, parsed.registry_type, path_qs)
 
+        if parsed.registry_type == RegistryType.UNKNOWN:
+            logger.warning("Could not determine registry type for: %s", path)
+            return web.json_response(
+                {"error": "Could not determine registry type", "path": path},
+                status=400,
+            )
+
         logger.info(
-            f"Request: {method} {path} -> "
-            f"{parsed.registry_type.value}:{parsed.package_name}:{parsed.version or 'latest'}"
+            "Request: %s %s -> %s:%s:%s",
+            method, path, parsed.registry_type.value,
+            parsed.package_name, parsed.version or "latest",
         )
 
         # Evaluate policy for metadata and tarball requests
@@ -166,16 +185,18 @@ class RegistryProxyServer:
 
             if decision.decision == "deny":
                 logger.warning(
-                    f"Blocked: {parsed.registry_type.value}:{parsed.package_name}:{parsed.version} - "
-                    f"{decision.violated_rules}"
+                    "Blocked: %s:%s:%s - %s",
+                    parsed.registry_type.value, parsed.package_name,
+                    parsed.version, decision.violated_rules,
                 )
                 return self._deny_response(parsed, decision)
 
             # Log violations in warn/audit mode
             if decision.violated_rules:
                 logger.info(
-                    f"Allowed with violations ({self._config.decision_mode}): "
-                    f"{parsed.package_name} - {decision.violated_rules}"
+                    "Allowed with violations (%s): %s - %s",
+                    self._config.decision_mode, parsed.package_name,
+                    decision.violated_rules,
                 )
 
         # Forward to upstream
@@ -331,53 +352,62 @@ class RegistryProxyServer:
         await site.start()
 
         logger.info(
-            f"DepGate proxy server listening on http://{self._config.host}:{self._config.port}"
+            "DepGate proxy server listening on http://%s:%s",
+            self._config.host, self._config.port,
         )
-        logger.info(f"Decision mode: {self._config.decision_mode}")
-        logger.info(f"Upstream NPM: {self._config.upstream_npm}")
-        logger.info(f"Upstream PyPI: {self._config.upstream_pypi}")
-        logger.info(f"Upstream Maven: {self._config.upstream_maven}")
-        logger.info(f"Upstream NuGet: {self._config.upstream_nuget}")
-
-    async def stop(self) -> None:
-        """Stop the proxy server."""
-        if self._runner:
-            await self._runner.cleanup()
-            self._runner = None
-            self._app = None
+        logger.info("Decision mode: %s", self._config.decision_mode)
+        logger.info("Upstream NPM: %s", self._config.upstream_npm)
+        logger.info("Upstream PyPI: %s", self._config.upstream_pypi)
+        logger.info("Upstream Maven: %s", self._config.upstream_maven)
+        logger.info("Upstream NuGet: %s", self._config.upstream_nuget)
 
     async def run_forever(self) -> None:
         """Start the server and run until interrupted."""
         await self.start()
+        self._stop_event = asyncio.Event()
         try:
-            # Run until interrupted
-            while True:
-                await asyncio.sleep(3600)
+            await self._stop_event.wait()
         except asyncio.CancelledError:
             pass
         finally:
             await self.stop()
 
+    async def stop(self) -> None:
+        """Stop the proxy server."""
+        if hasattr(self, "_stop_event"):
+            self._stop_event.set()
+        if self._runner:
+            await self._runner.cleanup()
+            self._runner = None
+            self._app = None
+
 
 def run_proxy_server_sync(config: ProxyConfig) -> None:
     """Run the proxy server synchronously.
+
+    Installs signal handlers for SIGTERM and SIGINT for clean shutdown.
 
     Args:
         config: Server configuration.
     """
     server = RegistryProxyServer(config)
+    loop = asyncio.new_event_loop()
 
     async def run():
         await server.start()
-        try:
-            while True:
-                await asyncio.sleep(3600)
-        except asyncio.CancelledError:
-            pass
-        finally:
-            await server.stop()
+        stop_event = asyncio.Event()
+        running_loop = asyncio.get_running_loop()
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            running_loop.add_signal_handler(sig, stop_event.set)
+        await stop_event.wait()
+        logger.info("Shutdown signal received, stopping...")
+        await server.stop()
 
     try:
-        asyncio.run(run())
+        loop.run_until_complete(run())
     except KeyboardInterrupt:
-        logger.info("Proxy server shutdown requested")
+        # Fallback for platforms where signal handlers don't work (Windows)
+        loop.run_until_complete(server.stop())
+    finally:
+        loop.close()
+        logger.info("Proxy server shutdown complete")

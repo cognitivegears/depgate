@@ -323,3 +323,96 @@ class TestProxyServerAsync:
         server._upstream.forward.assert_awaited_once()
         _, call_path = server._upstream.forward.await_args.args[:2]
         assert call_path == "/-/v1/search?text=lodash&size=20"
+
+    def test_unknown_registry_type_returns_400(self):
+        """Test that parsed requests with UNKNOWN registry type return 400."""
+        from src.proxy.request_parser import ParsedRequest
+
+        config = ProxyConfig()
+        server = RegistryProxyServer(config)
+
+        # Mock the parser to return UNKNOWN registry type with a package name
+        server._parser.parse = MagicMock(return_value=ParsedRequest(
+            registry_type=RegistryType.UNKNOWN,
+            package_name="some-package",
+            version="1.0.0",
+            is_metadata_request=True,
+            raw_path="/some-package",
+        ))
+
+        request = MagicMock()
+        request.rel_url = URL("/some-package")
+        request.path = "/some-package"
+        request.method = "GET"
+        request.headers = {"User-Agent": "custom-client"}
+        request.body_exists = False
+
+        response = asyncio.run(server._handle_request(request))
+
+        assert response.status == 400
+        body = json.loads(response.body)
+        assert "Could not determine registry type" in body["error"]
+
+
+class TestProxyServerHealthCheck:
+    """Tests for health check endpoint."""
+
+    def setup_method(self):
+        """Set up test fixtures."""
+        from metapackage import MetaPackage
+        MetaPackage.instances.clear()
+
+    def test_health_check_endpoint(self):
+        """Test health check returns 200 with status ok."""
+        import aiohttp
+        import aiohttp.test_utils
+
+        async def _run():
+            config = ProxyConfig(port=0)
+            server = RegistryProxyServer(config)
+            app = server._create_app()
+            async with aiohttp.test_utils.TestServer(app) as ts:
+                async with aiohttp.ClientSession() as session:
+                    resp = await session.get(
+                        f"http://{ts.host}:{ts.port}/_depgate/health"
+                    )
+                    assert resp.status == 200
+                    data = await resp.json()
+                    assert data["status"] == "ok"
+                    assert "decision_mode" in data
+                    assert "cache" in data
+
+        asyncio.run(_run())
+
+
+class TestResponseCacheByteTracking:
+    """Tests for response cache byte tracking correctness."""
+
+    def test_byte_tracking_add_remove(self):
+        """Test that byte tracking stays accurate across add/remove cycles."""
+        from src.proxy.cache import ResponseCache
+
+        cache = ResponseCache(default_ttl=300)
+
+        cache.set("http://a.com/1", b"hello", {"Content-Type": "text/plain"})
+        assert cache._current_bytes == 5
+
+        cache.set("http://a.com/2", b"world!", {"Content-Type": "text/plain"})
+        assert cache._current_bytes == 11
+
+        cache.invalidate("http://a.com/1")
+        assert cache._current_bytes == 6
+
+        cache.clear()
+        assert cache._current_bytes == 0
+
+    def test_byte_tracking_no_negative_drift(self):
+        """Test that byte tracking never goes negative."""
+        from src.proxy.cache import ResponseCache
+
+        cache = ResponseCache(default_ttl=300)
+
+        # Force _current_bytes to 0 and remove a non-existent entry
+        cache._current_bytes = 0
+        cache._remove_entry("http://nonexistent.com")
+        assert cache._current_bytes == 0

@@ -6,7 +6,7 @@ allows or blocks based on policy decisions.
 """
 
 from .request_parser import RequestParser, ParsedRequest, RegistryType
-from .cache import DecisionCache
+from .cache import DecisionCache, ResponseCache
 from .upstream import UpstreamClient
 from .evaluator import ProxyEvaluator
 from .server import RegistryProxyServer, ProxyConfig
@@ -16,6 +16,7 @@ __all__ = [
     "ParsedRequest",
     "RegistryType",
     "DecisionCache",
+    "ResponseCache",
     "UpstreamClient",
     "ProxyEvaluator",
     "RegistryProxyServer",

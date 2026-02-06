@@ -91,6 +91,14 @@ def add_proxy_arguments(parser: argparse.ArgumentParser) -> None:
         type=int,
         default=3600,
     )
+    parser.add_argument(
+        "--response-cache-ttl",
+        dest="PROXY_RESPONSE_CACHE_TTL",
+        help="Response cache TTL in seconds (default: 300)",
+        action="store",
+        type=int,
+        default=300,
+    )
 
     # Timeouts
     parser.add_argument(
@@ -111,6 +119,13 @@ def add_proxy_arguments(parser: argparse.ArgumentParser) -> None:
         type=str,
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
         default="INFO",
+    )
+    parser.add_argument(
+        "--logfile",
+        dest="LOG_FILE",
+        help="Log output to file (useful for background/daemon operation)",
+        action="store",
+        type=str,
     )
 
 

@@ -213,3 +213,24 @@ class TestProxyEvaluatorRegistries:
         evaluator = ProxyEvaluator()
         decision = evaluator.evaluate("lodash", None, RegistryType.NPM)
         assert decision.decision == "allow"
+
+
+class TestProxyEvaluatorMemoryLeak:
+    """Tests for MetaPackage memory leak prevention."""
+
+    def setup_method(self):
+        """Set up test fixtures."""
+        from metapackage import MetaPackage
+        MetaPackage.instances.clear()
+
+    def test_evaluate_does_not_leak_metapackage_instances(self):
+        """Evaluating many packages should not grow MetaPackage.instances."""
+        from metapackage import MetaPackage
+
+        evaluator = ProxyEvaluator()
+        initial_count = len(MetaPackage.instances)
+
+        for i in range(100):
+            evaluator.evaluate(f"pkg-{i}", "1.0.0", RegistryType.NPM)
+
+        assert len(MetaPackage.instances) == initial_count

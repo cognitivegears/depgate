@@ -80,7 +80,7 @@ class ProxyEvaluator:
         if use_cache and self._decision_cache:
             cached = self._decision_cache.get(registry, package_name, version)
             if cached:
-                logger.debug(f"Cache hit for {registry}:{package_name}:{version}")
+                logger.debug("Cache hit for %s:%s:%s", registry, package_name, version)
                 return PolicyDecision(
                     decision=cached.get("decision", "allow"),
                     violated_rules=cached.get("violated_rules", []),
@@ -103,6 +103,12 @@ class ProxyEvaluator:
         # Build facts
         fact_builder = self._ensure_fact_builder()
         facts = fact_builder.build_facts(pkg)
+
+        # Clean up to prevent memory leak - proxy creates transient packages
+        try:
+            MetaPackage.instances.remove(pkg)
+        except ValueError:
+            pass
 
         # Evaluate policy
         engine = self._ensure_engine()
@@ -169,7 +175,7 @@ class ProxyEvaluator:
         elif self._decision_mode == "warn":
             # Log warning but allow
             logger.warning(
-                f"Policy violation (warn mode): {decision.violated_rules}"
+                "Policy violation (warn mode): %s", decision.violated_rules
             )
             return PolicyDecision(
                 decision="allow",
@@ -178,7 +184,7 @@ class ProxyEvaluator:
             )
         elif self._decision_mode == "audit":
             # Log for audit but allow
-            logger.info(f"Policy violation (audit mode): {decision.violated_rules}")
+            logger.info("Policy violation (audit mode): %s", decision.violated_rules)
             return PolicyDecision(
                 decision="allow",
                 violated_rules=decision.violated_rules,

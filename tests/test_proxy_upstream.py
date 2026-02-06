@@ -55,3 +55,19 @@ class TestUpstreamClientHeaders:
         result = client._build_request_headers(headers)
 
         assert result["Accept"] == "application/json"
+
+    def test_build_request_headers_case_insensitive_connection(self):
+        """Ensure Connection header is matched case-insensitively."""
+        client = UpstreamClient()
+        headers = {
+            "connection": "keep-alive, X-Custom",
+            "X-Custom": "remove-me",
+            "Accept": "application/json",
+        }
+
+        result = client._build_request_headers(headers)
+
+        assert "connection" not in result
+        assert "Connection" not in result
+        assert "X-Custom" not in result
+        assert result["Accept"] == "application/json"

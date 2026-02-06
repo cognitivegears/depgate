@@ -128,7 +128,6 @@ class DecisionCache:
 
     def stats(self) -> Dict[str, Any]:
         """Get cache statistics."""
-        now = time.time()
         expired_count = sum(1 for e in self._cache.values() if e.is_expired())
         return {
             "total_entries": len(self._cache),
@@ -165,7 +164,9 @@ class ResponseCache:
     """TTL cache for upstream responses.
 
     Caches raw responses from upstream registries to reduce
-    latency and load on upstream servers.
+    latency and load on upstream servers.  Body and headers are
+    stored together in a single CacheEntry to avoid parallel-dict
+    drift.
     """
 
     def __init__(self, default_ttl: int = 300):
@@ -175,8 +176,7 @@ class ResponseCache:
             default_ttl: Default time-to-live in seconds.
         """
         self._default_ttl = default_ttl
-        self._cache: Dict[str, CacheEntry[bytes]] = {}
-        self._headers_cache: Dict[str, Dict[str, str]] = {}
+        self._cache: Dict[str, CacheEntry[tuple[bytes, Dict[str, str]]]] = {}
         self._max_entries = 1000
         self._max_bytes = 100 * 1024 * 1024  # 100MB
         self._current_bytes = 0
@@ -202,8 +202,7 @@ class ResponseCache:
             self._remove_entry(url)
             return None
 
-        headers = self._headers_cache.get(url, {})
-        return entry.value, headers
+        return entry.value
 
     def set(
         self,
@@ -239,8 +238,7 @@ class ResponseCache:
         effective_ttl = ttl if ttl is not None else self._default_ttl
         expires_at = time.time() + effective_ttl
 
-        self._cache[url] = CacheEntry(value=body, expires_at=expires_at)
-        self._headers_cache[url] = headers
+        self._cache[url] = CacheEntry(value=(body, headers), expires_at=expires_at)
         self._current_bytes += body_size
 
         # Evict if over entry limit
@@ -254,7 +252,6 @@ class ResponseCache:
     def clear(self) -> None:
         """Clear all cached responses."""
         self._cache.clear()
-        self._headers_cache.clear()
         self._current_bytes = 0
 
     def stats(self) -> Dict[str, Any]:
@@ -273,9 +270,8 @@ class ResponseCache:
     def _remove_entry(self, url: str) -> None:
         """Remove an entry and update byte count."""
         entry = self._cache.pop(url, None)
-        self._headers_cache.pop(url, None)
         if entry:
-            self._current_bytes -= len(entry.value)
+            self._current_bytes = max(0, self._current_bytes - len(entry.value[0]))
 
     def _maybe_cleanup(self) -> None:
         """Run cleanup if enough time has passed."""
