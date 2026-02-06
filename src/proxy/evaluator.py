@@ -117,13 +117,17 @@ class ProxyEvaluator:
         # Apply decision mode
         final_decision = self._apply_decision_mode(decision)
 
-        # Cache the decision
+        # Cache the decision (shorter TTL for unpinned/latest)
         if self._decision_cache:
+            ttl = None
+            if version is None or str(version).lower() == "latest":
+                ttl = min(self._decision_cache.default_ttl(), 300)
             self._decision_cache.set(
                 registry,
                 package_name,
                 version,
                 final_decision.to_dict(),
+                ttl=ttl,
             )
 
         return final_decision

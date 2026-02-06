@@ -137,6 +137,10 @@ class DecisionCache:
             "default_ttl": self._default_ttl,
         }
 
+    def default_ttl(self) -> int:
+        """Return the default TTL in seconds."""
+        return self._default_ttl
+
     def _maybe_cleanup(self) -> None:
         """Run cleanup if enough time has passed."""
         now = time.time()
@@ -164,9 +168,9 @@ class ResponseCache:
     """TTL cache for upstream responses.
 
     Caches raw responses from upstream registries to reduce
-    latency and load on upstream servers.  Body and headers are
+    latency and load on upstream servers. Body and headers are
     stored together in a single CacheEntry to avoid parallel-dict
-    drift.
+    drift. Cache keys may include request header variants.
     """
 
     def __init__(self, default_ttl: int = 300):
@@ -187,7 +191,7 @@ class ResponseCache:
         """Get a cached response.
 
         Args:
-            url: Request URL.
+            url: Cache key (usually URL plus request header variants).
 
         Returns:
             Tuple of (body bytes, headers dict) or None if not found/expired.
@@ -214,7 +218,7 @@ class ResponseCache:
         """Cache a response.
 
         Args:
-            url: Request URL.
+            url: Cache key (usually URL plus request header variants).
             body: Response body bytes.
             headers: Response headers.
             ttl: Optional TTL override in seconds.
@@ -266,6 +270,10 @@ class ResponseCache:
             "max_entries": self._max_entries,
             "default_ttl": self._default_ttl,
         }
+
+    def max_entry_bytes(self) -> int:
+        """Return the maximum cacheable entry size in bytes."""
+        return self._max_bytes // 10
 
     def _remove_entry(self, url: str) -> None:
         """Remove an entry and update byte count."""

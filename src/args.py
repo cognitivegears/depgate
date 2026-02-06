@@ -21,6 +21,13 @@ def add_proxy_arguments(parser: argparse.ArgumentParser) -> None:
         default="127.0.0.1",
     )
     parser.add_argument(
+        "--allow-external",
+        dest="PROXY_ALLOW_EXTERNAL",
+        help="Allow binding the proxy to non-local addresses (requires explicit opt-in)",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
         "--port",
         dest="PROXY_PORT",
         help="Port to bind the proxy server (default: 8080)",

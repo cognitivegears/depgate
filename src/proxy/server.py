@@ -9,6 +9,7 @@ import signal
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
 
+import aiohttp
 from aiohttp import web
 
 from .request_parser import RequestParser, ParsedRequest, RegistryType
@@ -34,6 +35,7 @@ class ProxyConfig:
     cache_ttl: int = 3600
     response_cache_ttl: int = 300
     timeout: int = 30
+    allow_external: bool = False
 
     @classmethod
     def from_args(cls, args: Any) -> "ProxyConfig":
@@ -52,6 +54,7 @@ class ProxyConfig:
             cache_ttl=getattr(args, "PROXY_CACHE_TTL", 3600),
             response_cache_ttl=getattr(args, "PROXY_RESPONSE_CACHE_TTL", 300),
             timeout=getattr(args, "PROXY_TIMEOUT", 30),
+            allow_external=getattr(args, "PROXY_ALLOW_EXTERNAL", False),
         )
 
         # Override upstreams if provided
@@ -259,21 +262,116 @@ class RegistryProxyServer:
         if request.body_exists:
             body = await request.read()
 
-        # Forward to upstream
-        status, headers, response_body = await self._upstream.forward(
+        url, request_headers = self._upstream.build_request(
             registry_type,
             path,
-            method=request.method,
-            headers=dict(request.headers),
-            body=body,
+            dict(request.headers),
+        )
+        if not url:
+            return web.Response(
+                status=502,
+                content_type="application/json",
+                body=b'{"error": "No upstream configured for registry type"}',
+            )
+
+        method = request.method
+        cache_key = self._upstream.cache_key(url, request_headers)
+        use_cache = (
+            method == "GET"
+            and self._upstream.is_cacheable_request(request_headers)
         )
 
-        # Build response
-        return web.Response(
-            status=status,
-            headers=headers,
-            body=response_body,
-        )
+        if use_cache:
+            cached = self._response_cache.get(cache_key)
+            if cached:
+                logger.debug("Cache hit for %s", url)
+                cached_body, cached_headers = cached
+                return web.Response(
+                    status=200,
+                    headers=cached_headers,
+                    body=cached_body,
+                )
+
+        try:
+            async with self._upstream.open_response(
+                url,
+                method=method,
+                headers=request_headers,
+                body=body,
+            ) as response:
+                response_headers = dict(response.headers)
+                filtered_headers = self._upstream.filter_response_headers(response_headers)
+
+                cacheable_response = (
+                    use_cache
+                    and response.status == 200
+                    and self._upstream.is_cacheable_response(response_headers)
+                )
+
+                if cacheable_response:
+                    max_bytes = self._response_cache.max_entry_bytes()
+                    content_length = response_headers.get("Content-Length")
+                    length = None
+                    if content_length is not None:
+                        try:
+                            length = int(content_length)
+                        except ValueError:
+                            pass
+
+                    if length is not None and length <= max_bytes:
+                        # Known-small: buffer and cache.
+                        response_body = await response.read()
+                        self._response_cache.set(
+                            cache_key,
+                            response_body,
+                            filtered_headers,
+                        )
+                        return web.Response(
+                            status=response.status,
+                            headers=filtered_headers,
+                            body=response_body,
+                        )
+
+                    if length is None:
+                        # No Content-Length (e.g. chunked); buffer and
+                        # cache if the body turns out to be small enough.
+                        response_body = await response.read()
+                        if len(response_body) <= max_bytes:
+                            self._response_cache.set(
+                                cache_key,
+                                response_body,
+                                filtered_headers,
+                            )
+                        return web.Response(
+                            status=response.status,
+                            headers=filtered_headers,
+                            body=response_body,
+                        )
+
+                # Non-cacheable or known-large: stream to client.
+                stream_response = web.StreamResponse(
+                    status=response.status,
+                    headers=filtered_headers,
+                )
+                await stream_response.prepare(request)
+                async for chunk in response.content.iter_chunked(64 * 1024):
+                    await stream_response.write(chunk)
+                await stream_response.write_eof()
+                return stream_response
+        except aiohttp.ClientError as e:
+            logger.error("Upstream request failed: %s", e)
+            return web.Response(
+                status=502,
+                content_type="application/json",
+                body=b'{"error": "Upstream request failed"}',
+            )
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logger.exception("Unexpected error forwarding request: %s", e)
+            return web.Response(
+                status=500,
+                content_type="application/json",
+                body=b'{"error": "Internal proxy error"}',
+            )
 
     def _deny_response(
         self,

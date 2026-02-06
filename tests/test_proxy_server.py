@@ -3,10 +3,12 @@
 import json
 import pytest
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from contextlib import asynccontextmanager
+from typing import Dict, Optional
+from unittest.mock import MagicMock, patch
 
 # Check if aiohttp is available
-pytest.importorskip("aiohttp")
+aiohttp_mod = pytest.importorskip("aiohttp")
 
 from aiohttp import web
 from aiohttp.test_utils import AioHTTPTestCase, unittest_run_loop
@@ -14,6 +16,33 @@ from yarl import URL
 
 from src.proxy.server import RegistryProxyServer, ProxyConfig
 from src.proxy.request_parser import RegistryType
+from src.analysis.policy import PolicyDecision
+
+
+class _DummyContent:
+    """Async iterable for streamed response content."""
+
+    def __init__(self, body: bytes):
+        self._body = body
+
+    async def iter_chunked(self, size: int):
+        yield self._body
+
+    async def read(self, n: int = -1) -> bytes:
+        return self._body
+
+
+class _DummyResponse:
+    """Minimal async response stub."""
+
+    def __init__(self, status: int = 200, headers: Optional[Dict[str, str]] = None, body: bytes = b"ok"):
+        self.status = status
+        self.headers = headers or {}
+        self._body = body
+        self.content = _DummyContent(body)
+
+    async def read(self) -> bytes:
+        return self._body
 
 
 class TestProxyConfig:
@@ -307,8 +336,18 @@ class TestProxyServerAsync:
         """Test that query strings are forwarded to upstream."""
         config = ProxyConfig()
         server = RegistryProxyServer(config)
+        seen = {}
 
-        server._upstream.forward = AsyncMock(return_value=(200, {}, b"ok"))
+        @asynccontextmanager
+        async def _open_response(url, method, headers, body):
+            seen["url"] = url
+            yield _DummyResponse(
+                status=200,
+                headers={"Content-Length": "2", "Content-Type": "text/plain"},
+                body=b"ok",
+            )
+
+        server._upstream.open_response = _open_response
 
         request = MagicMock()
         request.rel_url = URL("/-/v1/search?text=lodash&size=20")
@@ -320,9 +359,7 @@ class TestProxyServerAsync:
         response = asyncio.run(server._handle_request(request))
 
         assert isinstance(response, web.Response)
-        server._upstream.forward.assert_awaited_once()
-        _, call_path = server._upstream.forward.await_args.args[:2]
-        assert call_path == "/-/v1/search?text=lodash&size=20"
+        assert seen["url"].endswith("/-/v1/search?text=lodash&size=20")
 
     def test_unknown_registry_type_returns_400(self):
         """Test that parsed requests with UNKNOWN registry type return 400."""
@@ -416,3 +453,355 @@ class TestResponseCacheByteTracking:
         cache._current_bytes = 0
         cache._remove_entry("http://nonexistent.com")
         assert cache._current_bytes == 0
+
+
+class TestProxyServerRegistryIntegration:
+    """Integration-style tests for registry handling."""
+
+    def _run_request(self, path: str, user_agent: str, expected_registry, expected_pkg, expected_version):
+        config = ProxyConfig()
+        server = RegistryProxyServer(config)
+
+        server._evaluator.evaluate = MagicMock(
+            return_value=PolicyDecision("allow", [], {})
+        )
+
+        @asynccontextmanager
+        async def _open_response(url, method, headers, body):
+            yield _DummyResponse(
+                status=200,
+                headers={"Content-Length": "2", "Content-Type": "text/plain"},
+                body=b"ok",
+            )
+
+        server._upstream.open_response = _open_response
+
+        request = MagicMock()
+        request.rel_url = URL(path)
+        request.path = URL(path).path
+        request.method = "GET"
+        request.headers = {"User-Agent": user_agent}
+        request.body_exists = False
+
+        response = asyncio.run(server._handle_request(request))
+
+        assert isinstance(response, web.Response)
+        server._evaluator.evaluate.assert_called_once_with(
+            expected_pkg, expected_version, expected_registry
+        )
+
+    def test_integration_npm(self):
+        """NPM metadata request is evaluated and forwarded."""
+        self._run_request(
+            "/lodash",
+            "npm/9.0.0",
+            RegistryType.NPM,
+            "lodash",
+            None,
+        )
+
+    def test_integration_pypi(self):
+        """PyPI simple index request is evaluated and forwarded."""
+        self._run_request(
+            "/simple/requests/",
+            "pip/23.0.1",
+            RegistryType.PYPI,
+            "requests",
+            None,
+        )
+
+    def test_integration_maven(self):
+        """Maven artifact request is evaluated and forwarded."""
+        self._run_request(
+            "/maven2/org/apache/commons/commons-lang3/3.12.0/commons-lang3-3.12.0.jar",
+            "Apache-Maven/3.9.0",
+            RegistryType.MAVEN,
+            "org.apache.commons:commons-lang3",
+            "3.12.0",
+        )
+
+    def test_integration_nuget(self):
+        """NuGet registration request is evaluated and forwarded."""
+        self._run_request(
+            "/v3/registration5-gz-semver2/newtonsoft.json/index.json",
+            "NuGet Command Line/6.4.0",
+            RegistryType.NUGET,
+            "newtonsoft.json",
+            None,
+        )
+
+
+class TestProxyServerStreaming:
+    """Tests for streaming and cache behaviour in _forward_request."""
+
+    def setup_method(self):
+        from metapackage import MetaPackage
+        MetaPackage.instances.clear()
+
+    def _make_server(self):
+        config = ProxyConfig()
+        return RegistryProxyServer(config)
+
+    def _make_request(self, path="/lodash", method="GET", user_agent="npm/9.0.0"):
+        request = MagicMock()
+        request.rel_url = URL(path)
+        request.path = URL(path).path
+        request.method = method
+        request.headers = {"User-Agent": user_agent}
+        request.body_exists = False
+        return request
+
+    # -- Test 5: streaming for known-large responses --
+
+    def test_large_response_streams_and_skips_cache(self):
+        """Responses larger than max_entry_bytes are streamed, not cached."""
+        server = self._make_server()
+        max_bytes = server._response_cache.max_entry_bytes()
+        large_body = b"x" * (max_bytes + 1)
+
+        @asynccontextmanager
+        async def _open_response(url, method, headers, body):
+            yield _DummyResponse(
+                status=200,
+                headers={
+                    "Content-Length": str(len(large_body)),
+                    "Content-Type": "application/octet-stream",
+                },
+                body=large_body,
+            )
+
+        server._upstream.open_response = _open_response
+
+        written = []
+
+        async def _run():
+            mock_stream = MagicMock()
+            mock_stream.status = 200
+            mock_stream.headers = {}
+
+            async def _prepare(req):
+                pass
+
+            async def _write(chunk):
+                written.append(chunk)
+
+            async def _write_eof():
+                pass
+
+            mock_stream.prepare = _prepare
+            mock_stream.write = _write
+            mock_stream.write_eof = _write_eof
+
+            with patch.object(web, "StreamResponse", return_value=mock_stream):
+                return await server._handle_request(self._make_request())
+
+        asyncio.run(_run())
+
+        assert b"".join(written) == large_body
+        # Verify not cached
+        cache_key = server._upstream.cache_key(
+            server._upstream.build_request(RegistryType.NPM, "/lodash", {"User-Agent": "npm/9.0.0"})[0],
+            server._upstream.build_request(RegistryType.NPM, "/lodash", {"User-Agent": "npm/9.0.0"})[1],
+        )
+        assert server._response_cache.get(cache_key) is None
+
+    def test_non_cacheable_response_streams(self):
+        """Responses with Cache-Control: no-store are streamed."""
+        server = self._make_server()
+
+        @asynccontextmanager
+        async def _open_response(url, method, headers, body):
+            yield _DummyResponse(
+                status=200,
+                headers={
+                    "Content-Length": "5",
+                    "Content-Type": "text/plain",
+                    "Cache-Control": "no-store",
+                },
+                body=b"hello",
+            )
+
+        server._upstream.open_response = _open_response
+        written = []
+
+        async def _run():
+            mock_stream = MagicMock()
+
+            async def _prepare(req):
+                pass
+
+            async def _write(chunk):
+                written.append(chunk)
+
+            async def _write_eof():
+                pass
+
+            mock_stream.prepare = _prepare
+            mock_stream.write = _write
+            mock_stream.write_eof = _write_eof
+
+            with patch.object(web, "StreamResponse", return_value=mock_stream):
+                return await server._handle_request(self._make_request())
+
+        asyncio.run(_run())
+
+        assert b"".join(written) == b"hello"
+
+    # -- Test 6: error handling paths --
+
+    def test_client_error_returns_502(self):
+        """aiohttp.ClientError from upstream returns 502."""
+        server = self._make_server()
+
+        @asynccontextmanager
+        async def _open_response(url, method, headers, body):
+            raise aiohttp_mod.ClientError("connection refused")
+            yield  # pragma: no cover – unreachable, needed for generator
+
+        server._upstream.open_response = _open_response
+
+        response = asyncio.run(
+            server._handle_request(self._make_request())
+        )
+
+        assert response.status == 502
+        body = json.loads(response.body)
+        assert body["error"] == "Upstream request failed"
+
+    def test_unexpected_error_returns_500(self):
+        """Unexpected exceptions from upstream return 500."""
+        server = self._make_server()
+
+        @asynccontextmanager
+        async def _open_response(url, method, headers, body):
+            raise RuntimeError("something broke")
+            yield  # pragma: no cover
+
+        server._upstream.open_response = _open_response
+
+        response = asyncio.run(
+            server._handle_request(self._make_request())
+        )
+
+        assert response.status == 500
+        body = json.loads(response.body)
+        assert body["error"] == "Internal proxy error"
+
+    # -- Test 7: cache miss → cache set flow --
+
+    def test_cacheable_response_is_cached(self):
+        """Small cacheable GET responses are stored in the response cache."""
+        server = self._make_server()
+
+        @asynccontextmanager
+        async def _open_response(url, method, headers, body):
+            yield _DummyResponse(
+                status=200,
+                headers={"Content-Length": "11", "Content-Type": "application/json"},
+                body=b'{"ok":true}',
+            )
+
+        server._upstream.open_response = _open_response
+
+        request = self._make_request()
+        response = asyncio.run(server._handle_request(request))
+
+        assert isinstance(response, web.Response)
+        assert response.body == b'{"ok":true}'
+
+        # Verify it was cached — second request should hit the cache
+        # without open_response being called
+        called = {"count": 0}
+
+        @asynccontextmanager
+        async def _should_not_call(url, method, headers, body):
+            called["count"] += 1
+            yield _DummyResponse()  # pragma: no cover
+
+        server._upstream.open_response = _should_not_call
+
+        request2 = self._make_request()
+        response2 = asyncio.run(server._handle_request(request2))
+
+        assert response2.status == 200
+        assert response2.body == b'{"ok":true}'
+        assert called["count"] == 0
+
+    # -- Test 8: missing Content-Length --
+
+    def test_chunked_response_cached_when_small(self):
+        """Responses without Content-Length are buffered and cached if small."""
+        server = self._make_server()
+
+        @asynccontextmanager
+        async def _open_response(url, method, headers, body):
+            yield _DummyResponse(
+                status=200,
+                headers={"Content-Type": "application/json"},  # no Content-Length
+                body=b'{"chunked":true}',
+            )
+
+        server._upstream.open_response = _open_response
+
+        response = asyncio.run(
+            server._handle_request(self._make_request())
+        )
+
+        assert isinstance(response, web.Response)
+        assert response.body == b'{"chunked":true}'
+
+        # Confirm it was cached
+        called = {"count": 0}
+
+        @asynccontextmanager
+        async def _should_not_call(url, method, headers, body):
+            called["count"] += 1
+            yield _DummyResponse()  # pragma: no cover
+
+        server._upstream.open_response = _should_not_call
+
+        response2 = asyncio.run(
+            server._handle_request(self._make_request())
+        )
+        assert response2.body == b'{"chunked":true}'
+        assert called["count"] == 0
+
+    def test_chunked_large_response_not_cached(self):
+        """Large responses without Content-Length are returned but not cached."""
+        server = self._make_server()
+        max_bytes = server._response_cache.max_entry_bytes()
+        large_body = b"y" * (max_bytes + 1)
+
+        @asynccontextmanager
+        async def _open_response(url, method, headers, body):
+            yield _DummyResponse(
+                status=200,
+                headers={"Content-Type": "application/octet-stream"},
+                body=large_body,
+            )
+
+        server._upstream.open_response = _open_response
+
+        response = asyncio.run(
+            server._handle_request(self._make_request())
+        )
+
+        assert isinstance(response, web.Response)
+        assert response.body == large_body
+
+        # Verify not cached — next request should call upstream again
+        called = {"count": 0}
+
+        @asynccontextmanager
+        async def _counting_open(url, method, headers, body):
+            called["count"] += 1
+            yield _DummyResponse(
+                status=200,
+                headers={"Content-Type": "application/octet-stream"},
+                body=large_body,
+            )
+
+        server._upstream.open_response = _counting_open
+
+        asyncio.run(server._handle_request(self._make_request()))
+        assert called["count"] == 1

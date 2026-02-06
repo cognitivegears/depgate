@@ -103,6 +103,20 @@ class TestRequestParserPyPI:
         assert result.package_name == "requests"
         assert result.version == "2.31.0"
 
+    def test_parse_json_api_with_short_version(self):
+        """Test parsing PyPI JSON API with short version."""
+        result = self.parser.parse("/pypi/requests/2.0/json", RegistryType.PYPI)
+        assert result.registry_type == RegistryType.PYPI
+        assert result.package_name == "requests"
+        assert result.version == "2.0"
+
+    def test_parse_json_api_with_rc_version(self):
+        """Test parsing PyPI JSON API with RC version."""
+        result = self.parser.parse("/pypi/requests/1.0rc1/json", RegistryType.PYPI)
+        assert result.registry_type == RegistryType.PYPI
+        assert result.package_name == "requests"
+        assert result.version == "1.0rc1"
+
     def test_normalize_pypi_name(self):
         """Test PyPI package name normalization."""
         result = self.parser.parse("/simple/Flask_RESTful/", RegistryType.PYPI)
@@ -112,6 +126,78 @@ class TestRequestParserPyPI:
         """Test PyPI package name normalization with dots."""
         result = self.parser.parse("/simple/zope.interface/", RegistryType.PYPI)
         assert result.package_name == "zope-interface"
+
+    def test_parse_pypi_download_rc(self):
+        """Test parsing PyPI download URL with RC version."""
+        result = self.parser.parse(
+            "/packages/ab/cd/ef/requests-1.0rc1.tar.gz",
+            RegistryType.PYPI,
+        )
+        assert result.registry_type == RegistryType.PYPI
+        assert result.package_name == "requests"
+        assert result.version == "1.0rc1"
+
+    def test_parse_pypi_wheel(self):
+        """Test parsing PyPI wheel download URL."""
+        result = self.parser.parse(
+            "/packages/ab/cd/ef/requests-2.31.0-py3-none-any.whl",
+            RegistryType.PYPI,
+        )
+        assert result.registry_type == RegistryType.PYPI
+        assert result.package_name == "requests"
+        assert result.version == "2.31.0"
+        assert result.is_tarball_request is True
+        assert result.is_metadata_request is False
+
+    def test_parse_pypi_wheel_with_build_tag(self):
+        """Test parsing PyPI wheel with optional build tag."""
+        result = self.parser.parse(
+            "/packages/ab/cd/ef/mypackage-1.0.0-1-py3-none-any.whl",
+            RegistryType.PYPI,
+        )
+        assert result.registry_type == RegistryType.PYPI
+        assert result.package_name == "mypackage"
+        assert result.version == "1.0.0"
+
+    def test_parse_pypi_sdist_ambiguous_name(self):
+        """Ambiguous sdist names split at the last hyphen before a digit."""
+        result = self.parser.parse(
+            "/packages/ab/cd/ef/python-dateutil-2.8.2.tar.gz",
+            RegistryType.PYPI,
+        )
+        assert result.registry_type == RegistryType.PYPI
+        assert result.package_name == "python-dateutil"
+        assert result.version == "2.8.2"
+
+    def test_parse_pypi_sdist_name_with_digits(self):
+        """Package names containing digits are correctly separated from version."""
+        result = self.parser.parse(
+            "/packages/ab/cd/ef/h5py-3.8.0.tar.gz",
+            RegistryType.PYPI,
+        )
+        assert result.registry_type == RegistryType.PYPI
+        assert result.package_name == "h5py"
+        assert result.version == "3.8.0"
+
+    def test_parse_pypi_sdist_post_version(self):
+        """Post-release versions are correctly parsed."""
+        result = self.parser.parse(
+            "/packages/ab/cd/ef/mylib-1.0.post1.tar.gz",
+            RegistryType.PYPI,
+        )
+        assert result.registry_type == RegistryType.PYPI
+        assert result.package_name == "mylib"
+        assert result.version == "1.0.post1"
+
+    def test_parse_pypi_zip(self):
+        """Zip archives are matched by the sdist pattern."""
+        result = self.parser.parse(
+            "/packages/ab/cd/ef/mylib-2.0.zip",
+            RegistryType.PYPI,
+        )
+        assert result.registry_type == RegistryType.PYPI
+        assert result.package_name == "mylib"
+        assert result.version == "2.0"
 
 
 class TestRequestParserMaven:
@@ -226,3 +312,10 @@ class TestRequestParserAutoDetect:
         # NPM parser will match this as package "some" with version "unknown/path"
         assert result.registry_type == RegistryType.NPM
         assert result.package_name == "some"
+
+    def test_registry_hint_prevents_autodetect_on_miss(self):
+        """Test that registry hint is honored even when parsing fails."""
+        parser = RequestParser(default_registry=RegistryType.NPM)
+        result = parser.parse("/v3/index.json", RegistryType.NUGET)
+        assert result.registry_type == RegistryType.NUGET
+        assert result.package_name == ""

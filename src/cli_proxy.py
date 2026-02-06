@@ -6,6 +6,7 @@ that intercepts package manager requests and evaluates them against policies.
 
 from __future__ import annotations
 
+import ipaddress
 import logging
 import os
 import sys
@@ -14,6 +15,35 @@ from typing import Any, Dict, Optional
 from common.logging_utils import configure_logging
 
 logger = logging.getLogger(__name__)
+
+
+def _is_local_bind_host(host: str) -> bool:
+    """Return True if host is a loopback/local bind target."""
+    if not host:
+        return False
+    host_lower = host.strip().lower()
+    if host_lower in ("localhost",):
+        return True
+    try:
+        return ipaddress.ip_address(host_lower).is_loopback
+    except ValueError:
+        # Non-IP hostnames are treated as non-local unless explicitly allowed.
+        return False
+
+
+def _enforce_local_binding(host: str, allow_external: bool) -> None:
+    """Enforce local-only binding unless explicitly allowed."""
+    if _is_local_bind_host(host):
+        return
+    if not allow_external:
+        sys.stderr.write(
+            "ERROR: Non-local bindings require --allow-external.\n"
+        )
+        sys.exit(2)
+    logger.warning(
+        "Binding proxy to non-local address (%s). Ensure network controls are in place.",
+        host,
+    )
 
 
 def _load_policy_config(config_path: Optional[str]) -> Dict[str, Any]:
@@ -117,6 +147,7 @@ def run_proxy_server(args: Any) -> None:
     # Create server config
     config = ProxyConfig.from_args(args)
     config.policy_config = policy_config
+    _enforce_local_binding(config.host, config.allow_external)
 
     # Print startup banner
     print(

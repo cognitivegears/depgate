@@ -111,6 +111,7 @@ depgate proxy --config policy.yml --decision-mode block
 | Option | Default | Description |
 |--------|---------|-------------|
 | `--host` | `127.0.0.1` | Host address to bind |
+| `--allow-external` | `false` | Allow binding to non-local addresses (required for non-loopback hosts) |
 | `--port` | `8080` | Port to bind |
 | `--timeout` | `30` | Upstream request timeout (seconds) |
 

@@ -71,3 +71,36 @@ class TestUpstreamClientHeaders:
         assert "Connection" not in result
         assert "X-Custom" not in result
         assert result["Accept"] == "application/json"
+
+
+class TestUpstreamClientCaching:
+    """Tests for upstream cache key and cacheability checks."""
+
+    def test_cache_key_varies_on_accept(self):
+        """Ensure cache key varies with Accept header."""
+        client = UpstreamClient()
+        key_a = client.cache_key(
+            "https://example.com/pkg",
+            {"Accept": "application/json", "Accept-Encoding": "gzip"},
+        )
+        key_b = client.cache_key(
+            "https://example.com/pkg",
+            {"Accept": "text/plain", "Accept-Encoding": "gzip"},
+        )
+        assert key_a != key_b
+
+    def test_cacheable_request_rejects_auth(self):
+        """Ensure auth/cookie requests are not cached."""
+        client = UpstreamClient()
+        assert client.is_cacheable_request({"Authorization": "Bearer token"}) is False
+        assert client.is_cacheable_request({"Cookie": "a=b"}) is False
+
+    def test_cacheable_response_rejects_vary_star(self):
+        """Ensure responses with Vary:* are not cached."""
+        client = UpstreamClient()
+        assert client.is_cacheable_response({"Vary": "*"}) is False
+
+    def test_cacheable_response_allows_accept_encoding_vary(self):
+        """Ensure Vary: Accept-Encoding is cacheable."""
+        client = UpstreamClient()
+        assert client.is_cacheable_response({"Vary": "Accept-Encoding"}) is True

@@ -49,9 +49,16 @@ class RequestParser:
     # /pypi/{package}/{version}/json - JSON API for specific version
     # /packages/{...}/{package}-{version}.tar.gz - tarball
     _PYPI_SIMPLE_PATTERN = re.compile(r"^/simple/([^/]+)/?$")
-    _PYPI_JSON_PATTERN = re.compile(r"^/pypi/([^/]+)(?:/(\d+\.\d+\.\d+(?:[a-zA-Z0-9.+-]*)?))?/json$")
-    _PYPI_PACKAGES_PATTERN = re.compile(
-        r"^/packages/[^/]+/[^/]+/[^/]+/([^/]+)-(\d+\.\d+\.\d+(?:[a-zA-Z0-9.+-]*)?)(?:\.tar\.gz|\.whl|\.zip)$"
+    _PYPI_JSON_PATTERN = re.compile(r"^/pypi/([^/]+)(?:/([^/]+))?/json$")
+    # sdist/zip: greedy name, version must start with a digit and contain
+    # no hyphens (PEP 440 normalized versions never contain hyphens).
+    _PYPI_SDIST_PATTERN = re.compile(
+        r"^/packages/[^/]+/[^/]+/[^/]+/(.*)-(\d[^-]*)\.(?:tar\.gz|zip)$"
+    )
+    # wheel (PEP 427): {name}-{version}(-{build})?-{python}-{abi}-{platform}.whl
+    # Normalized wheel names/versions never contain hyphens.
+    _PYPI_WHEEL_PATTERN = re.compile(
+        r"^/packages/[^/]+/[^/]+/[^/]+/([^-]+)-([^-]+)(?:-[^-]+){3,4}\.whl$"
     )
 
     # Maven patterns
@@ -110,6 +117,11 @@ class RequestParser:
             result = self._parse_for_registry(path, registry_hint)
             if result:
                 return result
+            return ParsedRequest(
+                registry_type=registry_hint,
+                package_name="",
+                raw_path=path,
+            )
 
         # Auto-detect registry type from URL patterns
         # Try more specific patterns first (PyPI, Maven, NuGet have distinctive paths)
@@ -243,8 +255,22 @@ class RequestParser:
                 raw_path=path,
             )
 
-        # Try package download
-        match = self._PYPI_PACKAGES_PATTERN.match(path)
+        # Try sdist/zip download
+        match = self._PYPI_SDIST_PATTERN.match(path)
+        if match:
+            name = self._normalize_pypi_name(match.group(1))
+            version = match.group(2)
+            return ParsedRequest(
+                registry_type=RegistryType.PYPI,
+                package_name=name,
+                version=version,
+                is_metadata_request=False,
+                is_tarball_request=True,
+                raw_path=path,
+            )
+
+        # Try wheel download
+        match = self._PYPI_WHEEL_PATTERN.match(path)
         if match:
             name = self._normalize_pypi_name(match.group(1))
             version = match.group(2)

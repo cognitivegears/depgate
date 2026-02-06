@@ -173,6 +173,26 @@ class TestProxyEvaluatorCaching:
 
         assert decision_after.decision == "deny"
 
+    def test_unpinned_version_uses_shorter_ttl(self):
+        """Unpinned versions should use shorter cache TTLs."""
+        class _SpyCache(DecisionCache):
+            def __init__(self):
+                super().__init__(default_ttl=3600)
+                self.last_ttl = None
+
+            def set(self, registry, package_name, version, decision, ttl=None):
+                self.last_ttl = ttl
+                return super().set(registry, package_name, version, decision, ttl=ttl)
+
+        cache = _SpyCache()
+        evaluator = ProxyEvaluator(policy_config={"rules": []}, decision_cache=cache)
+
+        evaluator.evaluate("lodash", None, RegistryType.NPM)
+        assert cache.last_ttl == 300
+
+        evaluator.evaluate("lodash", "1.0.0", RegistryType.NPM)
+        assert cache.last_ttl is None
+
 
 class TestProxyEvaluatorRegistries:
     """Tests for different registry types."""
