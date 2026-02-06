@@ -105,3 +105,55 @@ class ProviderClient(ABC):
             List of tag dictionaries for version matching
         """
         raise NotImplementedError
+
+    @abstractmethod
+    def get_open_prs_count(self, owner: str, repo: str) -> Optional[int]:
+        """Get count of open pull/merge requests.
+
+        Args:
+            owner: Repository owner/organization name
+            repo: Repository name
+
+        Returns:
+            Open PR/MR count or None if unavailable
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_last_commit(self, owner: str, repo: str) -> Optional[str]:
+        """Get last commit timestamp.
+
+        Args:
+            owner: Repository owner/organization name
+            repo: Repository name
+
+        Returns:
+            ISO 8601 timestamp or None if unavailable
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_last_merged_pr(self, owner: str, repo: str) -> Optional[str]:
+        """Get last merged pull/merge request timestamp.
+
+        Args:
+            owner: Repository owner/organization name
+            repo: Repository name
+
+        Returns:
+            ISO 8601 timestamp or None if unavailable
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def get_last_closed_issue(self, owner: str, repo: str) -> Optional[str]:
+        """Get last closed issue timestamp.
+
+        Args:
+            owner: Repository owner/organization name
+            repo: Repository name
+
+        Returns:
+            ISO 8601 timestamp or None if unavailable
+        """
+        raise NotImplementedError

@@ -136,7 +136,8 @@ class RegistryProxyServer:
         Returns:
             HTTP response.
         """
-        path = "/" + request.match_info["path"]
+        path = request.rel_url.path
+        path_qs = request.rel_url.path_qs
         method = request.method
 
         # Detect registry type from request headers or path
@@ -148,7 +149,7 @@ class RegistryProxyServer:
         if not parsed.package_name:
             # Could not parse package info, pass through to upstream
             logger.debug(f"Unparseable request, passing through: {path}")
-            return await self._forward_request(request, parsed.registry_type, path)
+            return await self._forward_request(request, parsed.registry_type, path_qs)
 
         logger.info(
             f"Request: {method} {path} -> "
@@ -178,7 +179,7 @@ class RegistryProxyServer:
                 )
 
         # Forward to upstream
-        return await self._forward_request(request, parsed.registry_type, path)
+        return await self._forward_request(request, parsed.registry_type, path_qs)
 
     def _detect_registry_hint(self, request: web.Request) -> Optional[RegistryType]:
         """Detect registry type from request headers.
@@ -209,7 +210,7 @@ class RegistryProxyServer:
         path = request.path
         if path.startswith("/simple/") or path.startswith("/pypi/"):
             return RegistryType.PYPI
-        if path.startswith("/v3/") and "nuget" in path.lower():
+        if path.startswith("/v3/") or path.startswith("/v3-flatcontainer/"):
             return RegistryType.NUGET
         if "/maven2/" in path or path.endswith(".pom") or path.endswith(".jar"):
             return RegistryType.MAVEN
@@ -227,7 +228,7 @@ class RegistryProxyServer:
         Args:
             request: Original request.
             registry_type: Registry type.
-            path: Request path.
+            path: Request path, including query string if present.
 
         Returns:
             Response from upstream.

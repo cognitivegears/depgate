@@ -208,6 +208,8 @@ class ProxyEvaluator:
         if mode not in ("block", "warn", "audit"):
             raise ValueError(f"Invalid decision mode: {mode}")
         self._decision_mode = mode
+        if self._decision_cache:
+            self._decision_cache.clear()
 
     def invalidate_cache(
         self,

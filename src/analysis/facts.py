@@ -69,6 +69,13 @@ class FactBuilder:
             "stars_count": getattr(package, "repo_stars", None),
             "contributors_count": getattr(package, "repo_contributors", None),
             "version_count": getattr(package, "version_count", None),
+            "weekly_downloads": getattr(package, "weekly_downloads", None),
+            "forks_count": getattr(package, "repo_forks", None),
+            "open_issues_count": getattr(package, "repo_open_issues", None),
+            "open_prs_count": getattr(package, "repo_open_prs", None),
+            "last_commit_at": getattr(package, "repo_last_commit_at", None),
+            "last_merged_pr_at": getattr(package, "repo_last_merged_pr_at", None),
+            "last_closed_issue_at": getattr(package, "repo_last_closed_issue_at", None),
             "release_found_in_source_registry": getattr(package, "repo_present_in_registry", None),
             "heuristic_score": getattr(package, "score", None),
             "license": {

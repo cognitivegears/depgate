@@ -56,7 +56,9 @@ class GitLabClient:
             return {
                 'star_count': data.get('star_count'),
                 'last_activity_at': data.get('last_activity_at'),
-                'default_branch': data.get('default_branch')
+                'default_branch': data.get('default_branch'),
+                'forks_count': data.get('forks_count'),
+                'open_issues_count': data.get('open_issues_count'),
             }
         return None
 
@@ -113,6 +115,82 @@ class GitLabClient:
 
         return None
 
+    def get_open_prs_count(self, owner: str, repo: str) -> Optional[int]:
+        """Get open merge request count for project.
+
+        Args:
+            owner: Project owner/namespace
+            repo: Project name
+
+        Returns:
+            Open MR count or None on error
+        """
+        project_path = quote(f"{owner}/{repo}", safe='')
+        url = f"{self.base_url}/projects/{project_path}/merge_requests?state=opened&per_page=1"
+        return self._get_paginated_count(url)
+
+    def get_last_commit(self, owner: str, repo: str) -> Optional[str]:
+        """Get last commit timestamp for project.
+
+        Args:
+            owner: Project owner/namespace
+            repo: Project name
+
+        Returns:
+            ISO 8601 timestamp or None on error
+        """
+        project_path = quote(f"{owner}/{repo}", safe='')
+        url = f"{self.base_url}/projects/{project_path}/repository/commits?per_page=1"
+        status, _, data = get_json(url, headers=self._get_headers())
+        if status == 200 and data:
+            first = data[0] if isinstance(data[0], dict) else {}
+            return first.get("committed_date") or first.get("created_at")
+        return None
+
+    def get_last_merged_pr(self, owner: str, repo: str) -> Optional[str]:
+        """Get last merged merge request timestamp.
+
+        Args:
+            owner: Project owner/namespace
+            repo: Project name
+
+        Returns:
+            ISO 8601 timestamp or None on error
+        """
+        project_path = quote(f"{owner}/{repo}", safe='')
+        url = (
+            f"{self.base_url}/projects/{project_path}/merge_requests"
+            "?state=merged&order_by=updated_at&sort=desc&per_page=10"
+        )
+        status, _, data = get_json(url, headers=self._get_headers())
+        if status == 200 and data:
+            for mr in data:
+                if isinstance(mr, dict) and mr.get("merged_at"):
+                    return mr.get("merged_at")
+        return None
+
+    def get_last_closed_issue(self, owner: str, repo: str) -> Optional[str]:
+        """Get last closed issue timestamp.
+
+        Args:
+            owner: Project owner/namespace
+            repo: Project name
+
+        Returns:
+            ISO 8601 timestamp or None on error
+        """
+        project_path = quote(f"{owner}/{repo}", safe='')
+        url = (
+            f"{self.base_url}/projects/{project_path}/issues"
+            "?state=closed&order_by=updated_at&sort=desc&per_page=10"
+        )
+        status, _, data = get_json(url, headers=self._get_headers())
+        if status == 200 and data:
+            for issue in data:
+                if isinstance(issue, dict):
+                    return issue.get("closed_at")
+        return None
+
     def _get_paginated_results(self, url: str) -> List[Dict[str, Any]]:
         """Fetch all pages of a paginated endpoint.
 
@@ -144,6 +222,20 @@ class GitLabClient:
                 current_url = None
 
         return results
+
+    def _get_paginated_count(self, url: str) -> Optional[int]:
+        """Get a total count from a paginated endpoint."""
+        status, headers, data = get_json(url, headers=self._get_headers())
+        if status == 200:
+            total = headers.get('x-total')
+            if total:
+                try:
+                    return int(total)
+                except ValueError:
+                    pass
+            if data is not None:
+                return len(data)
+        return None
 
     def _get_current_page(self, headers: Dict[str, str]) -> Optional[int]:
         """Extract current page from response headers.

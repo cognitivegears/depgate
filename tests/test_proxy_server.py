@@ -2,6 +2,7 @@
 
 import json
 import pytest
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 # Check if aiohttp is available
@@ -9,6 +10,7 @@ pytest.importorskip("aiohttp")
 
 from aiohttp import web
 from aiohttp.test_utils import AioHTTPTestCase, unittest_run_loop
+from yarl import URL
 
 from src.proxy.server import RegistryProxyServer, ProxyConfig
 from src.proxy.request_parser import RegistryType
@@ -191,6 +193,30 @@ class TestProxyServerRegistryDetection:
         result = server._detect_registry_hint(request)
         assert result == RegistryType.NUGET
 
+    def test_detect_nuget_from_v3_index_path(self):
+        """Test detecting NuGet from /v3/index.json path."""
+        config = ProxyConfig()
+        server = RegistryProxyServer(config)
+
+        request = MagicMock()
+        request.headers = {"User-Agent": "custom-client"}
+        request.path = "/v3/index.json"
+
+        result = server._detect_registry_hint(request)
+        assert result == RegistryType.NUGET
+
+    def test_detect_nuget_from_flatcontainer_path(self):
+        """Test detecting NuGet from /v3-flatcontainer path."""
+        config = ProxyConfig()
+        server = RegistryProxyServer(config)
+
+        request = MagicMock()
+        request.headers = {"User-Agent": "custom-client"}
+        request.path = "/v3-flatcontainer/newtonsoft.json/index.json"
+
+        result = server._detect_registry_hint(request)
+        assert result == RegistryType.NUGET
+
     def test_detect_pypi_from_path(self):
         """Test detecting PyPI from path pattern."""
         config = ProxyConfig()
@@ -276,3 +302,24 @@ class TestProxyServerAsync:
         # Check upstream configuration
         assert server._upstream.get_upstream(RegistryType.NPM) == "https://custom.registry.com"
         assert server._upstream.get_upstream(RegistryType.PYPI) == config.upstream_pypi
+
+    def test_forward_preserves_query_string(self):
+        """Test that query strings are forwarded to upstream."""
+        config = ProxyConfig()
+        server = RegistryProxyServer(config)
+
+        server._upstream.forward = AsyncMock(return_value=(200, {}, b"ok"))
+
+        request = MagicMock()
+        request.rel_url = URL("/-/v1/search?text=lodash&size=20")
+        request.path = "/-/v1/search"
+        request.method = "GET"
+        request.headers = {}
+        request.body_exists = False
+
+        response = asyncio.run(server._handle_request(request))
+
+        assert isinstance(response, web.Response)
+        server._upstream.forward.assert_awaited_once()
+        _, call_path = server._upstream.forward.await_args.args[:2]
+        assert call_path == "/-/v1/search?text=lodash&size=20"

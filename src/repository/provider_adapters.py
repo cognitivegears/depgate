@@ -41,7 +41,9 @@ class GitHubProviderAdapter(ProviderClient):
         if repo_data:
             return {
                 'stars': repo_data.get('stargazers_count'),
-                'last_activity_at': repo_data.get('pushed_at')
+                'last_activity_at': repo_data.get('pushed_at'),
+                'forks_count': repo_data.get('forks_count'),
+                'open_issues_count': repo_data.get('open_issues_count'),
             }
         return None
 
@@ -79,6 +81,22 @@ class GitHubProviderAdapter(ProviderClient):
         """Fetch repository tags for version matching."""
         return self.client.get_tags(owner, repo) or []
 
+    def get_open_prs_count(self, owner: str, repo: str) -> Optional[int]:
+        """Get open pull request count for repository."""
+        return self.client.get_open_prs_count(owner, repo)
+
+    def get_last_commit(self, owner: str, repo: str) -> Optional[str]:
+        """Get last commit timestamp for repository."""
+        return self.client.get_last_commit(owner, repo)
+
+    def get_last_merged_pr(self, owner: str, repo: str) -> Optional[str]:
+        """Get last merged pull request timestamp for repository."""
+        return self.client.get_last_merged_pr(owner, repo)
+
+    def get_last_closed_issue(self, owner: str, repo: str) -> Optional[str]:
+        """Get last closed issue timestamp for repository."""
+        return self.client.get_last_closed_issue(owner, repo)
+
 
 class GitLabProviderAdapter(ProviderClient):
     """Adapter for GitLab repositories implementing ProviderClient interface."""
@@ -109,7 +127,9 @@ class GitLabProviderAdapter(ProviderClient):
         if project_data:
             return {
                 'stars': project_data.get('star_count'),
-                'last_activity_at': project_data.get('last_activity_at')
+                'last_activity_at': project_data.get('last_activity_at'),
+                'forks_count': project_data.get('forks_count'),
+                'open_issues_count': project_data.get('open_issues_count'),
             }
         return None
 
@@ -146,3 +166,19 @@ class GitLabProviderAdapter(ProviderClient):
     def get_tags(self, owner: str, repo: str) -> List[Dict[str, str]]:
         """Fetch project tags for version matching."""
         return self.client.get_tags(owner, repo) or []
+
+    def get_open_prs_count(self, owner: str, repo: str) -> Optional[int]:
+        """Get open merge request count for project."""
+        return self.client.get_open_prs_count(owner, repo)
+
+    def get_last_commit(self, owner: str, repo: str) -> Optional[str]:
+        """Get last commit timestamp for project."""
+        return self.client.get_last_commit(owner, repo)
+
+    def get_last_merged_pr(self, owner: str, repo: str) -> Optional[str]:
+        """Get last merged merge request timestamp for project."""
+        return self.client.get_last_merged_pr(owner, repo)
+
+    def get_last_closed_issue(self, owner: str, repo: str) -> Optional[str]:
+        """Get last closed issue timestamp for project."""
+        return self.client.get_last_closed_issue(owner, repo)

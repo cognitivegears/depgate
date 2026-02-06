@@ -6,6 +6,7 @@ import sys
 import time
 import logging
 from datetime import datetime as dt
+from typing import Optional
 from packaging.requirements import Requirement
 from constants import ExitCodes, Constants
 from common.logging_utils import extra_context, is_debug_enabled, Timer, safe_url
@@ -14,6 +15,9 @@ import registry.pypi as pypi_pkg
 from .enrich import _enrich_with_repo, _enrich_with_license
 
 logger = logging.getLogger(__name__)
+
+# pypistats.org API endpoint for recent download stats
+PYPSTATS_RECENT_URL = "https://pypistats.org/api/packages/{package}/recent"
 
 def _sanitize_identifier(identifier: str) -> str:
     """Return package name sans any version specifiers/extras/markers."""
@@ -46,6 +50,34 @@ def _log_http_pre(url: str) -> None:
             package_manager="pypi",
         ),
     )
+
+
+def _fetch_weekly_downloads(package_name: str) -> Optional[int]:
+    """Fetch weekly downloads for a package from pypistats.org.
+
+    Args:
+        package_name: Sanitized package name.
+
+    Returns:
+        Weekly download count or None if unavailable.
+    """
+    stats_url = PYPSTATS_RECENT_URL.format(package=package_name)
+
+    try:
+        res = pypi_pkg.safe_get(stats_url, context="pypistats", params=None, headers=HEADERS_JSON)
+    except SystemExit:
+        logger.warning("pypistats fetch failed; skipping weekly downloads")
+        return None
+
+    if res.status_code != 200:
+        return None
+
+    try:
+        stats = json.loads(res.text)
+    except json.JSONDecodeError:
+        return None
+
+    return stats.get("data", {}).get("last_week")
 
 
 def recv_pkg_info(pkgs, url: str = Constants.REGISTRY_URL_PYPI) -> None:
@@ -149,5 +181,8 @@ def recv_pkg_info(pkgs, url: str = Constants.REGISTRY_URL_PYPI) -> None:
 
             # Enrich with repository discovery and validation
             _enrich_with_repo(x, x.pkg_name, j["info"], latest)
+
+            # Fetch weekly download stats (best-effort)
+            x.weekly_downloads = _fetch_weekly_downloads(sanitized)
         else:
             x.exists = False

@@ -101,7 +101,7 @@ class UpstreamClient:
         if not upstream_base:
             return 502, {}, b'{"error": "No upstream configured for registry type"}'
 
-        url = f"{upstream_base}{path}"
+        url = self._build_url(registry_type, upstream_base, path)
 
         # Check cache for GET requests
         if method == "GET" and use_cache and self._response_cache:
@@ -115,15 +115,7 @@ class UpstreamClient:
             await self.start()
 
         # Prepare headers
-        request_headers = {
-            "User-Agent": "DepGate-Proxy/1.0",
-            "Accept": "*/*",
-        }
-        if headers:
-            # Forward select headers
-            for key in ["Accept", "Accept-Encoding", "If-None-Match", "If-Modified-Since"]:
-                if key in headers:
-                    request_headers[key] = headers[key]
+        request_headers = self._build_request_headers(headers)
 
         try:
             assert self._session is not None
@@ -152,6 +144,56 @@ class UpstreamClient:
         except Exception as e:
             logger.exception(f"Unexpected error forwarding request: {e}")
             return 500, {}, f'{{"error": "Internal error: {str(e)}"}}'.encode()
+
+    def _build_url(self, registry_type: RegistryType, upstream_base: str, path: str) -> str:
+        """Build the upstream URL from base and path."""
+        base = upstream_base.rstrip("/")
+        request_path = path if path.startswith("/") else f"/{path}"
+
+        # Avoid double /maven2 when clients include it in the path.
+        if registry_type == RegistryType.MAVEN:
+            maven_prefix = "/maven2"
+            if base.endswith(maven_prefix) and request_path.startswith(maven_prefix):
+                request_path = request_path[len(maven_prefix):] or "/"
+
+        if not request_path.startswith("/"):
+            request_path = f"/{request_path}"
+
+        return f"{base}{request_path}"
+
+    def _build_request_headers(
+        self, headers: Optional[Dict[str, str]]
+    ) -> Dict[str, str]:
+        """Build request headers to send upstream."""
+        request_headers: Dict[str, str] = {}
+        hop_by_hop = {
+            "connection",
+            "keep-alive",
+            "proxy-authenticate",
+            "proxy-authorization",
+            "te",
+            "trailer",
+            "transfer-encoding",
+            "upgrade",
+            "host",
+        }
+
+        connection_tokens = set()
+        if headers and "Connection" in headers:
+            connection_tokens = {token.strip().lower() for token in headers["Connection"].split(",")}
+
+        if headers:
+            for key, value in headers.items():
+                key_lower = key.lower()
+                if key_lower in hop_by_hop or key_lower in connection_tokens:
+                    continue
+                request_headers[key] = value
+
+        # Ensure defaults if caller didn't provide them.
+        request_headers.setdefault("User-Agent", "DepGate-Proxy/1.0")
+        request_headers.setdefault("Accept", "*/*")
+
+        return request_headers
 
     def _filter_response_headers(self, headers: Dict[str, Any]) -> Dict[str, str]:
         """Filter response headers to forward to client.

@@ -149,6 +149,30 @@ class TestProxyEvaluatorCaching:
         # Cache should be cleared
         assert self.cache.get("npm", "lodash", "4.17.21") is None
 
+    def test_decision_mode_change_clears_cache(self):
+        """Test that decision mode changes clear cached decisions."""
+        policy_config = {
+            "rules": [{
+                "type": "regex",
+                "target": "package_name",
+                "exclude": ["blocked"]
+            }]
+        }
+        evaluator = ProxyEvaluator(
+            policy_config=policy_config,
+            decision_cache=self.cache,
+            decision_mode="warn",
+        )
+
+        decision = evaluator.evaluate("blocked-pkg", "1.0.0", RegistryType.NPM)
+        assert decision.decision == "allow"
+        assert self.cache.get("npm", "blocked-pkg", "1.0.0") is not None
+
+        evaluator.set_decision_mode("block")
+        decision_after = evaluator.evaluate("blocked-pkg", "1.0.0", RegistryType.NPM)
+
+        assert decision_after.decision == "deny"
+
 
 class TestProxyEvaluatorRegistries:
     """Tests for different registry types."""
