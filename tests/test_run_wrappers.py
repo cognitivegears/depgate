@@ -182,12 +182,13 @@ class TestGradleWrapper:
 class TestNugetWrapper:
     """Tests for dotnet/nuget wrapper."""
 
-    def test_dotnet_creates_config(self):
-        cfg = get_wrapper("dotnet", PROXY_URL)
+    def test_dotnet_restore_creates_config(self):
+        cfg = get_wrapper(["dotnet", "restore"], PROXY_URL)
         assert cfg.registry_type == "nuget"
         assert len(cfg.temp_files) == 1
-        assert "NUGET_CONFIGFILE" in cfg.env_vars
-        assert cfg.env_vars["NUGET_CONFIGFILE"] == cfg.temp_files[0]
+        assert cfg.env_vars == {}
+        assert cfg.extra_args == ["--configfile", cfg.temp_files[0]]
+        assert cfg.extra_args_position == "append"
 
         # Verify file content
         with open(cfg.temp_files[0], "r") as f:
@@ -199,10 +200,22 @@ class TestNugetWrapper:
         # Cleanup
         os.unlink(cfg.temp_files[0])
 
-    def test_nuget_same_as_dotnet(self):
-        cfg = get_wrapper("nuget", PROXY_URL)
+    def test_dotnet_test_uses_property(self):
+        cfg = get_wrapper(["dotnet", "test"], PROXY_URL)
         assert cfg.registry_type == "nuget"
         assert len(cfg.temp_files) == 1
+        assert cfg.extra_args_position == "append"
+        assert cfg.extra_args[0].startswith("--property:RestoreConfigFile=")
+        # Cleanup
+        os.unlink(cfg.temp_files[0])
+
+    def test_nuget_uses_configfile_arg(self):
+        cfg = get_wrapper(["nuget", "restore"], PROXY_URL)
+        assert cfg.registry_type == "nuget"
+        assert len(cfg.temp_files) == 1
+        assert cfg.env_vars == {}
+        assert cfg.extra_args == ["-ConfigFile", cfg.temp_files[0]]
+        assert cfg.extra_args_position == "append"
         # Cleanup
         os.unlink(cfg.temp_files[0])
 

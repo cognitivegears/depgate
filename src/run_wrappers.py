@@ -11,7 +11,7 @@ import os
 import tempfile
 import textwrap
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Dict, List, Sequence, Tuple, Union
 from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
@@ -33,19 +33,29 @@ class WrapperConfig:
     extra_args: List[str] = field(default_factory=list)
     temp_files: List[str] = field(default_factory=list)
     registry_type: str = ""
+    extra_args_position: str = "after_manager"  # "after_manager" or "append"
 
 
-def get_wrapper(command_name: str, proxy_url: str) -> Optional[WrapperConfig]:
+def get_wrapper(
+    command: Union[str, Sequence[str]],
+    proxy_url: str,
+) -> Optional[WrapperConfig]:
     """Build a WrapperConfig for the given package manager.
 
     Args:
-        command_name: The package manager binary name (e.g. "npm", "pip").
+        command: The package manager binary name (e.g. "npm") or full command tokens.
         proxy_url: The proxy base URL (e.g. "http://127.0.0.1:12345").
 
     Returns:
         WrapperConfig if the manager is supported, None otherwise.
     """
-    name = os.path.basename(command_name).lower()
+    cmd_tokens: List[str]
+    if isinstance(command, (list, tuple)):
+        cmd_tokens = list(command)
+        name = os.path.basename(cmd_tokens[0]).lower() if cmd_tokens else ""
+    else:
+        cmd_tokens = [command]
+        name = os.path.basename(command).lower()
 
     builders = {
         "npm": _build_npm,
@@ -60,7 +70,7 @@ def get_wrapper(command_name: str, proxy_url: str) -> Optional[WrapperConfig]:
         "mvn": _build_maven,
         "gradle": _build_gradle,
         "gradlew": _build_gradle,
-        "dotnet": _build_nuget,
+        "dotnet": _build_dotnet,
         "nuget": _build_nuget,
     }
 
@@ -68,27 +78,27 @@ def get_wrapper(command_name: str, proxy_url: str) -> Optional[WrapperConfig]:
     if builder is None:
         return None
 
-    return builder(proxy_url)
+    return builder(proxy_url, cmd_tokens)
 
 
 # ---------- JS ecosystem ----------
 
 
-def _build_npm(proxy_url: str) -> WrapperConfig:
+def _build_npm(proxy_url: str, _cmd: Sequence[str]) -> WrapperConfig:
     return WrapperConfig(
         env_vars={"npm_config_registry": proxy_url},
         registry_type="npm",
     )
 
 
-def _build_pnpm(proxy_url: str) -> WrapperConfig:
+def _build_pnpm(proxy_url: str, _cmd: Sequence[str]) -> WrapperConfig:
     return WrapperConfig(
         env_vars={"npm_config_registry": proxy_url},
         registry_type="npm",
     )
 
 
-def _build_yarn(proxy_url: str) -> WrapperConfig:
+def _build_yarn(proxy_url: str, _cmd: Sequence[str]) -> WrapperConfig:
     return WrapperConfig(
         env_vars={
             "npm_config_registry": proxy_url,
@@ -98,7 +108,7 @@ def _build_yarn(proxy_url: str) -> WrapperConfig:
     )
 
 
-def _build_bun(proxy_url: str) -> WrapperConfig:
+def _build_bun(proxy_url: str, _cmd: Sequence[str]) -> WrapperConfig:
     return WrapperConfig(
         env_vars={"npm_config_registry": proxy_url},
         registry_type="npm",
@@ -108,7 +118,7 @@ def _build_bun(proxy_url: str) -> WrapperConfig:
 # ---------- Python ecosystem ----------
 
 
-def _build_pip(proxy_url: str) -> WrapperConfig:
+def _build_pip(proxy_url: str, _cmd: Sequence[str]) -> WrapperConfig:
     parsed = urlparse(proxy_url)
     host = parsed.hostname or "127.0.0.1"
     index_url = proxy_url.rstrip("/") + "/simple"
@@ -121,7 +131,7 @@ def _build_pip(proxy_url: str) -> WrapperConfig:
     )
 
 
-def _build_poetry(proxy_url: str) -> WrapperConfig:
+def _build_poetry(proxy_url: str, _cmd: Sequence[str]) -> WrapperConfig:
     parsed = urlparse(proxy_url)
     host = parsed.hostname or "127.0.0.1"
     index_url = proxy_url.rstrip("/") + "/simple"
@@ -134,7 +144,7 @@ def _build_poetry(proxy_url: str) -> WrapperConfig:
     )
 
 
-def _build_uv(proxy_url: str) -> WrapperConfig:
+def _build_uv(proxy_url: str, _cmd: Sequence[str]) -> WrapperConfig:
     parsed = urlparse(proxy_url)
     host = parsed.hostname or "127.0.0.1"
     index_url = proxy_url.rstrip("/") + "/simple"
@@ -186,7 +196,7 @@ _INIT_GRADLE_TEMPLATE = textwrap.dedent("""\
 """)
 
 
-def _build_maven(proxy_url: str) -> WrapperConfig:
+def _build_maven(proxy_url: str, _cmd: Sequence[str]) -> WrapperConfig:
     # Warn if user has an existing settings.xml
     user_settings = os.path.expanduser("~/.m2/settings.xml")
     if os.path.exists(user_settings):
@@ -207,7 +217,7 @@ def _build_maven(proxy_url: str) -> WrapperConfig:
     )
 
 
-def _build_gradle(proxy_url: str) -> WrapperConfig:
+def _build_gradle(proxy_url: str, _cmd: Sequence[str]) -> WrapperConfig:
     content = _INIT_GRADLE_TEMPLATE.format(proxy_url=proxy_url)
     fd, path = tempfile.mkstemp(suffix=".gradle", prefix="depgate-gradle-")
     with os.fdopen(fd, "w", encoding="utf-8") as f:
@@ -234,14 +244,61 @@ _NUGET_CONFIG_TEMPLATE = textwrap.dedent("""\
 """)
 
 
-def _build_nuget(proxy_url: str) -> WrapperConfig:
+def _create_nuget_config(proxy_url: str) -> str:
     content = _NUGET_CONFIG_TEMPLATE.format(proxy_url=proxy_url)
     fd, path = tempfile.mkstemp(suffix=".config", prefix="depgate-nuget-")
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         f.write(content)
+    return path
+
+
+def _dotnet_extra_args(cmd: Sequence[str], config_path: str) -> Tuple[List[str], str]:
+    if len(cmd) < 2:
+        return [], ""
+
+    sub = cmd[1].lower()
+    if sub == "tool" and len(cmd) >= 3 and cmd[2].lower() == "restore":
+        return ["--configfile", config_path], "append"
+    if sub == "workload" and len(cmd) >= 3 and cmd[2].lower() == "restore":
+        return ["--configfile", config_path], "append"
+    if sub in {"restore", "build", "run", "pack"}:
+        return ["--configfile", config_path], "append"
+    if sub in {"publish", "test"}:
+        return [f"--property:RestoreConfigFile={config_path}"], "append"
+    if sub == "msbuild":
+        return [f"-p:RestoreConfigFile={config_path}"], "append"
+
+    return [], ""
+
+
+def _build_dotnet(proxy_url: str, cmd: Sequence[str]) -> WrapperConfig:
+    config_path = _create_nuget_config(proxy_url)
+    extra_args, position = _dotnet_extra_args(cmd, config_path)
+    if not extra_args:
+        # No supported subcommand detected; best-effort fallback is to avoid breaking the command.
+        logger.warning(
+            "Dotnet subcommand not recognized for config injection; "
+            "running without proxy interception."
+        )
+        os.unlink(config_path)
+        return WrapperConfig(
+            registry_type="nuget",
+        )
 
     return WrapperConfig(
-        env_vars={"NUGET_CONFIGFILE": path},
+        extra_args=extra_args,
+        temp_files=[config_path],
+        registry_type="nuget",
+        extra_args_position=position,
+    )
+
+
+def _build_nuget(proxy_url: str, _cmd: Sequence[str]) -> WrapperConfig:
+    path = _create_nuget_config(proxy_url)
+
+    return WrapperConfig(
+        extra_args=["-ConfigFile", path],
         temp_files=[path],
         registry_type="nuget",
+        extra_args_position="append",
     )

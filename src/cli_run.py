@@ -139,9 +139,9 @@ def _wait_for_health(proxy_url: str, timeout: float = _HEALTH_CHECK_TIMEOUT) -> 
 
     while time.monotonic() < deadline:
         try:
-            resp = urlopen(health_url, timeout=2)  # noqa: S310
-            if resp.status == 200:
-                return
+            with urlopen(health_url, timeout=2) as resp:  # noqa: S310
+                if resp.status == 200:
+                    return
         except (URLError, OSError):
             pass
         time.sleep(_HEALTH_CHECK_INTERVAL)
@@ -203,8 +203,7 @@ def run_command(args: Any) -> None:
         _wait_for_health(proxy_url)
 
         # Build wrapper config
-        manager_name = os.path.basename(cmd[0]).lower()
-        wrapper = get_wrapper(manager_name, proxy_url)
+        wrapper = get_wrapper(cmd, proxy_url)
         if wrapper is None:
             sys.stderr.write(
                 f"Error: No wrapper config for '{cmd[0]}'.\n"
@@ -215,15 +214,29 @@ def run_command(args: Any) -> None:
         env = os.environ.copy()
         env.update(wrapper.env_vars)
 
-        # Build final command with extra_args injected after the manager name
-        final_cmd = [cmd[0]] + wrapper.extra_args + cmd[1:]
+        # Build final command with extra args in the requested position
+        if wrapper.extra_args_position == "append":
+            final_cmd = [cmd[0]] + cmd[1:] + wrapper.extra_args
+        else:
+            final_cmd = [cmd[0]] + wrapper.extra_args + cmd[1:]
 
         logger.info("Running: %s", " ".join(final_cmd))
         logger.debug("Wrapper env vars: %s", wrapper.env_vars)
 
         # Run the wrapped command
-        result = subprocess.run(final_cmd, env=env)  # noqa: S603
-        exit_code = result.returncode
+        try:
+            result = subprocess.run(final_cmd, env=env)  # noqa: S603
+            exit_code = result.returncode
+        except FileNotFoundError:
+            sys.stderr.write(
+                f"Error: Command not found: {cmd[0]}\n"
+            )
+            exit_code = 127
+        except OSError as exc:
+            sys.stderr.write(
+                f"Error: Failed to execute '{cmd[0]}': {exc}\n"
+            )
+            exit_code = 127
 
     except KeyboardInterrupt:
         logger.info("Interrupted by user")

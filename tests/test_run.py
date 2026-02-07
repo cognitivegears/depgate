@@ -269,6 +269,28 @@ class TestRunCommand:
 
         assert exc_info.value.code == 1
 
+    @patch("src.cli_run.subprocess.run", side_effect=FileNotFoundError())
+    @patch("src.cli_run._wait_for_health")
+    @patch("src.cli_run._ProxyThread")
+    @patch("src.cli_run._load_policy_config", return_value={})
+    @patch("src.cli_run._setup_logging")
+    def test_missing_binary_exits_127(
+        self, mock_logging, mock_load, mock_thread_cls, mock_health, mock_subproc, capsys
+    ):
+        mock_thread = MagicMock()
+        mock_thread.bound_port = 12345
+        mock_thread_cls.return_value = mock_thread
+
+        args = self._make_args(["npm", "install", "lodash"])
+
+        with pytest.raises(SystemExit) as exc_info:
+            from src.cli_run import run_command
+            run_command(args)
+
+        assert exc_info.value.code == 127
+        stderr = capsys.readouterr().err
+        assert "Command not found" in stderr
+
 
 class TestWaitForHealth:
     """Tests for the health check polling."""
@@ -278,7 +300,7 @@ class TestWaitForHealth:
         from src.cli_run import _wait_for_health
         mock_resp = MagicMock()
         mock_resp.status = 200
-        mock_urlopen.return_value = mock_resp
+        mock_urlopen.return_value.__enter__.return_value = mock_resp
         # Should not raise
         _wait_for_health("http://127.0.0.1:12345", timeout=1)
 
