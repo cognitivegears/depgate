@@ -11,7 +11,6 @@ from unittest.mock import MagicMock, patch
 aiohttp_mod = pytest.importorskip("aiohttp")
 
 from aiohttp import web
-from aiohttp.test_utils import AioHTTPTestCase, unittest_run_loop
 from yarl import URL
 
 from src.proxy.server import RegistryProxyServer, ProxyConfig

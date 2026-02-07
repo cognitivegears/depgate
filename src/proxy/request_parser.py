@@ -131,7 +131,7 @@ class RequestParser:
             if result and result.package_name:
                 return result
 
-        # Return unknown if no pattern matched
+        # No pattern matched; fall back to registry_hint or default registry
         return ParsedRequest(
             registry_type=registry_hint or self._default_registry,
             package_name="",

@@ -136,12 +136,14 @@ depgate proxy --config policy.yml --decision-mode block
 | Option | Default | Description |
 |--------|---------|-------------|
 | `--cache-ttl` | `3600` | Decision cache TTL (seconds) |
+| `--response-cache-ttl` | `300` | Response cache TTL (seconds) |
 
 ### Logging
 
 | Option | Default | Description |
 |--------|---------|-------------|
 | `--log-level` | `INFO` | Logging level |
+| `--logfile` | None | Log output to file (useful for background/daemon operation) |
 
 ## URL Parsing
 
@@ -216,7 +218,11 @@ depgate proxy --cache-ttl 7200  # 2 hour cache
 
 ### Response Cache
 
-Caches upstream responses to reduce latency and load on upstream registries. This cache is internal and not directly configurable via CLI.
+Caches upstream responses to reduce latency and load on upstream registries. Default TTL is 300 seconds (5 minutes).
+
+```bash
+depgate proxy --response-cache-ttl 600  # 10 minute cache
+```
 
 ## Architecture
 

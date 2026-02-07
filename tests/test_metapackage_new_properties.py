@@ -1,5 +1,4 @@
 """Tests for MetaPackage new properties."""
-import pytest
 from datetime import datetime, timezone
 
 from metapackage import MetaPackage

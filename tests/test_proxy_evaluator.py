@@ -1,6 +1,5 @@
 """Tests for the proxy evaluator."""
 
-import pytest
 from src.proxy.evaluator import ProxyEvaluator
 from src.proxy.cache import DecisionCache
 from src.proxy.request_parser import RegistryType
