@@ -148,9 +148,11 @@ tests/test_policy_evaluators.py
 tests/test_policy_example_yaml.py
 tests/test_provider_adapters_new_metrics.py
 tests/test_provider_validation_matching.py
+tests/test_proxy_cli.py
 tests/test_proxy_evaluator.py
 tests/test_proxy_request_parser.py
 tests/test_proxy_server.py
+tests/test_proxy_upstream.py
 tests/test_pypi_license_enrichment.py
 tests/test_pypi_lockfile_parser.py
 tests/test_pypi_repo_discovery.py
