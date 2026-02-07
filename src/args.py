@@ -498,6 +498,26 @@ def add_scan_arguments(parser: argparse.ArgumentParser) -> None:
 
 def add_run_arguments(parser: argparse.ArgumentParser) -> None:
     """Register arguments for the 'run' action (package manager wrapper)."""
+    parser.add_argument(
+        "--prepare",
+        dest="RUN_PREPARE",
+        help=(
+            "Prepare an ephemeral proxy session for an external orchestrator, "
+            "emit JSON connection details to stdout, and keep running until stdin closes."
+        ),
+        action="store_true",
+    )
+    parser.add_argument(
+        "--manager",
+        dest="RUN_MANAGER",
+        help=(
+            "Optional package manager name/path for --prepare mode "
+            "(used to include wrapper env/args in emitted JSON)."
+        ),
+        action="store",
+        type=str,
+    )
+
     # Policy config
     parser.add_argument(
         "-c",
@@ -658,12 +678,15 @@ def build_root_parser() -> Tuple[argparse.ArgumentParser, argparse._SubParsersAc
             "Run a package manager command with automatic DepGate proxy interception.\n"
             "Starts an ephemeral proxy, configures the package manager to use it,\n"
             "runs the command, and tears everything down.\n\n"
+            "Use --prepare to start an ephemeral proxy for an external orchestrator\n"
+            "and emit JSON connection details to stdout.\n\n"
             "Supported managers: npm, pnpm, yarn, bun, pip, pip3, pipx, poetry, uv,\n"
             "                    mvn, gradle, gradlew, dotnet, nuget\n\n"
             "Examples:\n"
             "  depgate run npm install lodash\n"
             "  depgate run --config policy.yml pip install requests\n"
             "  depgate run --decision-mode warn -- yarn add express\n"
+            "  depgate run --prepare --manager npm\n"
         ),
         formatter_class=argparse.RawTextHelpFormatter,
     )

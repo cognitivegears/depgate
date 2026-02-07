@@ -1,5 +1,6 @@
 """Tests for cli_run — the depgate run mode orchestrator."""
 
+import json
 import os
 import sys
 import types
@@ -64,6 +65,13 @@ class TestRunArgParsing:
         ns = parse_args(["run", "--logfile", "/tmp/test.log", "npm", "install"])
         assert ns.LOG_FILE == "/tmp/test.log"
 
+    def test_prepare_mode_args(self):
+        ns = parse_args(["run", "--prepare", "--manager", "npm"])
+        assert ns.action == "run"
+        assert ns.RUN_PREPARE is True
+        assert ns.RUN_MANAGER == "npm"
+        assert ns.RUN_COMMAND == []
+
 
 class TestParseRunCommand:
     """Tests for _parse_run_command validation."""
@@ -112,6 +120,8 @@ class TestRunCommand:
     def _make_args(self, cmd, config=None, decision_mode="block"):
         args = MagicMock()
         args.RUN_COMMAND = cmd
+        args.RUN_PREPARE = False
+        args.RUN_MANAGER = None
         args.PROXY_CONFIG = config
         args.PROXY_DECISION_MODE = decision_mode
         args.PROXY_HOST = "127.0.0.1"
@@ -318,6 +328,108 @@ class TestRunCommand:
         assert exc_info.value.code == 1
         stderr = capsys.readouterr().err
         assert "failed to start within" in stderr.lower()
+
+    @patch("src.cli_run.subprocess.run")
+    @patch("src.cli_run._wait_for_prepare_session")
+    @patch("src.cli_run._wait_for_health")
+    @patch("src.cli_run._ProxyThread")
+    @patch("src.cli_run._load_policy_config", return_value={})
+    @patch("src.cli_run._setup_logging")
+    def test_prepare_mode_emits_json(
+        self,
+        mock_logging,
+        mock_load,
+        mock_thread_cls,
+        mock_health,
+        mock_wait_prepare,
+        mock_subproc,
+        capsys,
+    ):
+        mock_thread = MagicMock()
+        mock_thread.bound_port = 12345
+        mock_thread.error = None
+        mock_thread_cls.return_value = mock_thread
+        mock_subproc.return_value = MagicMock(returncode=0)
+
+        args = self._make_args([])
+        args.RUN_PREPARE = True
+        args.RUN_MANAGER = "npm"
+
+        with pytest.raises(SystemExit) as exc_info:
+            from src.cli_run import run_command
+            run_command(args)
+
+        assert exc_info.value.code == 0
+        mock_subproc.assert_not_called()
+        stdout = capsys.readouterr().out.strip()
+        payload = json.loads(stdout)
+        assert payload["mode"] == "prepare"
+        assert payload["proxy"]["url"] == "http://127.0.0.1:12345"
+        assert payload["manager"]["requested"] == "npm"
+        assert payload["manager"]["supported"] is True
+        assert payload["wrapper"]["env_vars"]["npm_config_registry"] == "http://127.0.0.1:12345"
+
+    @patch("src.cli_run._wait_for_prepare_session")
+    @patch("src.cli_run._wait_for_health")
+    @patch("src.cli_run._ProxyThread")
+    @patch("src.cli_run._load_policy_config", return_value={})
+    @patch("src.cli_run._setup_logging")
+    def test_prepare_mode_unsupported_manager_proxy_only(
+        self,
+        mock_logging,
+        mock_load,
+        mock_thread_cls,
+        mock_health,
+        mock_wait_prepare,
+        capsys,
+    ):
+        mock_thread = MagicMock()
+        mock_thread.bound_port = 12345
+        mock_thread.error = None
+        mock_thread_cls.return_value = mock_thread
+
+        args = self._make_args([])
+        args.RUN_PREPARE = True
+        args.RUN_MANAGER = "unpm"
+
+        with pytest.raises(SystemExit) as exc_info:
+            from src.cli_run import run_command
+            run_command(args)
+
+        assert exc_info.value.code == 0
+        stdout = capsys.readouterr().out.strip()
+        payload = json.loads(stdout)
+        assert payload["manager"]["requested"] == "unpm"
+        assert payload["manager"]["supported"] is False
+        assert payload["wrapper"] is None
+
+    @patch("src.cli_run._setup_logging")
+    def test_manager_without_prepare_exits(self, mock_logging, capsys):
+        args = self._make_args(["npm", "install"])
+        args.RUN_MANAGER = "npm"
+        args.RUN_PREPARE = False
+
+        with pytest.raises(SystemExit) as exc_info:
+            from src.cli_run import run_command
+            run_command(args)
+
+        assert exc_info.value.code == 2
+        stderr = capsys.readouterr().err
+        assert "--manager requires --prepare" in stderr
+
+    @patch("src.cli_run._setup_logging")
+    def test_prepare_with_command_exits(self, mock_logging, capsys):
+        args = self._make_args(["npm", "install"])
+        args.RUN_PREPARE = True
+        args.RUN_MANAGER = "npm"
+
+        with pytest.raises(SystemExit) as exc_info:
+            from src.cli_run import run_command
+            run_command(args)
+
+        assert exc_info.value.code == 2
+        stderr = capsys.readouterr().err
+        assert "--prepare cannot be used with a wrapped command" in stderr
 
 
 class TestWaitForHealth:

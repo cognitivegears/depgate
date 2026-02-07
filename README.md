@@ -187,6 +187,9 @@ depgate run --config policy.yml mvn clean install
 
 # uv
 depgate run uv pip install flask
+
+# Prepare an ephemeral proxy session for an external orchestrator (e.g. UNPM)
+depgate run --prepare --manager npm
 ```
 
 Supported managers: npm, pnpm, yarn, bun, pip, pip3, pipx, poetry, uv, mvn, gradle, gradlew, dotnet, nuget.

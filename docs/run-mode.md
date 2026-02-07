@@ -39,6 +39,9 @@ depgate run mvn clean install
 
 # uv
 depgate run uv pip install flask
+
+# Prepare an ephemeral proxy session for external orchestrators (e.g. UNPM)
+depgate run --prepare --manager npm
 ```
 
 ## Supported Package Managers
@@ -88,6 +91,8 @@ The `--` separator is recommended when the wrapped command has flags that could 
 
 | Option | Default | Description |
 |--------|---------|-------------|
+| `--prepare` | `false` | Start ephemeral proxy, emit JSON connection details, and wait until stdin closes |
+| `--manager` | None | Optional manager name/path for `--prepare` to include wrapper env/args |
 | `--timeout` | `30` | Upstream request timeout (seconds) |
 | `--log-level` | `INFO` | Logging level |
 | `--logfile` | None | Log output to file |
@@ -129,6 +134,11 @@ Run mode propagates the exit code from the wrapped command. If npm returns 0, `d
 
 Special cases:
 - `2` — Invalid arguments (no command, unsupported manager)
+- `1` — Proxy failed to start or health check timed out
+- `130` — Interrupted by Ctrl+C (SIGINT)
+
+For `--prepare`, exit code is:
+- `0` — Session ended cleanly (stdin closed)
 - `1` — Proxy failed to start or health check timed out
 - `130` — Interrupted by Ctrl+C (SIGINT)
 
@@ -195,6 +205,27 @@ fi
 ```bash
 depgate run --log-level DEBUG --logfile depgate.log npm install lodash
 ```
+
+### External Orchestrator Integration (UNPM)
+
+`--prepare` starts the same ephemeral proxy used by run mode, prints machine-readable JSON to stdout, then holds the session open until stdin closes.
+
+```bash
+depgate run --prepare --manager npm
+```
+
+Example JSON (single line):
+
+```json
+{"mode":"prepare","pid":12345,"proxy":{"host":"127.0.0.1","port":54321,"url":"http://127.0.0.1:54321","health_url":"http://127.0.0.1:54321/_depgate/health"},"manager":{"requested":"npm","supported":true},"wrapper":{"env_vars":{"npm_config_registry":"http://127.0.0.1:54321"},"extra_args":[],"extra_args_position":"after_manager","temp_files":[],"registry_type":"npm"}}
+```
+
+Orchestrators can:
+- Spawn `depgate run --prepare ...`
+- Parse the JSON payload
+- Apply `wrapper.env_vars` and `wrapper.extra_args` (if present)
+- Run their package-manager command
+- Close depgate stdin (or terminate the process) to end the session
 
 ## Wrapper Details
 

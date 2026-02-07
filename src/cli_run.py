@@ -7,6 +7,7 @@ runs the user's command, and tears everything down.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import subprocess
@@ -27,6 +28,15 @@ _HEALTH_CHECK_TIMEOUT = 10  # seconds
 _HEALTH_CHECK_INTERVAL = 0.1  # seconds
 
 
+def _normalize_run_command(args: Any) -> List[str]:
+    """Return normalized run command tokens from parsed args."""
+    cmd = list(getattr(args, "RUN_COMMAND", []) or [])
+    # Strip leading '--' separator if present
+    if cmd and cmd[0] == "--":
+        cmd = cmd[1:]
+    return cmd
+
+
 def _parse_run_command(args: Any) -> List[str]:
     """Extract and validate the wrapped command from parsed args.
 
@@ -36,10 +46,7 @@ def _parse_run_command(args: Any) -> List[str]:
     Raises:
         SystemExit: If the command is empty or uses an unsupported manager.
     """
-    cmd = getattr(args, "RUN_COMMAND", [])
-    # Strip leading '--' separator if present
-    if cmd and cmd[0] == "--":
-        cmd = cmd[1:]
+    cmd = _normalize_run_command(args)
 
     if not cmd:
         sys.stderr.write(
@@ -169,6 +176,50 @@ def _wait_for_health(proxy_url: str, timeout: float = _HEALTH_CHECK_TIMEOUT) -> 
     sys.exit(1)
 
 
+def _emit_prepare_payload(
+    proxy_url: str,
+    port: int,
+    requested_manager: Optional[str],
+    wrapper: Optional[Any],
+) -> None:
+    """Emit machine-readable proxy session details for external orchestrators."""
+    payload = {
+        "mode": "prepare",
+        "pid": os.getpid(),
+        "proxy": {
+            "host": "127.0.0.1",
+            "port": port,
+            "url": proxy_url,
+            "health_url": proxy_url.rstrip("/") + "/_depgate/health",
+        },
+        "manager": {
+            "requested": requested_manager,
+            "supported": bool(wrapper) if requested_manager else None,
+        },
+        "wrapper": None,
+    }
+
+    if wrapper is not None:
+        payload["wrapper"] = {
+            "env_vars": dict(wrapper.env_vars),
+            "extra_args": list(wrapper.extra_args),
+            "extra_args_position": wrapper.extra_args_position,
+            "temp_files": list(wrapper.temp_files),
+            "registry_type": wrapper.registry_type,
+        }
+
+    print(json.dumps(payload, separators=(",", ":")), flush=True)
+
+
+def _wait_for_prepare_session() -> None:
+    """Block until stdin closes to keep ephemeral prepare-mode proxy alive."""
+    try:
+        _ = sys.stdin.read()
+    except (OSError, ValueError):
+        # In non-interactive contexts stdin may be unavailable; fall through.
+        pass
+
+
 def run_command(args: Any) -> None:
     """Entry point for the run mode.
 
@@ -177,7 +228,27 @@ def run_command(args: Any) -> None:
     """
     _setup_logging(args)
 
-    cmd = _parse_run_command(args)
+    prepare_mode = bool(getattr(args, "RUN_PREPARE", False))
+    prepare_manager = getattr(args, "RUN_MANAGER", None)
+    normalized_cmd = _normalize_run_command(args)
+
+    if prepare_mode and normalized_cmd:
+        sys.stderr.write(
+            "Error: --prepare cannot be used with a wrapped command.\n"
+            "Use either 'depgate run --prepare [--manager <name>]' or "
+            "'depgate run <command> [args...]'.\n"
+        )
+        sys.exit(2)
+
+    if not prepare_mode and prepare_manager:
+        sys.stderr.write(
+            "Error: --manager requires --prepare.\n"
+        )
+        sys.exit(2)
+
+    cmd: List[str] = []
+    if not prepare_mode:
+        cmd = _parse_run_command(args)
 
     # Lazy import proxy dependencies
     try:
@@ -203,6 +274,7 @@ def run_command(args: Any) -> None:
     proxy_config.policy_config = policy_config
 
     # Start proxy in background thread
+    proxy_thread: Optional[_ProxyThread] = None
     proxy_thread = _ProxyThread(proxy_config)
     proxy_thread.start()
 
@@ -256,48 +328,61 @@ def run_command(args: Any) -> None:
         # Wait for health check
         _wait_for_health(proxy_url)
 
-        # Build wrapper config
-        wrapper = get_wrapper(cmd, proxy_url)
-        if wrapper is None:
-            sys.stderr.write(
-                f"Error: No wrapper config for '{cmd[0]}'.\n"
-            )
-            sys.exit(1)
-
-        # Build subprocess environment
-        env = os.environ.copy()
-        env.update(wrapper.env_vars)
-
-        # Build final command with extra args in the requested position
-        if wrapper.extra_args_position == "append":
-            final_cmd = [cmd[0]] + cmd[1:] + wrapper.extra_args
+        if prepare_mode:
+            if prepare_manager:
+                wrapper = get_wrapper(prepare_manager, proxy_url)
+                if wrapper is None:
+                    logger.warning(
+                        "No wrapper config available for manager '%s'; emitting proxy-only details.",
+                        prepare_manager,
+                    )
+            _emit_prepare_payload(proxy_url, port, prepare_manager, wrapper)
+            _wait_for_prepare_session()
+            exit_code = 0
         else:
-            final_cmd = [cmd[0]] + wrapper.extra_args + cmd[1:]
+            # Build wrapper config
+            wrapper = get_wrapper(cmd, proxy_url)
+            if wrapper is None:
+                sys.stderr.write(
+                    f"Error: No wrapper config for '{cmd[0]}'.\n"
+                )
+                sys.exit(1)
 
-        logger.info("Running: %s", " ".join(final_cmd))
-        logger.debug("Wrapper env vars: %s", wrapper.env_vars)
+            # Build subprocess environment
+            env = os.environ.copy()
+            env.update(wrapper.env_vars)
 
-        # Run the wrapped command
-        try:
-            result = subprocess.run(final_cmd, env=env)  # noqa: S603
-            exit_code = result.returncode
-        except FileNotFoundError:
-            sys.stderr.write(
-                f"Error: Command not found: {cmd[0]}\n"
-            )
-            exit_code = 127
-        except OSError as exc:
-            sys.stderr.write(
-                f"Error: Failed to execute '{cmd[0]}': {exc}\n"
-            )
-            exit_code = 127
+            # Build final command with extra args in the requested position
+            if wrapper.extra_args_position == "append":
+                final_cmd = [cmd[0]] + cmd[1:] + wrapper.extra_args
+            else:
+                final_cmd = [cmd[0]] + wrapper.extra_args + cmd[1:]
+
+            logger.info("Running: %s", " ".join(final_cmd))
+            logger.debug("Wrapper env vars: %s", wrapper.env_vars)
+
+            # Run the wrapped command
+            try:
+                result = subprocess.run(final_cmd, env=env)  # noqa: S603
+                exit_code = result.returncode
+            except FileNotFoundError:
+                sys.stderr.write(
+                    f"Error: Command not found: {cmd[0]}\n"
+                )
+                exit_code = 127
+            except OSError as exc:
+                sys.stderr.write(
+                    f"Error: Failed to execute '{cmd[0]}': {exc}\n"
+                )
+                exit_code = 127
 
     except KeyboardInterrupt:
         logger.info("Interrupted by user")
         exit_code = 130  # Standard SIGINT exit code
     finally:
         # Cleanup
-        proxy_thread.shutdown()
+        if proxy_thread is not None:
+            proxy_thread.shutdown()
 
         if wrapper:
             for temp_file in wrapper.temp_files:
