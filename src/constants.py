@@ -133,14 +133,17 @@ class Constants:  # pylint: disable=too-few-public-methods
     # Per-service overrides (empty by default)
     HTTP_RATE_POLICY_PER_SERVICE = {}
 
-    # Heuristics weighting defaults (used by analysis.compute_final_score)
+    # Heuristics threshold defaults
     HEURISTICS_MIN_VERSIONS = DefaultHeuristics.MIN_VERSIONS.value
     HEURISTICS_MIN_RELEASE_AGE_DAYS = DefaultHeuristics.NEW_DAYS_THRESHOLD.value
     HEURISTICS_SCORE_THRESHOLD = DefaultHeuristics.SCORE_THRESHOLD.value
     HEURISTICS_RISKY_THRESHOLD = DefaultHeuristics.RISKY_THRESHOLD.value
     HEURISTICS_SCORE_DECREASE_THRESHOLD = 0.0
 
-    # Heuristics weighting defaults (used by analysis.compute_final_score)
+    # Heuristics weighting defaults (used by analysis.compute_final_score).
+    # Values are relative priorities and are re-normalized at runtime to sum
+    # to 1.0 across available (non-None) metrics, so absolute values here do
+    # not need to sum to 1.0.
     HEURISTICS_WEIGHTS_DEFAULT = {
         "base_score": 0.30,
         "repo_version_match": 0.30,
@@ -148,7 +151,6 @@ class Constants:  # pylint: disable=too-few-public-methods
         "repo_contributors": 0.10,
         "repo_last_activity": 0.10,
         "repo_present_in_registry": 0.05,
-        # Trust signals are strong; weight kept below version-match to avoid overfitting.
         "supply_chain_trust_score": 0.20,
     }
     # Runtime copy that may be overridden via YAML configuration

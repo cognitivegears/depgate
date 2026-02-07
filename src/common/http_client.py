@@ -49,6 +49,35 @@ def safe_get(url: str, *, context: str, **kwargs: Any) -> requests.Response:
         sys.exit(ExitCodes.CONNECTION_ERROR.value)
 
 
+def safe_head(url: str, *, context: str, **kwargs: Any) -> requests.Response:
+    """Perform a HEAD request with consistent error handling.
+
+    Lighter than safe_get when only the status code is needed (e.g. existence checks).
+    """
+    try:
+        return middleware_request(
+            "HEAD",
+            url,
+            timeout=Constants.REQUEST_TIMEOUT,
+            context=context,
+            extra_log_fields={"component": "http_client", "action": "HEAD"},
+            **kwargs
+        )
+    except (RateLimitExhausted, RetryBudgetExceeded):
+        logger.error("%s rate limit exhausted", context)
+        sys.exit(ExitCodes.CONNECTION_ERROR.value)
+    except requests.Timeout:
+        logger.error(
+            "%s HEAD request timed out after %s seconds",
+            context,
+            Constants.REQUEST_TIMEOUT,
+        )
+        sys.exit(ExitCodes.CONNECTION_ERROR.value)
+    except requests.RequestException as exc:
+        logger.error("%s connection error: %s", context, exc)
+        sys.exit(ExitCodes.CONNECTION_ERROR.value)
+
+
 # Simple in-memory cache for HTTP responses
 _http_cache: Dict[str, Tuple[Any, float]] = {}
 

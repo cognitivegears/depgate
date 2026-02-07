@@ -1,7 +1,7 @@
 """Tests for built-in policy presets."""
 
-from src.analysis.policy import create_policy_engine
-from src.analysis.policy_runner import build_policy_preset
+from analysis.policy import create_policy_engine
+from analysis.policy_runner import build_policy_preset
 
 
 def test_default_policy_preset():

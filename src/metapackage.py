@@ -101,6 +101,8 @@ class MetaPackage:  # pylint: disable=too-many-instance-attributes, too-many-pub
         self._trust_score_decreased = None
         self._release_age_days = None
         self._previous_release_version = None
+        self._checksums_present = None
+        self._previous_checksums_present = None
 
         # Version resolution fields
         self._requested_spec = None
@@ -156,12 +158,32 @@ class MetaPackage:  # pylint: disable=too-many-instance-attributes, too-many-pub
         lister.append(nv(self._risk_registry_signature_regression))
         lister.append(nv(self.has_risk()))
 
-        # Version resolution info (empty string for missing) — placed before repo_* to keep repo_* as last five columns.
+        # Version resolution info
         lister.append(nv(self._requested_spec))
         lister.append(nv(self._resolved_version))
         lister.append(nv(self._resolution_mode))
 
-        # New repo_* CSV columns (empty string for missing)
+        # Dependency classification
+        lister.append(nv(self._dependency_relation))
+        lister.append(nv(self._dependency_requirement))
+        lister.append(nv(self._dependency_scope))
+
+        # Supply-chain trust signal columns
+        lister.append(nv(self._release_age_days))
+        lister.append(nv(self._trust_score))
+        lister.append(nv(self._previous_trust_score))
+        lister.append(nv(self._trust_score_delta))
+        lister.append(nv(self._provenance_present))
+        lister.append(nv(self._previous_provenance_present))
+        lister.append(nv(self._provenance_regressed))
+        lister.append(nv(self._registry_signature_present))
+        lister.append(nv(self._previous_registry_signature_present))
+        lister.append(nv(self._registry_signature_regressed))
+        lister.append(nv(self._checksums_present))
+        lister.append(nv(self._previous_checksums_present))
+        lister.append(nv(self._previous_release_version))
+
+        # repo_* CSV columns (empty string for missing)
         lister.append(nv(self._repo_stars))
         lister.append(nv(self._repo_contributors))
         lister.append(nv(self._repo_last_activity_at))
@@ -1026,6 +1048,24 @@ class MetaPackage:  # pylint: disable=too-many-instance-attributes, too-many-pub
     @previous_release_version.setter
     def previous_release_version(self, value):
         self._previous_release_version = value
+
+    @property
+    def checksums_present(self):
+        """Whether checksum evidence exists for the selected release."""
+        return self._checksums_present
+
+    @checksums_present.setter
+    def checksums_present(self, value):
+        self._checksums_present = value
+
+    @property
+    def previous_checksums_present(self):
+        """Whether checksum evidence existed for the previous release."""
+        return self._previous_checksums_present
+
+    @previous_checksums_present.setter
+    def previous_checksums_present(self, value):
+        self._previous_checksums_present = value
 
     def has_risk(self):
         """Check if the package has any risk.

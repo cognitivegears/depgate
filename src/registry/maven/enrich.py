@@ -235,12 +235,8 @@ def _enrich_with_repo(mp, group: str, artifact: str, version: Optional[str]) -> 
         mp.previous_release_version = prev_version
         mp.provenance_source = "maven_central_artifacts"
 
-        # Extra Maven-specific trust evidence
-        try:
-            setattr(mp, "checksums_present", current_signals.get("checksums_present"))
-            setattr(mp, "previous_checksums_present", prev_signals.get("checksums_present") if prev_version else None)
-        except Exception:  # pylint: disable=broad-exception-caught
-            pass
+        mp.checksums_present = current_signals.get("checksums_present")
+        mp.previous_checksums_present = prev_signals.get("checksums_present") if prev_version else None
 
         mp.registry_signature_regressed = regressed(cur_sig, prev_sig)
         mp.provenance_regressed = regressed(cur_prov, prev_prov)
