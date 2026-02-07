@@ -89,6 +89,7 @@ class RegistryProxyServer:
         self._config = config
         self._app: Optional[web.Application] = None
         self._runner: Optional[web.AppRunner] = None
+        self._bound_port: Optional[int] = None
 
         # Initialize caches
         self._decision_cache = DecisionCache(default_ttl=config.cache_ttl)
@@ -254,11 +255,11 @@ class RegistryProxyServer:
         Returns:
             Registry type hint or None.
         """
-        # Check User-Agent for npm/pip/maven/nuget
+        # Check User-Agent for npm/pip/maven/nuget and related tools
         user_agent = request.headers.get("User-Agent", "").lower()
-        if "npm" in user_agent or "node" in user_agent:
+        if "npm" in user_agent or "node" in user_agent or "yarn" in user_agent or "bun" in user_agent:
             return RegistryType.NPM
-        if "pip" in user_agent or "python" in user_agent:
+        if "pip" in user_agent or "python" in user_agent or "uv" in user_agent or "poetry" in user_agent:
             return RegistryType.PYPI
         if "maven" in user_agent or "gradle" in user_agent:
             return RegistryType.MAVEN
@@ -467,6 +468,15 @@ class RegistryProxyServer:
             "response_cache": self._response_cache.stats(),
         }
 
+    @property
+    def bound_port(self) -> Optional[int]:
+        """Return the actual port the server is listening on.
+
+        Useful when port=0 is used for OS-assigned ephemeral ports.
+        Returns None if the server hasn't started yet.
+        """
+        return self._bound_port
+
     async def start(self) -> None:
         """Start the proxy server."""
         self._app = self._create_app()
@@ -480,9 +490,15 @@ class RegistryProxyServer:
         )
         await site.start()
 
+        # Extract actual bound port (important when port=0 for ephemeral)
+        if site._server and site._server.sockets:
+            self._bound_port = site._server.sockets[0].getsockname()[1]
+        else:
+            self._bound_port = self._config.port
+
         logger.info(
             "DepGate proxy server listening on http://%s:%s",
-            self._config.host, self._config.port,
+            self._config.host, self._bound_port,
         )
         logger.info("Decision mode: %s", self._config.decision_mode)
         logger.info("Upstream NPM: %s", self._config.upstream_npm)

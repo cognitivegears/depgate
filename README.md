@@ -11,6 +11,7 @@ DepGate is a fork of Apiiro's "Dependency Combobulator", maintained going forwar
 - **Repository verification**: Discovers and validates upstream source repositories
 - **OpenSourceMalware integration**: Optional malicious package detection
 - **Registry proxy server**: Drop-in registry replacement with policy enforcement
+- **Run mode**: Wrap any package manager command with automatic proxy interception
 - **Flexible inputs**: Single package, manifest scan, or list from file
 - **Structured outputs**: Human-readable logs plus CSV/JSON exports for CI
 - **Designed for automation**: Predictable exit codes and quiet/log options
@@ -28,6 +29,9 @@ uvx depgate scan -t maven -d ./my-project
 
 # Heuristics analysis with JSON output
 uvx depgate scan -t pypi -a heur -o results.json
+
+# Wrap a package manager command with policy enforcement
+uvx depgate run --config policy.yml npm install lodash
 ```
 
 **Option 2: Install first** (using pipx or pip):
@@ -41,6 +45,7 @@ pipx install depgate
 depgate scan -t npm -p left-pad
 depgate scan -t maven -d ./my-project
 depgate scan -t pypi -a heur -o results.json
+depgate run --config policy.yml pip install requests
 ```
 
 ## Installation
@@ -165,6 +170,28 @@ The proxy supports three decision modes:
 - **audit**: Allow all, log for review
 
 See [Proxy Server](https://github.com/cognitivegears/depgate/blob/main/docs/proxy-server.md) for setup and configuration.
+
+### Run Mode
+
+DepGate's `run` mode wraps package manager commands with automatic proxy interception. No manual proxy setup or package manager configuration required:
+
+```bash
+# npm with policy enforcement
+depgate run --config policy.yml npm install lodash
+
+# pip in audit mode
+depgate run --decision-mode audit pip install requests
+
+# Maven
+depgate run --config policy.yml mvn clean install
+
+# uv
+depgate run uv pip install flask
+```
+
+Supported managers: npm, pnpm, yarn, bun, pip, pip3, pipx, poetry, uv, mvn, gradle, gradlew, dotnet, nuget.
+
+See [Run Mode](https://github.com/cognitivegears/depgate/blob/main/docs/run-mode.md) for the complete guide.
 
 ## Output Formats
 
