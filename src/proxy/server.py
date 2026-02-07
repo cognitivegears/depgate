@@ -36,6 +36,7 @@ class ProxyConfig:
     response_cache_ttl: int = 300
     timeout: int = 30
     allow_external: bool = False
+    client_max_size: int = 10 * 1024 * 1024
 
     @classmethod
     def from_args(cls, args: Any) -> "ProxyConfig":
@@ -55,6 +56,7 @@ class ProxyConfig:
             response_cache_ttl=getattr(args, "PROXY_RESPONSE_CACHE_TTL", 300),
             timeout=getattr(args, "PROXY_TIMEOUT", 30),
             allow_external=getattr(args, "PROXY_ALLOW_EXTERNAL", False),
+            client_max_size=getattr(args, "PROXY_CLIENT_MAX_SIZE", 10 * 1024 * 1024),
         )
 
         # Override upstreams if provided
@@ -115,12 +117,46 @@ class RegistryProxyServer:
 
     def _create_app(self) -> web.Application:
         """Create the aiohttp application."""
-        app = web.Application(client_max_size=10 * 1024 * 1024)  # 10MB body limit
+        app = web.Application(client_max_size=self._config.client_max_size)
         app.router.add_get("/_depgate/health", self._health_check)
         app.router.add_route("*", "/{path:.*}", self._handle_request)
         app.on_startup.append(self._on_startup)
         app.on_cleanup.append(self._on_cleanup)
         return app
+
+    async def _stream_response(
+        self,
+        request: web.Request,
+        response: aiohttp.ClientResponse,
+        headers: Dict[str, str],
+        cache_key: Optional[str] = None,
+        max_cache_bytes: Optional[int] = None,
+        cache_response: bool = False,
+    ) -> web.StreamResponse:
+        """Stream upstream response to client, optionally caching small bodies."""
+        stream_response = web.StreamResponse(
+            status=response.status,
+            headers=headers,
+        )
+        await stream_response.prepare(request)
+
+        buffer: Optional[bytearray] = bytearray() if cache_response else None
+
+        async for chunk in response.content.iter_chunked(64 * 1024):
+            await stream_response.write(chunk)
+            if buffer is not None:
+                if max_cache_bytes is not None and len(buffer) + len(chunk) > max_cache_bytes:
+                    buffer = None
+                else:
+                    buffer.extend(chunk)
+
+        await stream_response.write_eof()
+
+        if buffer is not None and cache_key and max_cache_bytes is not None:
+            if len(buffer) <= max_cache_bytes:
+                self._response_cache.set(cache_key, bytes(buffer), headers)
+
+        return stream_response
 
     async def _health_check(self, request: web.Request) -> web.Response:
         """Health check endpoint."""
@@ -337,31 +373,22 @@ class RegistryProxyServer:
                         )
 
                     if length is None:
-                        # No Content-Length (e.g. chunked); buffer and
-                        # cache if the body turns out to be small enough.
-                        response_body = await response.read()
-                        if len(response_body) <= max_bytes:
-                            self._response_cache.set(
-                                cache_key,
-                                response_body,
-                                filtered_headers,
-                            )
-                        return web.Response(
-                            status=response.status,
-                            headers=filtered_headers,
-                            body=response_body,
+                        # Unknown length (chunked): stream and opportunistically cache.
+                        return await self._stream_response(
+                            request,
+                            response,
+                            filtered_headers,
+                            cache_key=cache_key,
+                            max_cache_bytes=max_bytes,
+                            cache_response=True,
                         )
 
                 # Non-cacheable or known-large: stream to client.
-                stream_response = web.StreamResponse(
-                    status=response.status,
-                    headers=filtered_headers,
+                return await self._stream_response(
+                    request,
+                    response,
+                    filtered_headers,
                 )
-                await stream_response.prepare(request)
-                async for chunk in response.content.iter_chunked(64 * 1024):
-                    await stream_response.write(chunk)
-                await stream_response.write_eof()
-                return stream_response
         except aiohttp.ClientError as e:
             logger.error("Upstream request failed: %s", e)
             return web.Response(

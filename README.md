@@ -149,6 +149,9 @@ DepGate can act as a registry proxy, intercepting package manager requests and e
 # Start proxy server with policy enforcement
 depgate proxy --port 8080 --config policy.yml
 
+# Increase max request body size (bytes) for publishes/uploads
+depgate proxy --port 8080 --config policy.yml --client-max-size 52428800
+
 # Configure npm to use proxy
 npm config set registry http://localhost:8080
 

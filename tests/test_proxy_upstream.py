@@ -1,5 +1,10 @@
 """Tests for upstream client helpers."""
 
+import asyncio
+import pytest
+
+aiohttp_mod = pytest.importorskip("aiohttp")
+
 from src.proxy.upstream import UpstreamClient
 from src.proxy.request_parser import RegistryType
 
@@ -83,6 +88,9 @@ class TestUpstreamClientResponseHeaders:
             "Content-Type": "application/json",
             "Content-Length": "42",
             "ETag": '"abc"',
+            "Location": "https://example.com/redirect",
+            "Content-Range": "bytes 0-41/42",
+            "Accept-Ranges": "bytes",
             "X-Request-Id": "12345",
         }
 
@@ -91,6 +99,9 @@ class TestUpstreamClientResponseHeaders:
         assert result["Content-Type"] == "application/json"
         assert result["Content-Length"] == "42"
         assert result["ETag"] == '"abc"'
+        assert result["Location"] == "https://example.com/redirect"
+        assert result["Content-Range"] == "bytes 0-41/42"
+        assert result["Accept-Ranges"] == "bytes"
         assert "X-Request-Id" not in result
 
     def test_filter_case_insensitive_matching(self):
@@ -210,3 +221,87 @@ class TestUpstreamClientVaryForwarding:
 
         assert "Vary" in result
         assert result["Vary"] == "Accept"
+
+
+class _DummyResponse:
+    def __init__(self, status, headers=None, body=b""):
+        self.status = status
+        self.headers = headers or {}
+        self._body = body
+
+    async def read(self):
+        return self._body
+
+    def release(self):
+        pass
+
+
+class _DummySession:
+    def __init__(self, responses, urls):
+        self._responses = iter(responses)
+        self._urls = urls
+
+    async def request(self, method, url, headers=None, data=None, allow_redirects=False):
+        self._urls.append(url)
+        return next(self._responses)
+
+
+class TestUpstreamClientRedirects:
+    def test_follow_allowed_redirect(self):
+        """Allowed redirects should be followed for GET requests."""
+        client = UpstreamClient()
+        urls = []
+        client._session = _DummySession(
+            [
+                _DummyResponse(
+                    status=302,
+                    headers={"Location": "https://files.pythonhosted.org/packages/x/y/z.whl"},
+                ),
+                _DummyResponse(
+                    status=200,
+                    headers={"Content-Type": "text/plain"},
+                    body=b"ok",
+                ),
+            ],
+            urls,
+        )
+
+        async def _run():
+            async with client.open_response(
+                "https://pypi.org/simple/requests/",
+                method="GET",
+                headers={},
+                body=None,
+            ) as response:
+                body = await response.read()
+                assert body == b"ok"
+
+        asyncio.run(_run())
+        assert urls[0] == "https://pypi.org/simple/requests/"
+        assert urls[1].startswith("https://files.pythonhosted.org/")
+
+    def test_block_disallowed_redirect(self):
+        """Disallowed redirects should raise ClientError."""
+        client = UpstreamClient()
+        urls = []
+        client._session = _DummySession(
+            [
+                _DummyResponse(
+                    status=302,
+                    headers={"Location": "http://169.254.169.254/latest/meta-data"},
+                ),
+            ],
+            urls,
+        )
+
+        async def _run():
+            async with client.open_response(
+                "https://pypi.org/simple/requests/",
+                method="GET",
+                headers={},
+                body=None,
+            ):
+                pass  # pragma: no cover
+
+        with pytest.raises(aiohttp_mod.ClientError):
+            asyncio.run(_run())

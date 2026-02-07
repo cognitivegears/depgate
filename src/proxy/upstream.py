@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import urllib.parse
 from contextlib import asynccontextmanager
 from typing import Any, Dict, Optional, Tuple
 
@@ -23,6 +24,12 @@ class UpstreamClient:
         RegistryType.MAVEN: "https://repo1.maven.org/maven2",
         RegistryType.NUGET: "https://api.nuget.org",
     }
+    DEFAULT_REDIRECT_ALLOWLIST = {
+        RegistryType.NPM: set(),
+        RegistryType.PYPI: {"files.pythonhosted.org"},
+        RegistryType.MAVEN: {"repo.maven.apache.org"},
+        RegistryType.NUGET: {"globalcdn.nuget.org"},
+    }
 
     def __init__(
         self,
@@ -40,6 +47,9 @@ class UpstreamClient:
             self._upstreams.update(upstreams)
         self._timeout = aiohttp.ClientTimeout(total=timeout)
         self._session: Optional[aiohttp.ClientSession] = None
+        self._redirect_allowlist = {
+            registry: set(hosts) for registry, hosts in self.DEFAULT_REDIRECT_ALLOWLIST.items()
+        }
 
     def set_upstream(self, registry_type: RegistryType, url: str) -> None:
         """Set upstream URL for a registry type.
@@ -103,14 +113,16 @@ class UpstreamClient:
         if self._session is None:
             await self.start()
         assert self._session is not None
-        async with self._session.request(
-            method,
+        response = await self._request_with_redirects(
             url,
-            headers=headers,
-            data=body,
-            allow_redirects=True,
-        ) as response:
+            method,
+            headers,
+            body,
+        )
+        try:
             yield response
+        finally:
+            response.release()
 
     def cache_key(self, url: str, request_headers: Dict[str, str]) -> str:
         """Build a cache key that accounts for response variants."""
@@ -118,6 +130,101 @@ class UpstreamClient:
         accept = lower.get("accept", "")
         accept_encoding = lower.get("accept-encoding", "")
         return f"{url}\naccept={accept}\naccept-encoding={accept_encoding}"
+
+    def _registry_type_for_url(self, url: str) -> Optional[RegistryType]:
+        """Infer registry type based on the upstream base URL."""
+        matches = []
+        for registry_type, upstream in self._upstreams.items():
+            if not upstream:
+                continue
+            base = upstream.rstrip("/")
+            if url.startswith(base):
+                matches.append((len(base), registry_type))
+        if not matches:
+            return None
+        matches.sort(key=lambda item: item[0], reverse=True)
+        return matches[0][1]
+
+    def _is_allowed_redirect(self, source_url: str, target_url: str) -> bool:
+        """Validate redirect targets to prevent SSRF."""
+        target = urllib.parse.urlparse(target_url)
+        if target.scheme not in ("http", "https"):
+            return False
+        if not target.hostname:
+            return False
+
+        registry_type = self._registry_type_for_url(source_url)
+        allowed_hosts = set()
+
+        if registry_type is not None:
+            upstream_host = urllib.parse.urlparse(
+                self.get_upstream(registry_type)
+            ).hostname
+            if upstream_host:
+                allowed_hosts.add(upstream_host.lower())
+            allowed_hosts.update(
+                host.lower() for host in self._redirect_allowlist.get(registry_type, set())
+            )
+        else:
+            source_host = urllib.parse.urlparse(source_url).hostname
+            if source_host:
+                allowed_hosts.add(source_host.lower())
+
+        target_host = target.hostname.lower()
+        for host in allowed_hosts:
+            if target_host == host or target_host.endswith(f".{host}"):
+                return True
+        return False
+
+    async def _request_with_redirects(
+        self,
+        url: str,
+        method: str,
+        headers: Dict[str, str],
+        body: Optional[bytes],
+        max_redirects: int = 5,
+    ) -> aiohttp.ClientResponse:
+        """Request URL while enforcing a redirect allowlist."""
+        assert self._session is not None
+        current_url = url
+        current_method = method
+        current_body = body
+
+        for _ in range(max_redirects + 1):
+            response = await self._session.request(
+                current_method,
+                current_url,
+                headers=headers,
+                data=current_body,
+                allow_redirects=False,
+            )
+
+            if response.status not in (301, 302, 303, 307, 308):
+                return response
+
+            location = response.headers.get("Location")
+            if not location:
+                return response
+
+            next_url = urllib.parse.urljoin(current_url, location)
+            if not self._is_allowed_redirect(current_url, next_url):
+                response.release()
+                raise aiohttp.ClientError("Redirect blocked by allowlist")
+
+            # Only follow redirects that preserve method for non-GET/HEAD.
+            if current_method not in ("GET", "HEAD") and response.status in (301, 302, 303):
+                response.release()
+                raise aiohttp.ClientError("Redirect not allowed for non-GET/HEAD request")
+
+            # 303 forces GET per RFC; drop body.
+            if response.status == 303:
+                current_method = "GET"
+                current_body = None
+
+            response.release()
+            current_url = next_url
+
+        raise aiohttp.ClientError("Too many redirects")
 
     def is_cacheable_request(self, request_headers: Dict[str, str]) -> bool:
         """Determine if a request is safe to cache."""
@@ -220,13 +327,19 @@ class UpstreamClient:
         """
         # Canonical header names to forward (lowercased for comparison)
         forward_headers = {
-            "content-type": "Content-Type",
+            "accept-ranges": "Accept-Ranges",
+            "cache-control": "Cache-Control",
+            "content-disposition": "Content-Disposition",
+            "content-encoding": "Content-Encoding",
             "content-length": "Content-Length",
+            "content-range": "Content-Range",
+            "content-type": "Content-Type",
             "etag": "ETag",
             "last-modified": "Last-Modified",
-            "cache-control": "Cache-Control",
-            "content-encoding": "Content-Encoding",
+            "location": "Location",
+            "retry-after": "Retry-After",
             "vary": "Vary",
+            "www-authenticate": "WWW-Authenticate",
         }
 
         filtered = {}

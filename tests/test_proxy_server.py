@@ -54,6 +54,7 @@ class TestProxyConfig:
         assert config.port == 8080
         assert config.decision_mode == "block"
         assert config.cache_ttl == 3600
+        assert config.client_max_size == 10 * 1024 * 1024
 
     def test_config_from_args(self):
         """Test configuration from CLI arguments."""
@@ -63,6 +64,7 @@ class TestProxyConfig:
         args.PROXY_DECISION_MODE = "warn"
         args.PROXY_CACHE_TTL = 7200
         args.PROXY_TIMEOUT = 60
+        args.PROXY_CLIENT_MAX_SIZE = 5 * 1024 * 1024
         args.PROXY_UPSTREAM_NPM = "https://custom.npm.registry"
         args.PROXY_UPSTREAM_PYPI = None
         args.PROXY_UPSTREAM_MAVEN = None
@@ -74,6 +76,7 @@ class TestProxyConfig:
         assert config.port == 9000
         assert config.decision_mode == "warn"
         assert config.cache_ttl == 7200
+        assert config.client_max_size == 5 * 1024 * 1024
         assert config.upstream_npm == "https://custom.npm.registry"
 
 
@@ -729,7 +732,7 @@ class TestProxyServerStreaming:
     # -- Test 8: missing Content-Length --
 
     def test_chunked_response_cached_when_small(self):
-        """Responses without Content-Length are buffered and cached if small."""
+        """Chunked responses are streamed and cached if small."""
         server = self._make_server()
 
         @asynccontextmanager
@@ -741,13 +744,13 @@ class TestProxyServerStreaming:
             )
 
         server._upstream.open_response = _open_response
+        written = []
 
         response = asyncio.run(
-            server._handle_request(self._make_request())
+            self._run_streaming_request(server, written)
         )
 
-        assert isinstance(response, web.Response)
-        assert response.body == b'{"chunked":true}'
+        assert b"".join(written) == b'{"chunked":true}'
 
         # Confirm it was cached
         called = {"count": 0}
@@ -762,11 +765,12 @@ class TestProxyServerStreaming:
         response2 = asyncio.run(
             server._handle_request(self._make_request())
         )
+        assert isinstance(response2, web.Response)
         assert response2.body == b'{"chunked":true}'
         assert called["count"] == 0
 
     def test_chunked_large_response_not_cached(self):
-        """Large responses without Content-Length are returned but not cached."""
+        """Large chunked responses are streamed but not cached."""
         server = self._make_server()
         max_bytes = server._response_cache.max_entry_bytes()
         large_body = b"y" * (max_bytes + 1)
@@ -780,13 +784,13 @@ class TestProxyServerStreaming:
             )
 
         server._upstream.open_response = _open_response
+        written = []
 
         response = asyncio.run(
-            server._handle_request(self._make_request())
+            self._run_streaming_request(server, written)
         )
 
-        assert isinstance(response, web.Response)
-        assert response.body == large_body
+        assert b"".join(written) == large_body
 
         # Verify not cached — next request should call upstream again
         called = {"count": 0}
@@ -804,3 +808,25 @@ class TestProxyServerStreaming:
 
         asyncio.run(server._handle_request(self._make_request()))
         assert called["count"] == 1
+
+    def _run_streaming_request(self, server, written):
+        async def _run():
+            mock_stream = MagicMock()
+
+            async def _prepare(req):
+                pass
+
+            async def _write(chunk):
+                written.append(chunk)
+
+            async def _write_eof():
+                pass
+
+            mock_stream.prepare = _prepare
+            mock_stream.write = _write
+            mock_stream.write_eof = _write_eof
+
+            with patch.object(web, "StreamResponse", return_value=mock_stream):
+                return await server._handle_request(self._make_request())
+
+        return _run()

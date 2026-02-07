@@ -66,6 +66,18 @@ class TestRequestParserNPM:
         assert result.registry_type == RegistryType.NPM
         assert result.version == "1.0.0-beta.1"
 
+    def test_parse_build_metadata_version(self):
+        """Test parsing NPM package with build metadata."""
+        result = self.parser.parse("/package/-/package-1.2.3+build.5.tgz")
+        assert result.registry_type == RegistryType.NPM
+        assert result.version == "1.2.3+build.5"
+
+    def test_parse_nonstandard_tarball_version(self):
+        """Test fallback parsing for nonstandard NPM tarball versions."""
+        result = self.parser.parse("/package/-/package-1.2.3rc1.tgz")
+        assert result.registry_type == RegistryType.NPM
+        assert result.version == "1.2.3rc1"
+
 
 class TestRequestParserPyPI:
     """Tests for PyPI URL parsing."""

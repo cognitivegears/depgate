@@ -41,7 +41,9 @@ class RequestParser:
     # /{@scope/package}/-/{package}-{version}.tgz - scoped tarball
     _NPM_SCOPED_PATTERN = re.compile(r"^/@([^/]+)/([^/]+)(?:/(.*))?$")
     _NPM_UNSCOPED_PATTERN = re.compile(r"^/([^/@][^/]*)(?:/(.*))?$")
-    _NPM_TARBALL_PATTERN = re.compile(r"^-/(.+)-(\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]+)?)\.tgz$")
+    _NPM_TARBALL_PATTERN = re.compile(
+        r"^-/(.+)-(\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]+)?(?:\+[a-zA-Z0-9.-]+)?)\.tgz$"
+    )
 
     # PyPI patterns
     # /simple/{package}/ - simple API (PEP 503)
@@ -171,6 +173,17 @@ class RequestParser:
                         is_tarball_request=True,
                         raw_path=path,
                     )
+                if rest.startswith("-/") and rest.endswith(".tgz"):
+                    version = self._fallback_npm_tarball_version(rest)
+                    if version:
+                        return ParsedRequest(
+                            registry_type=RegistryType.NPM,
+                            package_name=package_name,
+                            version=version,
+                            is_metadata_request=False,
+                            is_tarball_request=True,
+                            raw_path=path,
+                        )
                 # Could be a version request like /{package}/{version}
                 version = rest
                 return ParsedRequest(
@@ -210,6 +223,17 @@ class RequestParser:
                         is_tarball_request=True,
                         raw_path=path,
                     )
+                if rest.startswith("-/") and rest.endswith(".tgz"):
+                    version = self._fallback_npm_tarball_version(rest)
+                    if version:
+                        return ParsedRequest(
+                            registry_type=RegistryType.NPM,
+                            package_name=name,
+                            version=version,
+                            is_metadata_request=False,
+                            is_tarball_request=True,
+                            raw_path=path,
+                        )
                 # Could be a version request
                 version = rest
                 return ParsedRequest(
@@ -228,6 +252,14 @@ class RequestParser:
             )
 
         return None
+
+    def _fallback_npm_tarball_version(self, rest: str) -> Optional[str]:
+        """Best-effort extraction of version from tarball filenames."""
+        filename = rest[2:-4]  # strip "-/" and ".tgz"
+        if "-" not in filename:
+            return None
+        _, version = filename.rsplit("-", 1)
+        return version or None
 
     def _parse_pypi(self, path: str) -> Optional[ParsedRequest]:
         """Parse PyPI registry request."""

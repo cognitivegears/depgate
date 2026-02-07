@@ -116,6 +116,14 @@ def add_proxy_arguments(parser: argparse.ArgumentParser) -> None:
         type=int,
         default=30,
     )
+    parser.add_argument(
+        "--client-max-size",
+        dest="PROXY_CLIENT_MAX_SIZE",
+        help="Max client request body size in bytes (default: 10485760)",
+        action="store",
+        type=int,
+        default=10 * 1024 * 1024,
+    )
 
     # Logging
     parser.add_argument(
