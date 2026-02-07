@@ -220,6 +220,11 @@ def recv_pkg_info(
         if info is not None:
             i.exists = True
             i.score = info.get("score", {}).get("final", 0)
+            i.weekly_downloads = (
+                info.get("evaluation", {})
+                .get("popularity", {})
+                .get("downloadsCount")
+            )
             try:
                 i.timestamp = int(
                     dt.timestamp(

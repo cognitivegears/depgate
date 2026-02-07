@@ -51,6 +51,7 @@ class MetaPackage:  # pylint: disable=too-many-instance-attributes, too-many-pub
         self._star_count = None
         self._contributor_count = None
         self._download_count = None
+        self._weekly_downloads = None
         self._issue_count = None
         # Initialize optional metadata fields to avoid attribute-defined-outside-init warnings
         self._author = None
@@ -74,6 +75,12 @@ class MetaPackage:  # pylint: disable=too-many-instance-attributes, too-many-pub
         self._repo_last_activity_at = None
         self._repo_stars = None
         self._repo_contributors = None
+        self._repo_forks = None
+        self._repo_open_issues = None
+        self._repo_open_prs = None
+        self._repo_last_commit_at = None
+        self._repo_last_merged_pr_at = None
+        self._repo_last_closed_issue_at = None
         self._repo_version_match = None
         self._provenance = None
         self._repo_errors = None
@@ -337,6 +344,19 @@ class MetaPackage:  # pylint: disable=too-many-instance-attributes, too-many-pub
     @download_count.setter
     def download_count(self, count):
         self._download_count = count
+
+    @property
+    def weekly_downloads(self):
+        """Property for weekly download count.
+
+        Returns:
+            int or None: Weekly downloads.
+        """
+        return self._weekly_downloads
+
+    @weekly_downloads.setter
+    def weekly_downloads(self, count):
+        self._weekly_downloads = count
 
     @property
     def score(self):
@@ -689,6 +709,84 @@ class MetaPackage:  # pylint: disable=too-many-instance-attributes, too-many-pub
     @repo_contributors.setter
     def repo_contributors(self, value):
         self._repo_contributors = value
+
+    @property
+    def repo_forks(self):
+        """Property for repository fork count.
+
+        Returns:
+            int or None: Number of repository forks
+        """
+        return self._repo_forks
+
+    @repo_forks.setter
+    def repo_forks(self, value):
+        self._repo_forks = value
+
+    @property
+    def repo_open_issues(self):
+        """Property for repository open issues count.
+
+        Returns:
+            int or None: Number of open issues
+        """
+        return self._repo_open_issues
+
+    @repo_open_issues.setter
+    def repo_open_issues(self, value):
+        self._repo_open_issues = value
+
+    @property
+    def repo_open_prs(self):
+        """Property for repository open pull requests count.
+
+        Returns:
+            int or None: Number of open PRs
+        """
+        return self._repo_open_prs
+
+    @repo_open_prs.setter
+    def repo_open_prs(self, value):
+        self._repo_open_prs = value
+
+    @property
+    def repo_last_commit_at(self):
+        """Property for repository last commit timestamp.
+
+        Returns:
+            str or None: ISO 8601 timestamp of last commit
+        """
+        return self._repo_last_commit_at
+
+    @repo_last_commit_at.setter
+    def repo_last_commit_at(self, value):
+        self._repo_last_commit_at = value
+
+    @property
+    def repo_last_merged_pr_at(self):
+        """Property for repository last merged PR timestamp.
+
+        Returns:
+            str or None: ISO 8601 timestamp of last merged PR
+        """
+        return self._repo_last_merged_pr_at
+
+    @repo_last_merged_pr_at.setter
+    def repo_last_merged_pr_at(self, value):
+        self._repo_last_merged_pr_at = value
+
+    @property
+    def repo_last_closed_issue_at(self):
+        """Property for repository last closed issue timestamp.
+
+        Returns:
+            str or None: ISO 8601 timestamp of last closed issue
+        """
+        return self._repo_last_closed_issue_at
+
+    @repo_last_closed_issue_at.setter
+    def repo_last_closed_issue_at(self, value):
+        self._repo_last_closed_issue_at = value
 
     @property
     def repo_version_match(self):

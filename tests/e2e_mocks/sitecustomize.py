@@ -121,6 +121,11 @@ def _fake_get(url, timeout=None, headers=None, params=None, **kwargs):
             data = {"response": {"numFound": 0, "docs": []}}
         return MockResponse(200, data=data)
 
+    # pypistats.org weekly downloads API
+    if "pypistats.org/api/packages/" in url and url.endswith("/recent"):
+        data = {"data": {"last_week": 50000}}
+        return MockResponse(200, data=data)
+
     # Passthrough for anything else
     return _REAL_GET(url, timeout=timeout, headers=headers, params=params, **kwargs)
 

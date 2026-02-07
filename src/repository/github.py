@@ -53,7 +53,9 @@ class GitHubClient:
             return {
                 'stargazers_count': data.get('stargazers_count'),
                 'pushed_at': data.get('pushed_at'),
-                'default_branch': data.get('default_branch')
+                'default_branch': data.get('default_branch'),
+                'forks_count': data.get('forks_count'),
+                'open_issues_count': data.get('open_issues_count'),
             }
         return None
 
@@ -113,6 +115,100 @@ class GitHubClient:
             if data:
                 return len(data)
 
+        return None
+
+    def get_open_prs_count(self, owner: str, repo: str) -> Optional[int]:
+        """Get open pull request count for repository.
+
+        Args:
+            owner: Repository owner
+            repo: Repository name
+
+        Returns:
+            Open PR count or None on error
+        """
+        url = f"{self.base_url}/repos/{owner}/{repo}/pulls?state=open&per_page=1"
+        return self._get_paginated_count(url)
+
+    def get_last_commit(self, owner: str, repo: str) -> Optional[str]:
+        """Get last commit timestamp for repository.
+
+        Args:
+            owner: Repository owner
+            repo: Repository name
+
+        Returns:
+            ISO 8601 timestamp or None on error
+        """
+        url = f"{self.base_url}/repos/{owner}/{repo}/commits?per_page=1"
+        status, _, data = get_json(url, headers=self._get_headers())
+        if status == 200 and data:
+            commit = data[0].get("commit", {}) if isinstance(data[0], dict) else {}
+            committer = commit.get("committer", {}) if isinstance(commit, dict) else {}
+            author = commit.get("author", {}) if isinstance(commit, dict) else {}
+            return committer.get("date") or author.get("date")
+        return None
+
+    def get_last_merged_pr(self, owner: str, repo: str) -> Optional[str]:
+        """Get last merged pull request timestamp.
+
+        Args:
+            owner: Repository owner
+            repo: Repository name
+
+        Returns:
+            ISO 8601 timestamp or None on error
+        """
+        url = (
+            f"{self.base_url}/repos/{owner}/{repo}/pulls"
+            "?state=closed&sort=updated&direction=desc&per_page=10"
+        )
+        status, _, data = get_json(url, headers=self._get_headers())
+        if status == 200 and data:
+            for pr in data:
+                if isinstance(pr, dict) and pr.get("merged_at"):
+                    return pr.get("merged_at")
+        return None
+
+    def get_last_closed_issue(self, owner: str, repo: str) -> Optional[str]:
+        """Get last closed issue timestamp.
+
+        Args:
+            owner: Repository owner
+            repo: Repository name
+
+        Returns:
+            ISO 8601 timestamp or None on error
+        """
+        url = (
+            f"{self.base_url}/repos/{owner}/{repo}/issues"
+            "?state=closed&sort=updated&direction=desc&per_page=10"
+        )
+        status, _, data = get_json(url, headers=self._get_headers())
+        if status == 200 and data:
+            for issue in data:
+                if isinstance(issue, dict) and "pull_request" not in issue:
+                    return issue.get("closed_at")
+        return None
+
+    def _get_paginated_count(self, url: str) -> Optional[int]:
+        """Get a total count from a paginated endpoint.
+
+        Args:
+            url: Endpoint URL with per_page set.
+
+        Returns:
+            Total count or None on error.
+        """
+        status, headers, data = get_json(url, headers=self._get_headers())
+        if status == 200:
+            link_header = headers.get('link', '')
+            if link_header:
+                total = self._parse_link_header_total(link_header)
+                if total is not None:
+                    return total
+            if data is not None:
+                return len(data)
         return None
 
     def _get_paginated_results(self, url: str) -> List[Dict[str, Any]]:

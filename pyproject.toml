@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "depgate"
-version = "0.9.1"
+version = "0.10.0"
 description = "DepGate detects and prevents dependency confusion and supply-chain risks. (Hard fork of Apiiro's Dependency Combobulator)"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -28,6 +28,7 @@ dependencies = [
   "mcp[cli]>=1.18.0",
   "jsonschema>=4.19.0",
   "yarnlock==1.2.0",
+  "aiohttp>=3.9.0",
 ]
 
 [project.urls]
@@ -39,7 +40,7 @@ depgate = "depgate:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
-py-modules = ["depgate", "args", "constants", "metapackage", "cli_io", "cli_build", "cli_registry", "cli_classify", "cli_config", "cli_mcp"]
+py-modules = ["depgate", "args", "constants", "metapackage", "cli_io", "cli_build", "cli_registry", "cli_classify", "cli_config", "cli_mcp", "cli_proxy"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
