@@ -139,6 +139,7 @@ class TestRunCommand:
     ):
         mock_thread = MagicMock()
         mock_thread.bound_port = 12345
+        mock_thread.error = None
         mock_thread_cls.return_value = mock_thread
         mock_subproc.return_value = MagicMock(returncode=0)
 
@@ -162,6 +163,7 @@ class TestRunCommand:
     ):
         mock_thread = MagicMock()
         mock_thread.bound_port = 12345
+        mock_thread.error = None
         mock_thread_cls.return_value = mock_thread
         mock_subproc.return_value = MagicMock(returncode=42)
 
@@ -183,6 +185,7 @@ class TestRunCommand:
     ):
         mock_thread = MagicMock()
         mock_thread.bound_port = 12345
+        mock_thread.error = None
         mock_thread_cls.return_value = mock_thread
         mock_subproc.return_value = MagicMock(returncode=0)
 
@@ -207,6 +210,7 @@ class TestRunCommand:
         """Maven wrapper injects -s <settings.xml> after the command name."""
         mock_thread = MagicMock()
         mock_thread.bound_port = 12345
+        mock_thread.error = None
         mock_thread_cls.return_value = mock_thread
         mock_subproc.return_value = MagicMock(returncode=0)
 
@@ -234,6 +238,7 @@ class TestRunCommand:
         """Temp files from wrappers (e.g. Maven settings.xml) are cleaned up."""
         mock_thread = MagicMock()
         mock_thread.bound_port = 12345
+        mock_thread.error = None
         mock_thread_cls.return_value = mock_thread
         mock_subproc.return_value = MagicMock(returncode=0)
 
@@ -259,6 +264,7 @@ class TestRunCommand:
         """Exit if bound_port is None (server didn't bind)."""
         mock_thread = MagicMock()
         mock_thread.bound_port = None
+        mock_thread.error = None
         mock_thread_cls.return_value = mock_thread
 
         args = self._make_args(["npm", "install"])
@@ -279,6 +285,7 @@ class TestRunCommand:
     ):
         mock_thread = MagicMock()
         mock_thread.bound_port = 12345
+        mock_thread.error = None
         mock_thread_cls.return_value = mock_thread
 
         args = self._make_args(["npm", "install", "lodash"])
@@ -290,6 +297,27 @@ class TestRunCommand:
         assert exc_info.value.code == 127
         stderr = capsys.readouterr().err
         assert "Command not found" in stderr
+
+    @patch("src.cli_run._ProxyThread")
+    @patch("src.cli_run._load_policy_config", return_value={})
+    @patch("src.cli_run._setup_logging")
+    def test_proxy_start_timeout_exits(
+        self, mock_logging, mock_load, mock_thread_cls, capsys
+    ):
+        mock_thread = MagicMock()
+        mock_thread.wait_for_start.side_effect = TimeoutError("timeout")
+        mock_thread.error = None
+        mock_thread_cls.return_value = mock_thread
+
+        args = self._make_args(["npm", "install"])
+
+        with pytest.raises(SystemExit) as exc_info:
+            from src.cli_run import run_command
+            run_command(args)
+
+        assert exc_info.value.code == 1
+        stderr = capsys.readouterr().err
+        assert "failed to start within" in stderr.lower()
 
 
 class TestWaitForHealth:

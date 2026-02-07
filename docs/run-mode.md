@@ -57,8 +57,8 @@ depgate run uv pip install flask
 | `mvn` | Maven | Temp `settings.xml` with `-s` flag |
 | `gradle` | Maven | Temp `init.gradle` with `--init-script` flag |
 | `gradlew` | Maven | Same as gradle |
-| `dotnet` | NuGet | Temp `NuGet.Config` + `NUGET_CONFIGFILE` env var |
-| `nuget` | NuGet | Same as dotnet |
+| `dotnet` | NuGet | Temp `NuGet.Config` + `--configfile` / MSBuild property |
+| `nuget` | NuGet | Temp `NuGet.Config` + `-ConfigFile` flag |
 
 ## CLI Options
 
@@ -225,7 +225,10 @@ Creates a temporary `init.gradle` script that overrides all project repositories
 
 ### NuGet (dotnet, nuget)
 
-Creates a temporary `NuGet.Config` that clears existing sources and adds the proxy as the sole package source. The file path is set via the `NUGET_CONFIGFILE` environment variable.
+Creates a temporary `NuGet.Config` that clears existing sources and adds the proxy as the sole package source. The file path is injected into the command:
+
+- **dotnet**: `--configfile <path>` for restore/build/run/pack, or `--property:RestoreConfigFile=<path>` for publish/test
+- **nuget**: `-ConfigFile <path>`
 
 ## Temporary Files
 

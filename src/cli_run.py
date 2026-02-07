@@ -22,6 +22,7 @@ from run_wrappers import get_wrapper, SUPPORTED_MANAGERS
 
 logger = logging.getLogger(__name__)
 
+_PROXY_START_TIMEOUT = 30  # seconds
 _HEALTH_CHECK_TIMEOUT = 10  # seconds
 _HEALTH_CHECK_INTERVAL = 0.1  # seconds
 
@@ -72,12 +73,17 @@ class _ProxyThread(threading.Thread):
         self._server: Any = None
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._started = threading.Event()
+        self._started_ok = False
         self._bound_port: Optional[int] = None
         self._error: Optional[Exception] = None
 
     @property
     def bound_port(self) -> Optional[int]:
         return self._bound_port
+
+    @property
+    def error(self) -> Optional[Exception]:
+        return self._error
 
     def run(self) -> None:
         from proxy.server import RegistryProxyServer
@@ -93,21 +99,34 @@ class _ProxyThread(threading.Thread):
             self._loop.run_until_complete(_start())
         except Exception as exc:
             self._error = exc
+            logger.exception("Proxy server failed to start")
             self._started.set()
+            if self._loop is not None:
+                self._loop.close()
             return
 
+        self._started_ok = True
         self._started.set()
-        self._loop.run_forever()
+        try:
+            self._loop.run_forever()
+        finally:
+            if self._loop is not None:
+                self._loop.close()
 
-    def wait_for_start(self, timeout: float = 10.0) -> None:
+    def wait_for_start(self, timeout: float = _PROXY_START_TIMEOUT) -> None:
         """Block until the server is listening or an error occurred."""
-        self._started.wait(timeout=timeout)
+        started = self._started.wait(timeout=timeout)
+        if not started:
+            raise TimeoutError("Proxy server startup timed out")
         if self._error is not None:
             raise self._error
 
     def shutdown(self) -> None:
         """Stop the server and event loop."""
-        if self._loop is None or self._server is None:
+        if self._loop is None:
+            return
+        if not self._started_ok or self._server is None or not self._loop.is_running():
+            self.join(timeout=5.0)
             return
 
         async def _stop():
@@ -190,10 +209,45 @@ def run_command(args: Any) -> None:
     wrapper = None
     exit_code = 1
     try:
-        proxy_thread.wait_for_start(timeout=_HEALTH_CHECK_TIMEOUT)
+        try:
+            proxy_thread.wait_for_start(timeout=_PROXY_START_TIMEOUT)
+        except TimeoutError:
+            log_file = getattr(args, "LOG_FILE", None)
+            sys.stderr.write(
+                f"Error: Proxy server failed to start within {_PROXY_START_TIMEOUT} seconds.\n"
+            )
+            if log_file:
+                sys.stderr.write(f"See log file for details: {log_file}\n")
+            sys.exit(1)
+        except Exception as exc:
+            log_file = getattr(args, "LOG_FILE", None)
+            sys.stderr.write(
+                f"Error: Proxy server failed to start: {exc}\n"
+            )
+            if log_file:
+                sys.stderr.write(f"See log file for details: {log_file}\n")
+            sys.exit(1)
         port = proxy_thread.bound_port
         if port is None:
-            sys.stderr.write("Error: Could not determine proxy port.\n")
+            # Grace period for error propagation from the proxy thread
+            for _ in range(10):
+                if proxy_thread.bound_port is not None or proxy_thread.error is not None:
+                    break
+                time.sleep(0.05)
+
+        port = proxy_thread.bound_port
+        if port is None:
+            err = proxy_thread.error
+            if err is not None:
+                detail = f"{err}"
+                if isinstance(err, PermissionError):
+                    detail = (
+                        f"{err} (binding a local port was not permitted). "
+                        "This can happen in restricted/sandboxed environments."
+                    )
+                sys.stderr.write(f"Error: Proxy server failed to start: {detail}\n")
+            else:
+                sys.stderr.write("Error: Could not determine proxy port.\n")
             sys.exit(1)
 
         proxy_url = f"http://127.0.0.1:{port}"

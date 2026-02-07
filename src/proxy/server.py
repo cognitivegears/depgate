@@ -488,7 +488,15 @@ class RegistryProxyServer:
             self._config.host,
             self._config.port,
         )
-        await site.start()
+        try:
+            await site.start()
+        except Exception:
+            # Ensure cleanup on bind/start failure to avoid leaked resources.
+            if self._runner:
+                await self._runner.cleanup()
+                self._runner = None
+                self._app = None
+            raise
 
         # Extract actual bound port (important when port=0 for ephemeral)
         if site._server and site._server.sockets:
