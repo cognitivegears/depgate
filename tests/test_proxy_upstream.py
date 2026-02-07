@@ -156,3 +156,57 @@ class TestUpstreamClientCaching:
         """Ensure Vary: Accept-Encoding is cacheable."""
         client = UpstreamClient()
         assert client.is_cacheable_response({"Vary": "Accept-Encoding"}) is True
+
+    def test_cacheable_request_rejects_range(self):
+        """Ensure requests with Range header are not cached."""
+        client = UpstreamClient()
+        assert client.is_cacheable_request({"Range": "bytes=0-1023"}) is False
+
+    def test_cacheable_request_allows_normal(self):
+        """Ensure normal requests without auth/cookie/range are cacheable."""
+        client = UpstreamClient()
+        assert client.is_cacheable_request({"Accept": "application/json"}) is True
+
+
+class TestUpstreamClientProxyConnection:
+    """Tests for Proxy-Connection header stripping."""
+
+    def test_proxy_connection_stripped(self):
+        """Ensure Proxy-Connection header is stripped from upstream requests."""
+        client = UpstreamClient()
+        headers = {
+            "Proxy-Connection": "keep-alive",
+            "Accept": "application/json",
+        }
+
+        result = client._build_request_headers(headers)
+
+        assert "Proxy-Connection" not in result
+        assert "proxy-connection" not in result
+        assert result["Accept"] == "application/json"
+
+
+class TestUpstreamClientVaryForwarding:
+    """Tests for Vary header forwarding in response."""
+
+    def test_vary_header_forwarded(self):
+        """Ensure Vary header is forwarded to clients."""
+        client = UpstreamClient()
+        headers = {
+            "Content-Type": "application/json",
+            "Vary": "Accept, Accept-Encoding",
+        }
+
+        result = client.filter_response_headers(headers)
+
+        assert result["Vary"] == "Accept, Accept-Encoding"
+
+    def test_vary_header_canonical_casing(self):
+        """Ensure Vary is output with canonical casing."""
+        client = UpstreamClient()
+        headers = {"vary": "Accept"}
+
+        result = client.filter_response_headers(headers)
+
+        assert "Vary" in result
+        assert result["Vary"] == "Accept"

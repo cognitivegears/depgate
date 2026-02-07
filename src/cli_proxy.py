@@ -127,7 +127,7 @@ def run_proxy_server(args: Any) -> None:
 
     # Lazy import to avoid loading aiohttp for other commands
     try:
-        from proxy.server import RegistryProxyServer, ProxyConfig, run_proxy_server_sync
+        from proxy.server import ProxyConfig, run_proxy_server_sync
     except ImportError as e:
         sys.stderr.write(
             f"Proxy server not available: {e}\n"

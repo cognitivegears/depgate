@@ -126,6 +126,8 @@ class UpstreamClient:
             return False
         if "cookie" in lower:
             return False
+        if "range" in lower:
+            return False
         return True
 
     def is_cacheable_response(self, response_headers: Dict[str, Any]) -> bool:
@@ -179,6 +181,7 @@ class UpstreamClient:
             "keep-alive",
             "proxy-authenticate",
             "proxy-authorization",
+            "proxy-connection",
             "te",
             "trailer",
             "transfer-encoding",
@@ -223,6 +226,7 @@ class UpstreamClient:
             "last-modified": "Last-Modified",
             "cache-control": "Cache-Control",
             "content-encoding": "Content-Encoding",
+            "vary": "Vary",
         }
 
         filtered = {}

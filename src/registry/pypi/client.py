@@ -8,6 +8,7 @@ import logging
 from datetime import datetime as dt
 from typing import Optional
 from packaging.requirements import Requirement
+from packaging.utils import canonicalize_name
 from constants import ExitCodes, Constants
 from common.logging_utils import extra_context, is_debug_enabled, Timer, safe_url
 
@@ -93,7 +94,8 @@ def recv_pkg_info(pkgs, url: str = Constants.REGISTRY_URL_PYPI) -> None:
         time.sleep(0.1)
         name = getattr(x, "pkg_name", "")
         sanitized = _sanitize_identifier(str(name)).strip()
-        fullurl = url + sanitized + "/json"
+        normalized = canonicalize_name(sanitized)
+        fullurl = url + normalized + "/json"
 
         # Pre-call DEBUG log via helper
         _log_http_pre(fullurl)
@@ -183,6 +185,6 @@ def recv_pkg_info(pkgs, url: str = Constants.REGISTRY_URL_PYPI) -> None:
             _enrich_with_repo(x, x.pkg_name, j["info"], latest)
 
             # Fetch weekly download stats (best-effort)
-            x.weekly_downloads = _fetch_weekly_downloads(sanitized)
+            x.weekly_downloads = _fetch_weekly_downloads(normalized)
         else:
             x.exists = False
