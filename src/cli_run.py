@@ -220,6 +220,17 @@ def _wait_for_prepare_session() -> None:
         pass
 
 
+def _normalize_subprocess_exit_code(returncode: int) -> int:
+    """Normalize subprocess return codes for CLI exit.
+
+    subprocess uses negative values when a child exits due to a signal.
+    Shell-visible exit status for that case is 128 + signal.
+    """
+    if returncode < 0:
+        return 128 + abs(returncode)
+    return returncode
+
+
 def run_command(args: Any) -> None:
     """Entry point for the run mode.
 
@@ -364,7 +375,7 @@ def run_command(args: Any) -> None:
             # Run the wrapped command
             try:
                 result = subprocess.run(final_cmd, env=env)  # noqa: S603
-                exit_code = result.returncode
+                exit_code = _normalize_subprocess_exit_code(result.returncode)
             except FileNotFoundError:
                 sys.stderr.write(
                     f"Error: Command not found: {cmd[0]}\n"

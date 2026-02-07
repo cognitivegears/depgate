@@ -190,6 +190,28 @@ class TestRunCommand:
     @patch("src.cli_run._ProxyThread")
     @patch("src.cli_run._load_policy_config", return_value={})
     @patch("src.cli_run._setup_logging")
+    def test_signaled_exit_code_propagated_as_shell_status(
+        self, mock_logging, mock_load, mock_thread_cls, mock_health, mock_subproc
+    ):
+        mock_thread = MagicMock()
+        mock_thread.bound_port = 12345
+        mock_thread.error = None
+        mock_thread_cls.return_value = mock_thread
+        mock_subproc.return_value = MagicMock(returncode=-15)  # SIGTERM
+
+        args = self._make_args(["npm", "install", "bad-package"])
+
+        with pytest.raises(SystemExit) as exc_info:
+            from src.cli_run import run_command
+            run_command(args)
+
+        assert exc_info.value.code == 143
+
+    @patch("src.cli_run.subprocess.run")
+    @patch("src.cli_run._wait_for_health")
+    @patch("src.cli_run._ProxyThread")
+    @patch("src.cli_run._load_policy_config", return_value={})
+    @patch("src.cli_run._setup_logging")
     def test_env_vars_set_on_subprocess(
         self, mock_logging, mock_load, mock_thread_cls, mock_health, mock_subproc
     ):
