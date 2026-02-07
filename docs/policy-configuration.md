@@ -21,6 +21,13 @@ See [Proxy Server](proxy-server.md) for using policies with the registry proxy.
 
 Policy configuration can be provided via `-c, --config` (YAML/JSON/YML file) and overridden with `--set KEY=VALUE` options.
 
+Built-in presets can be selected with:
+
+```bash
+depgate scan -t npm -d ./project -a policy --policy-preset supply-chain
+depgate scan -t npm -d ./project -a policy --policy-preset supply-chain-strict --policy-min-release-age-days 7
+```
+
 ### Full Example
 
 ```yaml
@@ -73,6 +80,12 @@ policy:
 - `stars_count` - Repository stars (integer)
 - `version_count` - Number of published versions (integer)
 - `contributors_count` - Approximate contributor count (integer)
+- `release_age_days` - Age of selected release in days (integer)
+- `supply_chain_trust_score` - Trust signal score from provenance/signature data (float, 0.0-1.0)
+- `supply_chain_trust_score_delta` - Current minus previous trust score (float)
+- `supply_chain_trust_score_decreased` - True when trust score dropped vs previous release
+- `provenance_regressed` - True when provenance existed previously but not in current release
+- `registry_signature_regressed` - True when registry/package signature existed previously but not currently
 - `registry` - Package registry name (string: "npm", "pypi", "maven", "nuget")
 - `package_name` - Package identifier (string)
 
@@ -183,6 +196,18 @@ The `is_license_available` heuristic indicates whether license information is av
 - **Exit code 1**: One or more packages are denied by policy
 
 ## Examples
+
+### Built-in Supply-Chain Presets
+
+`--policy-preset supply-chain`:
+- Deny when `release_age_days` is below minimum.
+- Deny when trust score decreases (`supply_chain_trust_score_delta < 0`).
+- Deny when `provenance_regressed` or `registry_signature_regressed` is true.
+- Uses `allow_unknown=true` for these metrics (only enforced when available).
+
+`--policy-preset supply-chain-strict`:
+- Same rules as `supply-chain`.
+- Uses `allow_unknown=false` (missing signals deny).
 
 ### Basic Policy
 

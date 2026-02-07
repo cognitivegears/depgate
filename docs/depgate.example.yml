@@ -74,6 +74,15 @@ provider:
 # - Omitting a key uses the built-in default; unknown keys are ignored.
 # - See README “YAML configuration” for details.
 heuristics:
+  # Minimum age (in days) for a selected release. Newer releases are flagged as risk.
+  min_release_age_days: 2
+  # Minimum version history count before "short history" is flagged.
+  min_versions: 2
+  # Score thresholds used by low-score and risky-score checks.
+  score_threshold: 0.6
+  risky_threshold: 0.15
+  # How much trust score must drop (current - previous) before score-decrease risk is set.
+  score_decrease_threshold: 0.0
   weights:
     # Existing base score (0..1) present on the MetaPackage before repository signals.
     base_score: 0.30
@@ -87,6 +96,8 @@ heuristics:
     repo_last_activity: 0.10
     # Presence of a repository-like URL in registry metadata (treated as missing when only a non-repo homepage exists).
     repo_present_in_registry: 0.05
+    # Supply-chain trust score from provenance/signature signals.
+    supply_chain_trust_score: 0.20
 
 # Read the Docs API used for resolving documentation URLs to source repositories.
 rtd:
@@ -97,7 +108,7 @@ rtd:
 # The engine accepts three top-level keys: 'fail_fast', 'metrics', and 'rules'.
 # Notes:
 # - Unknown keys are ignored safely by the global config loader.
-# - CLI currently does not auto-load 'policy' into the engine; this is a reference schema/sample.
+# - CLI policy analysis loads this section when provided via --config (or default config discovery paths).
 policy:
   # Execution behavior for rule evaluation (bool; default=false)
   fail_fast: false  # when true, stops at the first violated rule
@@ -114,6 +125,17 @@ policy:
       min: 1       # integer >= 0
     version_count:
       min: 1       # integer >= 0
+    # Supply-chain examples (uncomment as needed):
+    # release_age_days:
+    #   min: 2       # block very fresh releases (zero-day safety window)
+    # supply_chain_trust_score:
+    #   min: 0.5
+    # supply_chain_trust_score_delta:
+    #   min: 0       # deny trust-score decreases
+    # provenance_regressed:
+    #   eq: false
+    # registry_signature_regressed:
+    #   eq: false
 
     # String metrics
     registry:
@@ -205,7 +227,7 @@ scan:
   require_lockfile: false
 
 # CLI examples:
-#   Run policy analysis using internal defaults (no YAML loading for policy yet):
+#   Run policy analysis using built-in default preset:
 #     depgate scan -t npm -p left-pad -a policy
 #   Load this file for other sections (http/registry/provider/heuristics):
 #     depgate scan -t npm -p left-pad -a policy --config ./depgate.example.yml

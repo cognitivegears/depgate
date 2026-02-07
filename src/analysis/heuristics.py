@@ -3,7 +3,7 @@ import time
 import logging  # Added import
 import math
 from datetime import datetime, timezone
-from constants import Constants, DefaultHeuristics
+from constants import Constants
 from common.logging_utils import is_debug_enabled, extra_context
 
 STG = f"{Constants.ANALYSIS} "
@@ -211,6 +211,16 @@ def _norm_version_match(vm):
     except (AttributeError, TypeError):
         return None
 
+
+def _norm_trust_score(score):
+    """Normalize supply-chain trust score into [0,1]."""
+    if score is None:
+        return None
+    try:
+        return _clamp01(float(score))
+    except (ValueError, TypeError):
+        return None
+
 def compute_final_score(mp):
     """Compute the final normalized score in [0,1] with per-heuristic breakdown and weights.
 
@@ -221,6 +231,7 @@ def compute_final_score(mp):
       - repo_contributors
       - repo_last_activity
       - repo_present_in_registry
+      - supply_chain_trust_score
 
     Default weights (sum to 1.0 when all present; re-normalized when some are missing):
       - base_score: 0.30
@@ -229,6 +240,7 @@ def compute_final_score(mp):
       - repo_contributors: 0.10
       - repo_last_activity: 0.10
       - repo_present_in_registry: 0.05
+      - supply_chain_trust_score: 0.20
 
     Returns:
       tuple(final_score: float, breakdown: dict, weights_used: dict)
@@ -241,6 +253,7 @@ def compute_final_score(mp):
         'repo_contributors': getattr(mp, 'repo_contributors', None),
         'repo_last_activity': getattr(mp, 'repo_last_activity_at', None),
         'repo_present_in_registry': getattr(mp, 'repo_present_in_registry', None),
+        'supply_chain_trust_score': getattr(mp, 'trust_score', None),
     }
 
     # Normalized values
@@ -252,6 +265,7 @@ def compute_final_score(mp):
         'repo_last_activity': _norm_repo_last_activity(raw['repo_last_activity']),
         # Treat default/unknown False as missing to avoid penalizing base-only scenarios
         'repo_present_in_registry': _norm_bool(raw['repo_present_in_registry']),
+        'supply_chain_trust_score': _norm_trust_score(raw['supply_chain_trust_score']),
     }
     # If present_in_registry is False (normalized 0.0) and no normalized repo URL exists,
     # consider it missing (None) for scoring/weight renormalization purposes.
@@ -266,6 +280,7 @@ def compute_final_score(mp):
         'repo_contributors': 0.10,
         'repo_last_activity': 0.10,
         'repo_present_in_registry': 0.05,
+        'supply_chain_trust_score': 0.20,
     }))
 
     # Re-normalize weights to only those metrics that are present (norm != None)
@@ -301,6 +316,9 @@ def run_min_analysis(pkgs):
     """
     logger = logging.getLogger(__name__)
     for x in pkgs:
+        final_score = getattr(x, "score", None)
+        breakdown = {}
+        weights_used = {}
         test_exists(x)
 
         # Check OpenSourceMalware status for ALL packages (including non-existent ones)
@@ -397,12 +415,21 @@ def run_heuristics(pkgs):
                         logging.info("%s.... repository version match: %s.", STG, "yes" if _matched else "no")
                     except (AttributeError, TypeError):
                         logging.info("%s.... repository version match: unavailable.", STG)
+                if getattr(x, "trust_score", None) is not None:
+                    logging.info("%s.... supply-chain trust score: %.3f.", STG, float(x.trust_score))
+                if getattr(x, "trust_score_delta", None) is not None:
+                    logging.info(
+                        "%s.... trust score delta from previous release: %.3f.",
+                        STG,
+                        float(x.trust_score_delta),
+                    )
             except (ValueError, TypeError):
                 # Do not break analysis on logging issues
                 pass
             test_score(x)
             test_timestamp(x)
             test_version_count(x)
+            test_trust_regression(x)
             test_license_available(x)
     stats_exists(pkgs)
 
@@ -427,20 +454,22 @@ def test_score(x):
     Args:
         x (str): Package to check.
     """
-    ttxt = ". Mid set to " + str(DefaultHeuristics.SCORE_THRESHOLD.value) + ")"
+    score_mid = getattr(Constants, "HEURISTICS_SCORE_THRESHOLD", 0.6)
+    risky = getattr(Constants, "HEURISTICS_RISKY_THRESHOLD", 0.15)
+    ttxt = ". Mid set to " + str(score_mid) + ")"
     if x.score is not None:
-        if x.score > DefaultHeuristics.SCORE_THRESHOLD.value:
+        if x.score > score_mid:
             logging.info("%s.... package scored ABOVE MID - %s%s",
                 STG, str(x.score), ttxt)
             x.risk_low_score = False
         elif (
-            x.score <= DefaultHeuristics.SCORE_THRESHOLD.value
-            and x.score > DefaultHeuristics.RISKY_THRESHOLD.value
+            x.score <= score_mid
+            and x.score > risky
         ):
             logging.warning("%s.... [RISK] package scored BELOW MID - %s%s",
                 STG, str(x.score), ttxt)
             x.risk_low_score = False
-        elif x.score <= DefaultHeuristics.RISKY_THRESHOLD.value:
+        elif x.score <= risky:
             logging.warning("%s.... [RISK] package scored LOW - %s%s", STG, str(x.score), ttxt)
             x.risk_low_score = True
 
@@ -451,13 +480,19 @@ def test_timestamp(x):
         x (str): Package to check.
     """
     if x.timestamp is not None:
-        dayspast = (time.time()*1000 - x.timestamp)/86400000
+        dayspast = (time.time() * 1000 - x.timestamp) / 86400000
+        x.release_age_days = int(dayspast)
         logging.info("%s.... package is %d days old.", STG, int(dayspast))
-        if dayspast < 2:  # freshness test
-            logging.warning("%s.... [RISK] package is SUSPICIOUSLY NEW.", STG)
+        min_release_age = int(getattr(Constants, "HEURISTICS_MIN_RELEASE_AGE_DAYS", 2))
+        if min_release_age > 0 and dayspast < min_release_age:
+            logging.warning(
+                "%s.... [RISK] package is newer than minimum release age (%d days).",
+                STG,
+                min_release_age,
+            )
             x.risk_too_new = True
         else:
-            logging.debug("%s.... package is not suspiciously new.", STG)
+            logging.debug("%s.... package passed minimum release age check.", STG)
             x.risk_too_new = False
 
 def stats_exists(pkgs):
@@ -479,7 +514,8 @@ def test_version_count(pkg):
         pkg (str): Package to check.
     """
     if pkg.version_count is not None:
-        if pkg.version_count < 2:
+        min_versions = int(getattr(Constants, "HEURISTICS_MIN_VERSIONS", 2))
+        if pkg.version_count < min_versions:
             logging.warning("%s.... [RISK] package history is SHORT. Total %d versions committed.",
                             STG, pkg.version_count)
             pkg.risk_min_versions = True
@@ -488,6 +524,37 @@ def test_version_count(pkg):
             pkg.risk_min_versions = False
     else:
         logging.warning("%s.... Package version count not available.", STG)
+
+
+def test_trust_regression(pkg):
+    """Check supply-chain trust score/regression heuristics."""
+    pkg.risk_provenance_regression = bool(getattr(pkg, "provenance_regressed", False))
+    pkg.risk_registry_signature_regression = bool(
+        getattr(pkg, "registry_signature_regressed", False)
+    )
+
+    delta = getattr(pkg, "trust_score_delta", None)
+    threshold = float(getattr(Constants, "HEURISTICS_SCORE_DECREASE_THRESHOLD", 0.0))
+    score_decreased = False
+    if delta is not None:
+        try:
+            score_decreased = float(delta) < (-1.0 * abs(threshold))
+        except (ValueError, TypeError):
+            score_decreased = False
+    elif getattr(pkg, "trust_score_decreased", None) is True:
+        score_decreased = True
+    pkg.risk_score_decrease = score_decreased
+
+    if pkg.risk_provenance_regression:
+        logging.warning("%s.... [RISK] provenance signal regressed from previous release.", STG)
+    if pkg.risk_registry_signature_regression:
+        logging.warning("%s.... [RISK] registry signature signal regressed from previous release.", STG)
+    if pkg.risk_score_decrease:
+        logging.warning(
+            "%s.... [RISK] supply-chain trust score decreased (delta: %s).",
+            STG,
+            str(delta),
+        )
 
 def test_license_available(pkg):
     """Check if license information is available for the package.

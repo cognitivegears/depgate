@@ -1,6 +1,6 @@
 """Facts model and builder for policy analysis."""
 
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, List
 from metapackage import MetaPackage
 
 
@@ -77,7 +77,21 @@ class FactBuilder:
             "last_merged_pr_at": getattr(package, "repo_last_merged_pr_at", None),
             "last_closed_issue_at": getattr(package, "repo_last_closed_issue_at", None),
             "release_found_in_source_registry": getattr(package, "repo_present_in_registry", None),
+            "release_age_days": getattr(package, "release_age_days", None),
             "heuristic_score": getattr(package, "score", None),
+            "supply_chain_trust_score": getattr(package, "trust_score", None),
+            "supply_chain_previous_trust_score": getattr(package, "previous_trust_score", None),
+            "supply_chain_trust_score_delta": getattr(package, "trust_score_delta", None),
+            "supply_chain_trust_score_decreased": getattr(package, "trust_score_decreased", None),
+            "provenance_present": getattr(package, "provenance_present", None),
+            "previous_provenance_present": getattr(package, "previous_provenance_present", None),
+            "provenance_regressed": getattr(package, "provenance_regressed", None),
+            "registry_signature_present": getattr(package, "registry_signature_present", None),
+            "previous_registry_signature_present": getattr(package, "previous_registry_signature_present", None),
+            "registry_signature_regressed": getattr(package, "registry_signature_regressed", None),
+            "checksums_present": getattr(package, "checksums_present", None),
+            "previous_checksums_present": getattr(package, "previous_checksums_present", None),
+            "previous_release_version": getattr(package, "previous_release_version", None),
             "license": {
                 "id": getattr(package, "license_id", None),
                 "available": getattr(package, "license_available", None),

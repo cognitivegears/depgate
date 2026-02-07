@@ -74,6 +74,38 @@ def _get_v3_registration_url(package_id: str, service_index: Dict[str, Any]) -> 
     return None
 
 
+def _get_repository_signatures_url(service_index: Dict[str, Any]) -> Optional[str]:
+    """Get repository-signatures endpoint URL from V3 service index."""
+    resources = service_index.get("resources", [])
+    for resource in resources:
+        rtype = resource.get("@type")
+        if isinstance(rtype, str) and rtype.startswith("RepositorySignatures"):
+            endpoint = resource.get("@id")
+            if isinstance(endpoint, str) and endpoint:
+                return endpoint
+    return None
+
+
+def _fetch_repository_signature_policy(service_index: Dict[str, Any]) -> Optional[bool]:
+    """Fetch repository signatures policy (allRepositorySigned) when exposed."""
+    endpoint = _get_repository_signatures_url(service_index)
+    if not endpoint:
+        return None
+    try:
+        _log_http_pre(endpoint)
+        res = nuget_pkg.safe_get(endpoint, context="nuget", headers=HEADERS_JSON)
+        if res.status_code != 200:
+            return None
+        payload = json.loads(res.text)
+        if isinstance(payload, dict):
+            v = payload.get("allRepositorySigned")
+            if isinstance(v, bool):
+                return v
+    except Exception:
+        return None
+    return None
+
+
 def _fetch_v3_package_metadata(package_id: str) -> Tuple[Optional[Dict[str, Any]], str]:
     """Fetch package metadata from NuGet V3 API.
 
@@ -86,6 +118,8 @@ def _fetch_v3_package_metadata(package_id: str) -> Tuple[Optional[Dict[str, Any]
     service_index = _fetch_v3_service_index()
     if not service_index:
         return None, "v2"
+
+    repository_signed_policy = _fetch_repository_signature_policy(service_index)
 
     registration_url = _get_v3_registration_url(package_id, service_index)
     if not registration_url:
@@ -106,6 +140,7 @@ def _fetch_v3_package_metadata(package_id: str) -> Tuple[Optional[Dict[str, Any]
                 "repositoryUrl": None,
                 "licenseUrl": None,
                 "license": None,
+                "repositorySignaturesAllRepositorySigned": repository_signed_policy,
             }
 
             items = reg_data.get("items", [])
@@ -269,6 +304,7 @@ def _normalize_metadata(metadata: Dict[str, Any], api_version: str) -> Dict[str,
         "repositoryUrl": metadata.get("repositoryUrl"),
         "licenseUrl": metadata.get("licenseUrl"),
         "license": metadata.get("license"),
+        "repositorySignaturesAllRepositorySigned": metadata.get("repositorySignaturesAllRepositorySigned"),
         "api_version": api_version,
     }
     return normalized

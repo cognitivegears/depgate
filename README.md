@@ -8,6 +8,9 @@ DepGate is a fork of Apiiro's "Dependency Combobulator", maintained going forwar
 
 - **Multiple ecosystems**: npm, PyPI, Maven, NuGet
 - **Pluggable analysis**: compare, heuristics, policy, and linked levels
+- **Supply-chain trust signals**: provenance/signature detection, trust score, and trust regressions
+- **Release-age guardrails**: configurable minimum release age to reduce zero-day exposure
+- **Policy presets for supply chain**: built-in deny rules for trust regressions and too-new releases
 - **Repository verification**: Discovers and validates upstream source repositories
 - **OpenSourceMalware integration**: Optional malicious package detection
 - **Registry proxy server**: Drop-in registry replacement with policy enforcement
@@ -215,6 +218,23 @@ depgate scan -t npm -d ./project -a policy -c policy.yml
 
 See [Policy Configuration](https://github.com/cognitivegears/depgate/blob/main/docs/policy-configuration.md) for schema and examples.
 
+### Supply-Chain Trust & Release-Age Controls
+
+Trust and provenance signals are evaluated per release and compared to the previous release when available. This enables:
+
+- provenance/signature presence checks
+- trust-score decrease detection
+- provenance/signature regression detection
+- minimum release-age policy gates
+
+```bash
+# Built-in preset: deny trust regressions and releases newer than configured minimum age
+depgate scan -t npm -d ./project -a policy --policy-preset supply-chain --policy-min-release-age-days 7
+
+# Strict mode: also deny when trust signals are missing
+depgate scan -t pypi -d ./project -a policy --policy-preset supply-chain-strict --policy-min-release-age-days 7
+```
+
 ### Repository Discovery
 
 Automatic discovery and validation of upstream source repositories:
@@ -240,6 +260,8 @@ Ecosystem-aware version resolution with strict prerelease policies. See [Version
 - `-f, --format {json,csv}`: Output format (auto-detected from extension)
 - `-c, --config <path>`: Configuration file (YAML/JSON/YML)
 - `--set KEY=VALUE`: Override configuration values
+- `--policy-preset {default,supply-chain,supply-chain-strict}`: Built-in policy preset selection
+- `--policy-min-release-age-days <N>`: Minimum release age used by built-in policy presets
 - `--loglevel {DEBUG,INFO,WARNING,ERROR,CRITICAL}`: Logging level
 - `--logfile <path>`: Log to file
 - `-q, --quiet`: Suppress stdout output

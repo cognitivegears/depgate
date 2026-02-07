@@ -46,8 +46,13 @@ provider:
   gitlab_api_base: "https://gitlab.com/api/v4"
   per_page: 100
 
-# Heuristics weights (relative priorities)
+# Heuristics thresholds and weights
 heuristics:
+  min_versions: 2
+  min_release_age_days: 2
+  score_threshold: 0.6
+  risky_threshold: 0.15
+  score_decrease_threshold: 0.0
   weights:
     base_score: 0.30
     repo_version_match: 0.30
@@ -55,6 +60,7 @@ heuristics:
     repo_contributors: 0.10
     repo_last_activity: 0.10
     repo_present_in_registry: 0.05
+    supply_chain_trust_score: 0.20
 
 # Read the Docs API
 rtd:
@@ -147,12 +153,17 @@ provider:
 
 **Note**: Set `GITHUB_TOKEN` and/or `GITLAB_TOKEN` environment variables to raise rate limits for provider API calls.
 
-### Heuristics Weights
+### Heuristics Thresholds and Weights
 
-Configure relative priorities for heuristic scoring:
+Configure heuristic thresholds and relative scoring priorities:
 
 ```yaml
 heuristics:
+  min_versions: 2
+  min_release_age_days: 2
+  score_threshold: 0.6
+  risky_threshold: 0.15
+  score_decrease_threshold: 0.0
   weights:
     base_score: 0.30
     repo_version_match: 0.30
@@ -160,6 +171,7 @@ heuristics:
     repo_contributors: 0.10
     repo_last_activity: 0.10
     repo_present_in_registry: 0.05
+    supply_chain_trust_score: 0.20
 ```
 
 **Important**: Weights are automatically re-normalized across available metrics, so absolute values don't need to sum to 1.0. Unknown keys are ignored; missing metrics are excluded from normalization.
@@ -281,6 +293,16 @@ depgate scan -t npm -d ./project --direct-only
 depgate scan -t npm -d ./project --require-lockfile
 ```
 
+### Policy Presets
+
+```bash
+# Built-in policy profile for release-age and trust-regression checks
+depgate scan -t npm -d ./project -a policy --policy-preset supply-chain --policy-min-release-age-days 7
+
+# Strict variant: missing trust signals are treated as deny
+depgate scan -t npm -d ./project -a policy --policy-preset supply-chain-strict --policy-min-release-age-days 7
+```
+
 ## Using Configuration
 
 ### Example: Custom Registry
@@ -292,14 +314,17 @@ registry:
   npm_base_url: "https://custom-npm-registry.example.com/"
 ```
 
-### Example: Custom Heuristics Weights
+### Example: Custom Heuristics Thresholds and Weights
 
 ```yaml
 heuristics:
+  min_release_age_days: 7
+  score_decrease_threshold: 0.05
   weights:
-    base_score: 0.40
-    repo_version_match: 0.40
-    repo_stars: 0.20
+    base_score: 0.25
+    repo_version_match: 0.25
+    repo_stars: 0.15
+    supply_chain_trust_score: 0.35
 ```
 
 ### Example: Enable OpenSourceMalware via Environment

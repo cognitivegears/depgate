@@ -4,8 +4,10 @@ from __future__ import annotations
 import importlib
 import logging
 from typing import Any, Dict, List
+import semantic_version
 
 from common.logging_utils import extra_context, is_debug_enabled, Timer
+from common.trust_signals import score_from_boolean_signals, regressed, score_delta
 from repository.providers import ProviderType, map_host_to_type
 from repository.provider_registry import ProviderRegistry
 from repository.provider_validation import ProviderValidationService
@@ -37,6 +39,20 @@ class _PkgAccessor:
 
 # Expose as module attribute for tests to patch like registry.nuget.enrich.nuget_pkg.normalize_repo_url
 nuget_pkg = _PkgAccessor('registry.nuget')
+
+
+def _sorted_versions(versions: List[str]) -> List[str]:
+    """Sort NuGet versions with semver fallback."""
+    parsed = []
+    for text in versions or []:
+        try:
+            parsed.append((semantic_version.Version(text), text))
+        except ValueError:
+            continue
+    if not parsed:
+        return list(versions or [])
+    parsed.sort(key=lambda pair: pair[0])
+    return [text for _, text in parsed]
 
 
 def _enrich_with_repo(pkg, metadata: Dict[str, Any]) -> None:
@@ -93,6 +109,42 @@ def _enrich_with_repo(pkg, metadata: Dict[str, Any]) -> None:
     else:
         # Prefer a CLI-resolved version if available; fallback to latest from metadata
         version_for_match = getattr(pkg, "resolved_version", None) or latest_version
+
+    selected_version = (
+        getattr(pkg, "resolved_version", None)
+        if isinstance(getattr(pkg, "resolved_version", None), str)
+        else latest_version
+    )
+
+    versions = metadata.get("versions", []) or []
+    ordered_versions = _sorted_versions(versions if isinstance(versions, list) else [])
+    previous_version = None
+    if selected_version in ordered_versions:
+        idx = ordered_versions.index(selected_version)
+        if idx > 0:
+            previous_version = ordered_versions[idx - 1]
+    elif len(ordered_versions) >= 2:
+        previous_version = ordered_versions[-2]
+    pkg.previous_release_version = previous_version
+
+    repo_signed = metadata.get("repositorySignaturesAllRepositorySigned")
+    if isinstance(repo_signed, bool):
+        pkg.registry_signature_present = repo_signed
+        pkg.previous_registry_signature_present = repo_signed if previous_version else None
+        pkg.provenance_present = None
+        pkg.previous_provenance_present = None
+        pkg.provenance_source = "nuget_repository_signatures"
+        pkg.registry_signature_regressed = regressed(
+            pkg.registry_signature_present, pkg.previous_registry_signature_present
+        )
+        pkg.provenance_regressed = regressed(pkg.provenance_present, pkg.previous_provenance_present)
+        pkg.trust_score = score_from_boolean_signals([pkg.registry_signature_present, pkg.provenance_present])
+        pkg.previous_trust_score = score_from_boolean_signals(
+            [pkg.previous_registry_signature_present, pkg.previous_provenance_present]
+        )
+        delta, decreased = score_delta(pkg.trust_score, pkg.previous_trust_score)
+        pkg.trust_score_delta = delta
+        pkg.trust_score_decreased = decreased
 
     # Access patchable symbols (normalize_repo_url, clients, matcher) via package for test monkeypatching
     # using lazy accessor nuget_pkg defined at module scope
@@ -222,4 +274,3 @@ def _enrich_with_repo(pkg, metadata: Dict[str, Any]) -> None:
             outcome="success", count=len(candidates), duration_ms=t.duration_ms(),
             package_manager="nuget"
         ))
-

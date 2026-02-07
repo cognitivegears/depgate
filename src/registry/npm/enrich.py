@@ -3,9 +3,11 @@ from __future__ import annotations
 
 import importlib
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
+import semantic_version
 
 from common.logging_utils import extra_context, is_debug_enabled, Timer
+from common.trust_signals import score_from_boolean_signals, regressed, score_delta, epoch_ms_from_iso8601
 from repository.providers import ProviderType, map_host_to_type
 from repository.provider_registry import ProviderRegistry
 from repository.provider_validation import ProviderValidationService
@@ -38,6 +40,128 @@ class _PkgAccessor:
 
 # Expose as module attribute for tests to patch like registry.npm.enrich.npm_pkg.normalize_repo_url
 npm_pkg = _PkgAccessor('registry.npm')
+
+
+def _extract_registry_signature(version_info: Dict[str, Any]) -> Optional[bool]:
+    """Detect registry signature signals in npm dist metadata."""
+    if not isinstance(version_info, dict):
+        return None
+    dist = version_info.get("dist", {}) or {}
+    if not isinstance(dist, dict):
+        return None
+    signatures = dist.get("signatures")
+    npm_signature = dist.get("npm-signature")
+    has_sig = bool(
+        (isinstance(signatures, list) and len(signatures) > 0)
+        or (isinstance(npm_signature, str) and npm_signature.strip())
+    )
+    return has_sig
+
+
+def _extract_provenance(version_info: Dict[str, Any]) -> tuple[Optional[bool], Optional[str], Optional[str]]:
+    """Detect npm provenance/attestation metadata and return (present, url, source)."""
+    if not isinstance(version_info, dict):
+        return None, None, None
+    dist = version_info.get("dist", {}) or {}
+    if not isinstance(dist, dict):
+        dist = {}
+
+    candidates = [
+        ("dist.attestations", dist.get("attestations")),
+        ("version.attestations", version_info.get("attestations")),
+        ("dist.provenance", dist.get("provenance")),
+        ("version.provenance", version_info.get("provenance")),
+    ]
+    for source, value in candidates:
+        if value is None:
+            continue
+        if isinstance(value, str):
+            text = value.strip()
+            if text:
+                return True, text, source
+        if isinstance(value, dict):
+            url = value.get("url") or value.get("provenanceUrl")
+            if isinstance(url, str) and url.strip():
+                return True, url.strip(), source
+            if value:
+                return True, None, source
+        if isinstance(value, list):
+            if value:
+                first = value[0]
+                if isinstance(first, dict):
+                    url = first.get("url")
+                    if isinstance(url, str) and url.strip():
+                        return True, url.strip(), source
+                return True, None, source
+    return False, None, None
+
+
+def _ordered_versions(packument: Dict[str, Any]) -> List[str]:
+    """Return versions ordered by publish time (oldest->newest), fallback to semver order."""
+    time_map = packument.get("time", {}) or {}
+    pairs: List[tuple[int, str]] = []
+    for ver, iso in time_map.items():
+        if ver in ("created", "modified"):
+            continue
+        ms = epoch_ms_from_iso8601(iso if isinstance(iso, str) else None)
+        if ms is not None:
+            pairs.append((ms, ver))
+    if pairs:
+        pairs.sort(key=lambda p: p[0])
+        return [v for _, v in pairs]
+
+    versions = list((packument.get("versions", {}) or {}).keys())
+
+    def _key(text: str):
+        try:
+            return semantic_version.Version(text)
+        except ValueError:
+            return semantic_version.Version("0.0.0")
+
+    try:
+        return sorted(versions, key=_key)
+    except Exception:
+        return versions
+
+
+def _set_npm_trust_signals(pkg, packument: Dict[str, Any], selected_version: str) -> None:
+    """Populate trust/provenance signals for selected and previous npm releases."""
+    versions = packument.get("versions", {}) or {}
+    current_info = versions.get(selected_version, {}) or {}
+    ordered = _ordered_versions(packument)
+
+    previous_version = None
+    if selected_version in ordered:
+        idx = ordered.index(selected_version)
+        if idx > 0:
+            previous_version = ordered[idx - 1]
+    elif len(ordered) >= 2:
+        previous_version = ordered[-2]
+
+    previous_info = versions.get(previous_version, {}) if previous_version else {}
+
+    cur_sig = _extract_registry_signature(current_info)
+    prev_sig = _extract_registry_signature(previous_info) if previous_version else None
+    cur_prov, prov_url, prov_source = _extract_provenance(current_info)
+    prev_prov = None
+    if previous_version:
+        prev_prov, _, _ = _extract_provenance(previous_info)
+
+    pkg.registry_signature_present = cur_sig
+    pkg.previous_registry_signature_present = prev_sig
+    pkg.provenance_present = cur_prov
+    pkg.provenance_url = prov_url
+    pkg.provenance_source = prov_source
+    pkg.previous_provenance_present = prev_prov
+    pkg.previous_release_version = previous_version
+
+    pkg.registry_signature_regressed = regressed(cur_sig, prev_sig)
+    pkg.provenance_regressed = regressed(cur_prov, prev_prov)
+    pkg.trust_score = score_from_boolean_signals([cur_sig, cur_prov])
+    pkg.previous_trust_score = score_from_boolean_signals([prev_sig, prev_prov])
+    delta, decreased = score_delta(pkg.trust_score, pkg.previous_trust_score)
+    pkg.trust_score_delta = delta
+    pkg.trust_score_decreased = decreased
 
 
 def _enrich_with_repo(pkg, packument: dict) -> None:
@@ -187,9 +311,25 @@ def _enrich_with_repo(pkg, packument: dict) -> None:
     mode = str(getattr(pkg, "resolution_mode", "")).lower()
     if mode == "exact" and getattr(pkg, "resolved_version", None) is None:
         version_for_match = ""
+        selected_version = _extract_latest_version(packument)
     else:
         # Prefer a CLI-resolved version if available; fallback to latest from packument
         version_for_match = getattr(pkg, "resolved_version", None) or _extract_latest_version(packument)
+        selected_version = version_for_match
+
+    # Release timestamp and trust-signal extraction for selected/previous versions.
+    if selected_version:
+        try:
+            ptime = (packument.get("time", {}) or {}).get(selected_version)
+            parsed_ms = epoch_ms_from_iso8601(ptime if isinstance(ptime, str) else None)
+            if parsed_ms is not None:
+                pkg.timestamp = parsed_ms
+        except Exception:
+            pass
+        try:
+            _set_npm_trust_signals(pkg, packument, selected_version)
+        except Exception:
+            pass
 
     # Access patchable symbols (normalize_repo_url, clients, matcher) via package for test monkeypatching
     # using lazy accessor npm_pkg defined at module scope

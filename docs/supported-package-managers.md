@@ -11,6 +11,24 @@ DepGate supports dependency analysis across multiple package managers and ecosys
 | **Maven** | Java/Kotlin/Scala | `pom.xml` | N/A | `groupId:artifactId` (e.g., `org.apache.commons:commons-lang3`) | `https://search.maven.org/solrsearch/select` |
 | **NuGet** | .NET/C# | `.csproj`, `packages.config`, `project.json`, `Directory.Build.props` | `packages.lock.json` | Package ID (e.g., `Newtonsoft.Json`) | `https://api.nuget.org/v3/index.json` (V3), `https://www.nuget.org/api/v2/` (V2) |
 
+## Supply-Chain Trust Signal Support
+
+DepGate extracts trust signals per ecosystem (best effort), computes a `supply_chain_trust_score`, and compares current vs previous release to detect regressions.
+
+| Package Manager | Signature Signal | Provenance Signal | Previous Release Regression |
+|----------------|------------------|-------------------|-----------------------------|
+| **npm** | `dist.signatures` / `dist.npm-signature` | `dist.attestations`, `version.attestations`, `dist.provenance`, `version.provenance` | Yes |
+| **PyPI** | Simple API `gpg-sig` (fallback: `has_sig`) | Simple API `provenance` | Yes |
+| **Maven** | `.pom.asc`, `.jar.asc` | `.pom.sigstore(.json)`, `.jar.sigstore(.json)` | Yes |
+| **NuGet** | V3 `RepositorySignatures` policy (`allRepositorySigned`) | Not currently exposed per package | Limited (service-level signal) |
+
+These signals feed heuristics risk flags and policy metrics such as:
+- `supply_chain_trust_score`
+- `supply_chain_trust_score_delta`
+- `provenance_regressed`
+- `registry_signature_regressed`
+- `release_age_days`
+
 ## File Format Detection and Precedence
 
 ### npm
