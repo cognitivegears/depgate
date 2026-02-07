@@ -194,12 +194,17 @@ class RegistryProxyServer:
                 )
                 return self._deny_response(parsed, decision)
 
-            # Log violations in warn/audit mode
             if decision.violated_rules:
                 logger.info(
-                    "Allowed with violations (%s): %s - %s",
+                    "Allowed with violations (%s): %s:%s - %s",
                     self._config.decision_mode, parsed.package_name,
-                    decision.violated_rules,
+                    parsed.version or "latest", decision.violated_rules,
+                )
+            else:
+                logger.info(
+                    "Allowed: %s:%s:%s",
+                    parsed.registry_type.value, parsed.package_name,
+                    parsed.version or "latest",
                 )
 
         # Forward to upstream
