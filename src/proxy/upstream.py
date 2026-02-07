@@ -9,7 +9,6 @@ from typing import Any, Dict, Optional, Tuple
 import aiohttp
 
 from .request_parser import RegistryType
-from .cache import ResponseCache
 
 logger = logging.getLogger(__name__)
 
@@ -29,20 +28,17 @@ class UpstreamClient:
         self,
         upstreams: Optional[Dict[RegistryType, str]] = None,
         timeout: int = 30,
-        response_cache: Optional[ResponseCache] = None,
     ):
         """Initialize the upstream client.
 
         Args:
             upstreams: Override upstream URLs by registry type.
             timeout: Request timeout in seconds.
-            response_cache: Optional response cache.
         """
         self._upstreams = {**self.DEFAULT_UPSTREAMS}
         if upstreams:
             self._upstreams.update(upstreams)
         self._timeout = aiohttp.ClientTimeout(total=timeout)
-        self._response_cache = response_cache
         self._session: Optional[aiohttp.ClientSession] = None
 
     def set_upstream(self, registry_type: RegistryType, url: str) -> None:
@@ -219,20 +215,21 @@ class UpstreamClient:
         Returns:
             Filtered headers dict.
         """
-        # Headers to forward
-        forward_headers = [
-            "Content-Type",
-            "Content-Length",
-            "ETag",
-            "Last-Modified",
-            "Cache-Control",
-            "Content-Encoding",
-        ]
+        # Canonical header names to forward (lowercased for comparison)
+        forward_headers = {
+            "content-type": "Content-Type",
+            "content-length": "Content-Length",
+            "etag": "ETag",
+            "last-modified": "Last-Modified",
+            "cache-control": "Cache-Control",
+            "content-encoding": "Content-Encoding",
+        }
 
         filtered = {}
         for key, value in headers.items():
-            if key in forward_headers:
-                filtered[key] = str(value)
+            canonical = forward_headers.get(key.lower())
+            if canonical is not None:
+                filtered[canonical] = str(value)
 
         return filtered
 

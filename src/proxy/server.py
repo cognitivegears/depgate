@@ -104,7 +104,6 @@ class RegistryProxyServer:
                 RegistryType.NUGET: config.upstream_nuget,
             },
             timeout=config.timeout,
-            response_cache=self._response_cache,
         )
 
         # Initialize evaluator
@@ -321,7 +320,7 @@ class RegistryProxyServer:
                         try:
                             length = int(content_length)
                         except ValueError:
-                            pass
+                            pass  # Malformed header; treat as unknown length
 
                     if length is not None and length <= max_bytes:
                         # Known-small: buffer and cache.
@@ -471,7 +470,7 @@ class RegistryProxyServer:
         try:
             await self._stop_event.wait()
         except asyncio.CancelledError:
-            pass
+            pass  # Shutdown requested; fall through to stop()
         finally:
             await self.stop()
 

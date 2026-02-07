@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import Optional, Dict, List
+from typing import Any, Optional, Dict, List
 
 
 class ProviderType(Enum):
@@ -54,7 +54,7 @@ class ProviderClient(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def get_repo_info(self, owner: str, repo: str) -> Optional[Dict[str, Optional[str]]]:
+    def get_repo_info(self, owner: str, repo: str) -> Optional[Dict[str, Any]]:
         """Fetch repository metadata.
 
         Args:
@@ -62,7 +62,8 @@ class ProviderClient(ABC):
             repo: Repository name
 
         Returns:
-            Dict with normalized keys {'stars': int|None, 'last_activity_at': str|None}
+            Dict with normalized keys {'stars': int|None, 'last_activity_at': str|None,
+            'forks_count': int|None, 'open_issues_count': int|None}
             or None if repository doesn't exist or fetch failed
         """
         raise NotImplementedError

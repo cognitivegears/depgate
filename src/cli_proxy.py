@@ -103,7 +103,7 @@ def _setup_logging(args: Any) -> None:
         level_value = getattr(logging, level_name, logging.INFO)
         logging.getLogger().setLevel(level_value)
     except Exception:
-        pass
+        pass  # Logging setup itself; falling back to default level is acceptable
 
     # Add file handler if --logfile specified
     log_file = getattr(args, "LOG_FILE", None)

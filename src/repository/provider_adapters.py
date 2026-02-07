@@ -5,7 +5,7 @@ existing GitHubClient and GitLabClient classes.
 """
 from __future__ import annotations
 
-from typing import Optional, Dict, List
+from typing import Any, Optional, Dict, List
 
 from .providers import ProviderClient
 from .github import GitHubClient
@@ -27,7 +27,7 @@ class GitHubProviderAdapter(ProviderClient):
         """Return provider name."""
         return 'github'
 
-    def get_repo_info(self, owner: str, repo: str) -> Optional[Dict[str, Optional[str]]]:
+    def get_repo_info(self, owner: str, repo: str) -> Optional[Dict[str, Any]]:
         """Fetch repository metadata and normalize to common format.
 
         Args:
@@ -113,7 +113,7 @@ class GitLabProviderAdapter(ProviderClient):
         """Return provider name."""
         return 'gitlab'
 
-    def get_repo_info(self, owner: str, repo: str) -> Optional[Dict[str, Optional[str]]]:
+    def get_repo_info(self, owner: str, repo: str) -> Optional[Dict[str, Any]]:
         """Fetch project metadata and normalize to common format.
 
         Args:

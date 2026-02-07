@@ -73,6 +73,58 @@ class TestUpstreamClientHeaders:
         assert result["Accept"] == "application/json"
 
 
+class TestUpstreamClientResponseHeaders:
+    """Tests for response header filtering."""
+
+    def test_filter_forwards_known_headers(self):
+        """Ensure standard headers are forwarded."""
+        client = UpstreamClient()
+        headers = {
+            "Content-Type": "application/json",
+            "Content-Length": "42",
+            "ETag": '"abc"',
+            "X-Request-Id": "12345",
+        }
+
+        result = client.filter_response_headers(headers)
+
+        assert result["Content-Type"] == "application/json"
+        assert result["Content-Length"] == "42"
+        assert result["ETag"] == '"abc"'
+        assert "X-Request-Id" not in result
+
+    def test_filter_case_insensitive_matching(self):
+        """Ensure headers with non-canonical casing are matched."""
+        client = UpstreamClient()
+        headers = {
+            "content-type": "text/html",
+            "CONTENT-LENGTH": "100",
+            "etag": '"xyz"',
+            "cache-control": "max-age=300",
+        }
+
+        result = client.filter_response_headers(headers)
+
+        assert result["Content-Type"] == "text/html"
+        assert result["Content-Length"] == "100"
+        assert result["ETag"] == '"xyz"'
+        assert result["Cache-Control"] == "max-age=300"
+
+    def test_filter_emits_canonical_casing(self):
+        """Ensure output keys use canonical casing regardless of input."""
+        client = UpstreamClient()
+        headers = {"content-encoding": "gzip", "last-modified": "Thu, 01 Jan 2025"}
+
+        result = client.filter_response_headers(headers)
+
+        assert list(result.keys()) == ["Content-Encoding", "Last-Modified"]
+
+    def test_filter_empty_headers(self):
+        """Ensure empty input returns empty output."""
+        client = UpstreamClient()
+        assert client.filter_response_headers({}) == {}
+
+
 class TestUpstreamClientCaching:
     """Tests for upstream cache key and cacheability checks."""
 

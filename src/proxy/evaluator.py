@@ -108,7 +108,7 @@ class ProxyEvaluator:
         try:
             MetaPackage.instances.remove(pkg)
         except ValueError:
-            pass
+            pass  # Already removed or never tracked; safe to ignore
 
         # Evaluate policy
         engine = self._ensure_engine()

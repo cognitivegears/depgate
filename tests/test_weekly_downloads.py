@@ -1,6 +1,5 @@
 """Tests for weekly downloads extraction from npm and PyPI."""
 import json
-import pytest
 from unittest.mock import patch, Mock
 
 from metapackage import MetaPackage
