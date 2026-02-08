@@ -233,14 +233,14 @@ def compute_final_score(mp):
       - repo_present_in_registry
       - supply_chain_trust_score
 
-    Default weights (sum to 1.0 when all present; re-normalized when some are missing):
-      - base_score: 0.30
-      - repo_version_match: 0.30
-      - repo_stars: 0.15
+    Default weights (sum to 1.0; re-normalized when some are missing):
+      - base_score: 0.25
+      - repo_version_match: 0.25
+      - repo_stars: 0.12
       - repo_contributors: 0.10
-      - repo_last_activity: 0.10
+      - repo_last_activity: 0.08
       - repo_present_in_registry: 0.05
-      - supply_chain_trust_score: 0.20
+      - supply_chain_trust_score: 0.15
 
     Returns:
       tuple(final_score: float, breakdown: dict, weights_used: dict)
@@ -274,13 +274,13 @@ def compute_final_score(mp):
 
     # Configurable weights loaded from Constants (overridable via YAML)
     weights = dict(getattr(Constants, "HEURISTICS_WEIGHTS", {
-        'base_score': 0.30,
-        'repo_version_match': 0.30,
-        'repo_stars': 0.15,
+        'base_score': 0.25,
+        'repo_version_match': 0.25,
+        'repo_stars': 0.12,
         'repo_contributors': 0.10,
-        'repo_last_activity': 0.10,
+        'repo_last_activity': 0.08,
         'repo_present_in_registry': 0.05,
-        'supply_chain_trust_score': 0.20,
+        'supply_chain_trust_score': 0.15,
     }))
 
     # Re-normalize weights to only those metrics that are present (norm != None)
