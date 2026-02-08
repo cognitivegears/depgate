@@ -40,7 +40,7 @@ depgate = "depgate:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
-py-modules = ["depgate", "args", "constants", "metapackage", "cli_io", "cli_build", "cli_registry", "cli_classify", "cli_config", "cli_mcp", "cli_proxy"]
+py-modules = ["depgate", "args", "constants", "metapackage", "cli_io", "cli_build", "cli_registry", "cli_classify", "cli_config", "cli_mcp", "cli_proxy", "cli_run", "run_wrappers"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

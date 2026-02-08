@@ -520,6 +520,117 @@ def add_scan_arguments(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def add_run_arguments(parser: argparse.ArgumentParser) -> None:
+    """Register arguments for the 'run' action (package manager wrapper)."""
+    parser.add_argument(
+        "--prepare",
+        dest="RUN_PREPARE",
+        help=(
+            "Prepare an ephemeral proxy session for an external orchestrator, "
+            "emit JSON connection details to stdout, and keep running until stdin closes."
+        ),
+        action="store_true",
+    )
+    parser.add_argument(
+        "--manager",
+        dest="RUN_MANAGER",
+        help=(
+            "Optional package manager name/path for --prepare mode "
+            "(used to include wrapper env/args in emitted JSON)."
+        ),
+        action="store",
+        type=str,
+    )
+
+    # Policy config
+    parser.add_argument(
+        "-c",
+        "--config",
+        dest="PROXY_CONFIG",
+        help="Path to policy configuration file (YAML or JSON)",
+        action="store",
+        type=str,
+    )
+    parser.add_argument(
+        "--decision-mode",
+        dest="PROXY_DECISION_MODE",
+        help="How to handle policy violations: block (403), warn (allow with log), audit (allow, log only)",
+        action="store",
+        type=str,
+        choices=["block", "warn", "audit"],
+        default="block",
+    )
+
+    # Upstream overrides
+    parser.add_argument(
+        "--upstream-npm",
+        dest="PROXY_UPSTREAM_NPM",
+        help="Upstream NPM registry URL (default: https://registry.npmjs.org)",
+        action="store",
+        type=str,
+        default=Constants.REGISTRY_URL_NPM.rstrip("/"),
+    )
+    parser.add_argument(
+        "--upstream-pypi",
+        dest="PROXY_UPSTREAM_PYPI",
+        help="Upstream PyPI registry URL (default: https://pypi.org)",
+        action="store",
+        type=str,
+        default="https://pypi.org",
+    )
+    parser.add_argument(
+        "--upstream-maven",
+        dest="PROXY_UPSTREAM_MAVEN",
+        help="Upstream Maven registry URL (default: https://repo1.maven.org/maven2)",
+        action="store",
+        type=str,
+        default="https://repo1.maven.org/maven2",
+    )
+    parser.add_argument(
+        "--upstream-nuget",
+        dest="PROXY_UPSTREAM_NUGET",
+        help="Upstream NuGet registry URL (default: https://api.nuget.org)",
+        action="store",
+        type=str,
+        default="https://api.nuget.org",
+    )
+
+    # Logging
+    parser.add_argument(
+        "--log-level",
+        dest="LOG_LEVEL",
+        help="Set logging level (default: INFO)",
+        action="store",
+        type=str,
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        default="INFO",
+    )
+    parser.add_argument(
+        "--logfile",
+        dest="LOG_FILE",
+        help="Log output to file",
+        action="store",
+        type=str,
+    )
+
+    # Timeout
+    parser.add_argument(
+        "--timeout",
+        dest="PROXY_TIMEOUT",
+        help="Upstream request timeout in seconds (default: 30)",
+        action="store",
+        type=int,
+        default=30,
+    )
+
+    # The wrapped command
+    parser.add_argument(
+        "RUN_COMMAND",
+        nargs=argparse.REMAINDER,
+        help="Package manager command to run (e.g. npm install lodash)",
+    )
+
+
 def build_root_parser() -> Tuple[argparse.ArgumentParser, argparse._SubParsersAction]:
     """Build the root parser and subparsers (actions)."""
     parser = argparse.ArgumentParser(
@@ -536,7 +647,8 @@ def build_root_parser() -> Tuple[argparse.ArgumentParser, argparse._SubParsersAc
             "Available actions:\n"
             "  scan    Analyze dependencies from a package, manifest, or directory\n"
             "  mcp     Launch an MCP server exposing DepGate tools\n"
-            "  proxy   Start a registry proxy server for policy enforcement\n\n"
+            "  proxy   Start a registry proxy server for policy enforcement\n"
+            "  run     Run a package manager command through the DepGate proxy\n\n"
             "Use 'depgate <action> --help' for action-specific options.\n"
         ),
         required=False,  # we handle legacy mapping below
@@ -581,6 +693,28 @@ def build_root_parser() -> Tuple[argparse.ArgumentParser, argparse._SubParsersAc
         formatter_class=argparse.RawTextHelpFormatter,
     )
     add_proxy_arguments(proxy)
+
+    # Register 'run' action
+    run = subparsers.add_parser(
+        "run",
+        help="Run a package manager command through the DepGate proxy",
+        description=(
+            "Run a package manager command with automatic DepGate proxy interception.\n"
+            "Starts an ephemeral proxy, configures the package manager to use it,\n"
+            "runs the command, and tears everything down.\n\n"
+            "Use --prepare to start an ephemeral proxy for an external orchestrator\n"
+            "and emit JSON connection details to stdout.\n\n"
+            "Supported managers: npm, pnpm, yarn, bun, pip, pip3, pipx, poetry, uv,\n"
+            "                    mvn, gradle, gradlew, dotnet, nuget\n\n"
+            "Examples:\n"
+            "  depgate run npm install lodash\n"
+            "  depgate run --config policy.yml pip install requests\n"
+            "  depgate run --decision-mode warn -- yarn add express\n"
+            "  depgate run --prepare --manager npm\n"
+        ),
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+    add_run_arguments(run)
 
     return parser, subparsers
 

@@ -179,7 +179,8 @@ def main() -> None:
             "Actions:\n"
             "  scan    Analyze dependencies from a package, manifest, or directory\n"
             "  mcp     Launch an MCP server exposing DepGate tools\n"
-            "  proxy   Start a registry proxy server for policy enforcement\n\n"
+            "  proxy   Start a registry proxy server for policy enforcement\n"
+            "  run     Run a package manager command through the DepGate proxy\n\n"
             "Use 'depgate <action> --help' for action-specific options.\n"
         )
         sys.exit(ExitCodes.SUCCESS.value)
@@ -200,8 +201,14 @@ def main() -> None:
         run_proxy_server(args)
         return
 
+    if action == "run":
+        # Lazy import to avoid importing aiohttp for other commands
+        from cli_run import run_command  # type: ignore
+        run_command(args)
+        return
+
     # Unknown action safeguard (argparse typically catches this already)
-    sys.stderr.write(f"Unknown action '{action}'. Available actions: scan, mcp, proxy\n")
+    sys.stderr.write(f"Unknown action '{action}'. Available actions: scan, mcp, proxy, run\n")
     sys.exit(2)
 
 
