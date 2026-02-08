@@ -141,17 +141,16 @@ class Constants:  # pylint: disable=too-few-public-methods
     HEURISTICS_SCORE_DECREASE_THRESHOLD = 0.0
 
     # Heuristics weighting defaults (used by analysis.compute_final_score).
-    # Values are relative priorities and are re-normalized at runtime to sum
-    # to 1.0 across available (non-None) metrics, so absolute values here do
-    # not need to sum to 1.0.
+    # Values sum to 1.0 and are re-normalized at runtime across available
+    # (non-None) metrics.
     HEURISTICS_WEIGHTS_DEFAULT = {
-        "base_score": 0.30,
-        "repo_version_match": 0.30,
-        "repo_stars": 0.15,
+        "base_score": 0.25,
+        "repo_version_match": 0.25,
+        "repo_stars": 0.12,
         "repo_contributors": 0.10,
-        "repo_last_activity": 0.10,
+        "repo_last_activity": 0.08,
         "repo_present_in_registry": 0.05,
-        "supply_chain_trust_score": 0.20,
+        "supply_chain_trust_score": 0.15,
     }
     # Runtime copy that may be overridden via YAML configuration
     HEURISTICS_WEIGHTS = dict(HEURISTICS_WEIGHTS_DEFAULT)
