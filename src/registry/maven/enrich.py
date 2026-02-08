@@ -6,6 +6,7 @@ import logging
 from typing import Any, Dict, List, Optional, Tuple
 
 from common.logging_utils import extra_context, is_debug_enabled, Timer
+from common.trust_signals import score_from_boolean_signals, regressed, score_delta
 from repository.providers import ProviderType, map_host_to_type
 from repository.provider_registry import ProviderRegistry
 from repository.provider_validation import ProviderValidationService
@@ -17,6 +18,8 @@ from .discovery import (
     _fetch_pom,
     _url_fallback_from_pom,
     _parse_license_from_pom,
+    _previous_version,
+    _collect_trust_signals,
 )
 
 logger = logging.getLogger(__name__)
@@ -213,6 +216,38 @@ def _enrich_with_repo(mp, group: str, artifact: str, version: Optional[str]) -> 
 
     provenance: Dict[str, Any] = mp.provenance or {}
     repo_errors: List[Dict[str, Any]] = []
+
+    # Supply-chain trust signals (current + previous release regression)
+    try:
+        current_signals = _collect_trust_signals(group, artifact, version)
+        prev_version = _previous_version(group, artifact, version)
+        prev_signals = _collect_trust_signals(group, artifact, prev_version) if prev_version else {}
+
+        cur_sig = current_signals.get("registry_signature_present")
+        cur_prov = current_signals.get("provenance_present")
+        prev_sig = prev_signals.get("registry_signature_present") if prev_version else None
+        prev_prov = prev_signals.get("provenance_present") if prev_version else None
+
+        mp.registry_signature_present = cur_sig
+        mp.previous_registry_signature_present = prev_sig
+        mp.provenance_present = cur_prov
+        mp.previous_provenance_present = prev_prov
+        mp.previous_release_version = prev_version
+        mp.provenance_source = "maven_central_artifacts"
+
+        mp.checksums_present = current_signals.get("checksums_present")
+        mp.previous_checksums_present = prev_signals.get("checksums_present") if prev_version else None
+
+        mp.registry_signature_regressed = regressed(cur_sig, prev_sig)
+        mp.provenance_regressed = regressed(cur_prov, prev_prov)
+        mp.trust_score = score_from_boolean_signals([cur_sig, cur_prov])
+        mp.previous_trust_score = score_from_boolean_signals([prev_sig, prev_prov])
+        delta, decreased = score_delta(mp.trust_score, mp.previous_trust_score)
+        mp.trust_score_delta = delta
+        mp.trust_score_decreased = decreased
+    except Exception:
+        # Defensive: never fail Maven enrichment due to trust-signal issues
+        pass
 
     candidates, provenance = _build_candidates_and_provenance(
         group, artifact, version, provenance, mp

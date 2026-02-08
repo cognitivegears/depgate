@@ -22,8 +22,17 @@ from common.http_errors import RateLimitExhausted, RetryBudgetExceeded
 logger = logging.getLogger(__name__)
 
 
-def safe_get(url: str, *, context: str, **kwargs: Any) -> requests.Response:
-    """Perform a GET request with consistent error handling and DEBUG traces."""
+def safe_get(url: str, *, context: str, fatal: bool = True, **kwargs: Any) -> requests.Response:
+    """Perform a GET request with consistent error handling and DEBUG traces.
+
+    Args:
+        url: Target URL.
+        context: Human-readable source tag for logs.
+        fatal: When True (default), call sys.exit on network errors.
+            When False, re-raise the original exception so callers
+            can handle it gracefully (e.g. best-effort existence checks).
+        **kwargs: Passed through to the middleware request.
+    """
     try:
         return middleware_request(
             "GET",
@@ -36,6 +45,8 @@ def safe_get(url: str, *, context: str, **kwargs: Any) -> requests.Response:
     except (RateLimitExhausted, RetryBudgetExceeded):
         # Treat rate limit exhaustion as connection error to preserve fail-fast behavior
         logger.error("%s rate limit exhausted", context)
+        if not fatal:
+            raise
         sys.exit(ExitCodes.CONNECTION_ERROR.value)
     except requests.Timeout:
         logger.error(
@@ -43,9 +54,56 @@ def safe_get(url: str, *, context: str, **kwargs: Any) -> requests.Response:
             context,
             Constants.REQUEST_TIMEOUT,
         )
+        if not fatal:
+            raise
         sys.exit(ExitCodes.CONNECTION_ERROR.value)
     except requests.RequestException as exc:  # includes ConnectionError
         logger.error("%s connection error: %s", context, exc)
+        if not fatal:
+            raise
+        sys.exit(ExitCodes.CONNECTION_ERROR.value)
+
+
+def safe_head(url: str, *, context: str, fatal: bool = True, **kwargs: Any) -> requests.Response:
+    """Perform a HEAD request with consistent error handling.
+
+    Lighter than safe_get when only the status code is needed (e.g. existence checks).
+
+    Args:
+        url: Target URL.
+        context: Human-readable source tag for logs.
+        fatal: When True (default), call sys.exit on network errors.
+            When False, re-raise the original exception so callers
+            can handle it gracefully (e.g. best-effort existence checks).
+        **kwargs: Passed through to the middleware request.
+    """
+    try:
+        return middleware_request(
+            "HEAD",
+            url,
+            timeout=Constants.REQUEST_TIMEOUT,
+            context=context,
+            extra_log_fields={"component": "http_client", "action": "HEAD"},
+            **kwargs
+        )
+    except (RateLimitExhausted, RetryBudgetExceeded):
+        logger.error("%s rate limit exhausted", context)
+        if not fatal:
+            raise
+        sys.exit(ExitCodes.CONNECTION_ERROR.value)
+    except requests.Timeout:
+        logger.error(
+            "%s HEAD request timed out after %s seconds",
+            context,
+            Constants.REQUEST_TIMEOUT,
+        )
+        if not fatal:
+            raise
+        sys.exit(ExitCodes.CONNECTION_ERROR.value)
+    except requests.RequestException as exc:
+        logger.error("%s connection error: %s", context, exc)
+        if not fatal:
+            raise
         sys.exit(ExitCodes.CONNECTION_ERROR.value)
 
 

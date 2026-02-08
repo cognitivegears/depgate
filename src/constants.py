@@ -133,7 +133,17 @@ class Constants:  # pylint: disable=too-few-public-methods
     # Per-service overrides (empty by default)
     HTTP_RATE_POLICY_PER_SERVICE = {}
 
-    # Heuristics weighting defaults (used by analysis.compute_final_score)
+    # Heuristics threshold defaults
+    HEURISTICS_MIN_VERSIONS = DefaultHeuristics.MIN_VERSIONS.value
+    HEURISTICS_MIN_RELEASE_AGE_DAYS = DefaultHeuristics.NEW_DAYS_THRESHOLD.value
+    HEURISTICS_SCORE_THRESHOLD = DefaultHeuristics.SCORE_THRESHOLD.value
+    HEURISTICS_RISKY_THRESHOLD = DefaultHeuristics.RISKY_THRESHOLD.value
+    HEURISTICS_SCORE_DECREASE_THRESHOLD = 0.0
+
+    # Heuristics weighting defaults (used by analysis.compute_final_score).
+    # Values are relative priorities and are re-normalized at runtime to sum
+    # to 1.0 across available (non-None) metrics, so absolute values here do
+    # not need to sum to 1.0.
     HEURISTICS_WEIGHTS_DEFAULT = {
         "base_score": 0.30,
         "repo_version_match": 0.30,
@@ -141,6 +151,7 @@ class Constants:  # pylint: disable=too-few-public-methods
         "repo_contributors": 0.10,
         "repo_last_activity": 0.10,
         "repo_present_in_registry": 0.05,
+        "supply_chain_trust_score": 0.20,
     }
     # Runtime copy that may be overridden via YAML configuration
     HEURISTICS_WEIGHTS = dict(HEURISTICS_WEIGHTS_DEFAULT)
@@ -295,6 +306,50 @@ def _apply_config_overrides(cfg: Dict[str, Any]) -> None:  # pylint: disable=too
 
     # Heuristics weights (optional)
     heuristics = cfg.get("heuristics", {}) or {}
+
+    # Heuristics thresholds
+    try:
+        Constants.HEURISTICS_MIN_VERSIONS = int(  # type: ignore[attr-defined]
+            heuristics.get("min_versions", Constants.HEURISTICS_MIN_VERSIONS)
+        )
+    except Exception:  # pylint: disable=broad-exception-caught
+        pass
+    try:
+        Constants.HEURISTICS_MIN_RELEASE_AGE_DAYS = max(  # type: ignore[attr-defined]
+            0,
+            int(
+                heuristics.get(
+                    "min_release_age_days",
+                    Constants.HEURISTICS_MIN_RELEASE_AGE_DAYS,
+                )
+            ),
+        )
+    except Exception:  # pylint: disable=broad-exception-caught
+        pass
+    try:
+        Constants.HEURISTICS_SCORE_THRESHOLD = float(  # type: ignore[attr-defined]
+            heuristics.get("score_threshold", Constants.HEURISTICS_SCORE_THRESHOLD)
+        )
+    except Exception:  # pylint: disable=broad-exception-caught
+        pass
+    try:
+        Constants.HEURISTICS_RISKY_THRESHOLD = float(  # type: ignore[attr-defined]
+            heuristics.get("risky_threshold", Constants.HEURISTICS_RISKY_THRESHOLD)
+        )
+    except Exception:  # pylint: disable=broad-exception-caught
+        pass
+    try:
+        Constants.HEURISTICS_SCORE_DECREASE_THRESHOLD = abs(  # type: ignore[attr-defined]
+            float(
+                heuristics.get(
+                    "score_decrease_threshold",
+                    Constants.HEURISTICS_SCORE_DECREASE_THRESHOLD,
+                )
+            )
+        )
+    except Exception:  # pylint: disable=broad-exception-caught
+        pass
+
     weights_cfg = heuristics.get("weights", {}) or {}
     if isinstance(weights_cfg, dict):
         merged = dict(Constants.HEURISTICS_WEIGHTS_DEFAULT)  # type: ignore[attr-defined]

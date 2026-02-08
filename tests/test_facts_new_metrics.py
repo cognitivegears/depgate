@@ -20,6 +20,18 @@ class TestFactsBuilderNewMetrics:
         mp.repo_last_commit_at = "2023-12-01T10:00:00Z"
         mp.repo_last_merged_pr_at = "2023-11-15T10:00:00Z"
         mp.repo_last_closed_issue_at = "2023-11-20T10:00:00Z"
+        mp.release_age_days = 10
+        mp.trust_score = 0.75
+        mp.previous_trust_score = 0.5
+        mp.trust_score_delta = 0.25
+        mp.trust_score_decreased = False
+        mp.provenance_present = True
+        mp.previous_provenance_present = False
+        mp.provenance_regressed = False
+        mp.registry_signature_present = True
+        mp.previous_registry_signature_present = True
+        mp.registry_signature_regressed = False
+        mp.previous_release_version = "1.0.0"
 
         builder = FactBuilder()
         facts = builder.build_facts(mp)
@@ -31,6 +43,18 @@ class TestFactsBuilderNewMetrics:
         assert facts["last_commit_at"] == "2023-12-01T10:00:00Z"
         assert facts["last_merged_pr_at"] == "2023-11-15T10:00:00Z"
         assert facts["last_closed_issue_at"] == "2023-11-20T10:00:00Z"
+        assert facts["release_age_days"] == 10
+        assert facts["supply_chain_trust_score"] == 0.75
+        assert facts["supply_chain_previous_trust_score"] == 0.5
+        assert facts["supply_chain_trust_score_delta"] == 0.25
+        assert facts["supply_chain_trust_score_decreased"] is False
+        assert facts["provenance_present"] is True
+        assert facts["previous_provenance_present"] is False
+        assert facts["provenance_regressed"] is False
+        assert facts["registry_signature_present"] is True
+        assert facts["previous_registry_signature_present"] is True
+        assert facts["registry_signature_regressed"] is False
+        assert facts["previous_release_version"] == "1.0.0"
 
     def test_facts_new_metrics_none(self):
         """Test that facts handle None values for new metrics."""
@@ -47,6 +71,10 @@ class TestFactsBuilderNewMetrics:
         assert facts["last_commit_at"] is None
         assert facts["last_merged_pr_at"] is None
         assert facts["last_closed_issue_at"] is None
+        assert facts["release_age_days"] is None
+        assert facts["supply_chain_trust_score"] is None
+        assert facts["provenance_present"] is None
+        assert facts["registry_signature_present"] is None
 
     def test_facts_all_metrics_present(self):
         """Test facts with all metrics including new ones."""
@@ -62,6 +90,9 @@ class TestFactsBuilderNewMetrics:
         mp.repo_last_merged_pr_at = "2023-11-15T10:00:00Z"
         mp.repo_last_closed_issue_at = "2023-11-20T10:00:00Z"
         mp.repo_version_match = {"matched": True}
+        mp.trust_score = 1.0
+        mp.provenance_present = True
+        mp.registry_signature_present = True
 
         builder = FactBuilder()
         facts = builder.build_facts(mp)
@@ -77,4 +108,6 @@ class TestFactsBuilderNewMetrics:
         assert facts["last_commit_at"] == "2023-12-01T10:00:00Z"
         assert facts["last_merged_pr_at"] == "2023-11-15T10:00:00Z"
         assert facts["last_closed_issue_at"] == "2023-11-20T10:00:00Z"
-
+        assert facts["supply_chain_trust_score"] == 1.0
+        assert facts["provenance_present"] is True
+        assert facts["registry_signature_present"] is True

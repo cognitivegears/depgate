@@ -33,14 +33,16 @@ depgate scan -t npm -p left-pad -a compare -o results.json
 
 ## Heuristics (`heuristics` or `heur`)
 
-Adds scoring, version count, and age-based risk signals to the compare baseline.
+Adds scoring, version count, age-based, and supply-chain trust regression signals to the compare baseline.
 
 ### What it does:
 - All compare checks, plus:
 - Calculates heuristic risk scores (0.0 to 1.0)
 - Analyzes version count (flags packages with too few versions)
-- Checks package age (flags very new packages)
+- Checks package age against minimum release-age threshold (flags very new packages)
 - Evaluates repository metrics (stars, contributors, activity)
+- Extracts provenance/signature trust signals (best effort by ecosystem)
+- Compares trust signals with previous release to detect regressions
 - Performs repository version matching
 
 ### Scoring:
@@ -53,6 +55,9 @@ Adds scoring, version count, and age-based risk signals to the compare baseline.
 - Low heuristic score
 - Insufficient version history
 - Very new package (potential typosquatting)
+- Supply-chain trust score decreased from previous release
+- Provenance regressed from previous release
+- Registry signature regressed from previous release
 - Repository version mismatch
 
 ### When to use:
@@ -77,6 +82,7 @@ Declarative rule-based evaluation with allow/deny decisions based on configurabl
 - Checks license compliance
 - Applies regex-based inclusion/exclusion rules
 - Validates metric constraints (stars, score, version count)
+- Supports built-in supply-chain presets for trust regressions and release-age gates
 
 ### Policy Configuration:
 Policies are defined in YAML configuration files. See [Policy Configuration](policy-configuration.md) for detailed schema.

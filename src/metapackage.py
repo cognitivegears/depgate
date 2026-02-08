@@ -66,6 +66,9 @@ class MetaPackage:  # pylint: disable=too-many-instance-attributes, too-many-pub
         self._risk_low_score = None
         self._risk_min_versions = None
         self._risk_too_new = None
+        self._risk_score_decrease = None
+        self._risk_provenance_regression = None
+        self._risk_registry_signature_regression = None
         # Repository integration fields
         self._repo_present_in_registry = False
         self._repo_resolved = False
@@ -84,6 +87,22 @@ class MetaPackage:  # pylint: disable=too-many-instance-attributes, too-many-pub
         self._repo_version_match = None
         self._provenance = None
         self._repo_errors = None
+        self._registry_signature_present = None
+        self._previous_registry_signature_present = None
+        self._registry_signature_regressed = None
+        self._provenance_present = None
+        self._provenance_url = None
+        self._provenance_source = None
+        self._previous_provenance_present = None
+        self._provenance_regressed = None
+        self._trust_score = None
+        self._previous_trust_score = None
+        self._trust_score_delta = None
+        self._trust_score_decreased = None
+        self._release_age_days = None
+        self._previous_release_version = None
+        self._checksums_present = None
+        self._previous_checksums_present = None
 
         # Version resolution fields
         self._requested_spec = None
@@ -134,14 +153,37 @@ class MetaPackage:  # pylint: disable=too-many-instance-attributes, too-many-pub
         lister.append(nv(self._risk_low_score))
         lister.append(nv(self._risk_min_versions))
         lister.append(nv(self._risk_too_new))
+        lister.append(nv(self._risk_score_decrease))
+        lister.append(nv(self._risk_provenance_regression))
+        lister.append(nv(self._risk_registry_signature_regression))
         lister.append(nv(self.has_risk()))
 
-        # Version resolution info (empty string for missing) — placed before repo_* to keep repo_* as last five columns.
+        # Version resolution info
         lister.append(nv(self._requested_spec))
         lister.append(nv(self._resolved_version))
         lister.append(nv(self._resolution_mode))
 
-        # New repo_* CSV columns (empty string for missing)
+        # Dependency classification
+        lister.append(nv(self._dependency_relation))
+        lister.append(nv(self._dependency_requirement))
+        lister.append(nv(self._dependency_scope))
+
+        # Supply-chain trust signal columns
+        lister.append(nv(self._release_age_days))
+        lister.append(nv(self._trust_score))
+        lister.append(nv(self._previous_trust_score))
+        lister.append(nv(self._trust_score_delta))
+        lister.append(nv(self._provenance_present))
+        lister.append(nv(self._previous_provenance_present))
+        lister.append(nv(self._provenance_regressed))
+        lister.append(nv(self._registry_signature_present))
+        lister.append(nv(self._previous_registry_signature_present))
+        lister.append(nv(self._registry_signature_regressed))
+        lister.append(nv(self._checksums_present))
+        lister.append(nv(self._previous_checksums_present))
+        lister.append(nv(self._previous_release_version))
+
+        # repo_* CSV columns (empty string for missing)
         lister.append(nv(self._repo_stars))
         lister.append(nv(self._repo_contributors))
         lister.append(nv(self._repo_last_activity_at))
@@ -448,6 +490,33 @@ class MetaPackage:  # pylint: disable=too-many-instance-attributes, too-many-pub
     @risk_too_new.setter
     def risk_too_new(self, is_risk_too_new):
         self._risk_too_new = is_risk_too_new
+
+    @property
+    def risk_score_decrease(self):
+        """Risk property for decreased trust score between releases."""
+        return self._risk_score_decrease
+
+    @risk_score_decrease.setter
+    def risk_score_decrease(self, value):
+        self._risk_score_decrease = value
+
+    @property
+    def risk_provenance_regression(self):
+        """Risk property for provenance regressing between releases."""
+        return self._risk_provenance_regression
+
+    @risk_provenance_regression.setter
+    def risk_provenance_regression(self, value):
+        self._risk_provenance_regression = value
+
+    @property
+    def risk_registry_signature_regression(self):
+        """Risk property for registry signature regression between releases."""
+        return self._risk_registry_signature_regression
+
+    @risk_registry_signature_regression.setter
+    def risk_registry_signature_regression(self, value):
+        self._risk_registry_signature_regression = value
 
     @property
     def contributor_count(self):
@@ -854,6 +923,150 @@ class MetaPackage:  # pylint: disable=too-many-instance-attributes, too-many-pub
     def resolution_mode(self, value):
         self._resolution_mode = value
 
+    @property
+    def registry_signature_present(self):
+        """Whether the selected release has a registry/package signature signal."""
+        return self._registry_signature_present
+
+    @registry_signature_present.setter
+    def registry_signature_present(self, value):
+        self._registry_signature_present = value
+
+    @property
+    def previous_registry_signature_present(self):
+        """Whether the previous release had a registry/package signature signal."""
+        return self._previous_registry_signature_present
+
+    @previous_registry_signature_present.setter
+    def previous_registry_signature_present(self, value):
+        self._previous_registry_signature_present = value
+
+    @property
+    def registry_signature_regressed(self):
+        """Whether registry/package signature regressed from previous release."""
+        return self._registry_signature_regressed
+
+    @registry_signature_regressed.setter
+    def registry_signature_regressed(self, value):
+        self._registry_signature_regressed = value
+
+    @property
+    def provenance_present(self):
+        """Whether provenance/attestation signal exists for the selected release."""
+        return self._provenance_present
+
+    @provenance_present.setter
+    def provenance_present(self, value):
+        self._provenance_present = value
+
+    @property
+    def provenance_url(self):
+        """Provenance URL when exposed by the registry metadata."""
+        return self._provenance_url
+
+    @provenance_url.setter
+    def provenance_url(self, value):
+        self._provenance_url = value
+
+    @property
+    def provenance_source(self):
+        """Source key describing where provenance signal came from."""
+        return self._provenance_source
+
+    @provenance_source.setter
+    def provenance_source(self, value):
+        self._provenance_source = value
+
+    @property
+    def previous_provenance_present(self):
+        """Whether previous release had provenance/attestation signal."""
+        return self._previous_provenance_present
+
+    @previous_provenance_present.setter
+    def previous_provenance_present(self, value):
+        self._previous_provenance_present = value
+
+    @property
+    def provenance_regressed(self):
+        """Whether provenance regressed from previous release."""
+        return self._provenance_regressed
+
+    @provenance_regressed.setter
+    def provenance_regressed(self, value):
+        self._provenance_regressed = value
+
+    @property
+    def trust_score(self):
+        """Current supply-chain trust score in [0,1] based on available signals."""
+        return self._trust_score
+
+    @trust_score.setter
+    def trust_score(self, value):
+        self._trust_score = value
+
+    @property
+    def previous_trust_score(self):
+        """Previous release supply-chain trust score in [0,1] when available."""
+        return self._previous_trust_score
+
+    @previous_trust_score.setter
+    def previous_trust_score(self, value):
+        self._previous_trust_score = value
+
+    @property
+    def trust_score_delta(self):
+        """Delta between current and previous trust score."""
+        return self._trust_score_delta
+
+    @trust_score_delta.setter
+    def trust_score_delta(self, value):
+        self._trust_score_delta = value
+
+    @property
+    def trust_score_decreased(self):
+        """Whether trust score decreased compared to previous release."""
+        return self._trust_score_decreased
+
+    @trust_score_decreased.setter
+    def trust_score_decreased(self, value):
+        self._trust_score_decreased = value
+
+    @property
+    def release_age_days(self):
+        """Age of selected release in days."""
+        return self._release_age_days
+
+    @release_age_days.setter
+    def release_age_days(self, value):
+        self._release_age_days = value
+
+    @property
+    def previous_release_version(self):
+        """Previous published version used for trust comparison."""
+        return self._previous_release_version
+
+    @previous_release_version.setter
+    def previous_release_version(self, value):
+        self._previous_release_version = value
+
+    @property
+    def checksums_present(self):
+        """Whether checksum evidence exists for the selected release."""
+        return self._checksums_present
+
+    @checksums_present.setter
+    def checksums_present(self, value):
+        self._checksums_present = value
+
+    @property
+    def previous_checksums_present(self):
+        """Whether checksum evidence existed for the previous release."""
+        return self._previous_checksums_present
+
+    @previous_checksums_present.setter
+    def previous_checksums_present(self, value):
+        self._previous_checksums_present = value
+
     def has_risk(self):
         """Check if the package has any risk.
 
@@ -865,6 +1078,9 @@ class MetaPackage:  # pylint: disable=too-many-instance-attributes, too-many-pub
             or self._risk_low_score
             or self._risk_min_versions
             or self._risk_too_new
+            or self._risk_score_decrease
+            or self._risk_provenance_regression
+            or self._risk_registry_signature_regression
         ):
             return True
         return False

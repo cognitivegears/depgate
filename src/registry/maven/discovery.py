@@ -2,14 +2,59 @@
 from __future__ import annotations
 
 import logging
+import threading
 import xml.etree.ElementTree as ET
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
-from common.http_client import safe_get
+from common.http_client import safe_get, safe_head
 from common.logging_utils import extra_context, is_debug_enabled
 from repository.url_normalize import normalize_repo_url
 
 logger = logging.getLogger(__name__)
+
+# Per-session cache for maven-metadata.xml content keyed by (group, artifact).
+# Guarded by _metadata_cache_lock because the proxy may serve concurrent
+# requests from a background thread.
+_metadata_cache: Dict[str, ET.Element] = {}
+_metadata_cache_lock = threading.Lock()
+
+
+def _fetch_metadata_root(group: str, artifact: str) -> Optional[ET.Element]:
+    """Fetch and cache parsed maven-metadata.xml for a group:artifact."""
+    cache_key = f"{group}:{artifact}"
+    with _metadata_cache_lock:
+        if cache_key in _metadata_cache:
+            return _metadata_cache[cache_key]
+
+    group_path = group.replace(".", "/")
+    metadata_url = f"https://repo1.maven.org/maven2/{group_path}/{artifact}/maven-metadata.xml"
+
+    if is_debug_enabled(logger):
+        logger.debug("Fetching Maven metadata", extra=extra_context(
+            event="function_entry", component="discovery", action="fetch_metadata",
+            target="maven-metadata.xml", package_manager="maven"
+        ))
+
+    try:
+        response = safe_get(metadata_url, context="maven", fatal=False)
+        if response.status_code != 200:
+            if is_debug_enabled(logger):
+                logger.debug("Maven metadata fetch failed", extra=extra_context(
+                    event="function_exit", component="discovery", action="fetch_metadata",
+                    outcome="fetch_failed", status_code=response.status_code, package_manager="maven"
+                ))
+            return None
+        root = ET.fromstring(response.text)
+        with _metadata_cache_lock:
+            _metadata_cache[cache_key] = root
+        return root
+    except Exception:  # pylint: disable=broad-exception-caught
+        if is_debug_enabled(logger):
+            logger.debug("Maven metadata fetch/parse error", extra=extra_context(
+                event="anomaly", component="discovery", action="fetch_metadata",
+                outcome="error", package_manager="maven"
+            ))
+        return None
 
 
 def _resolve_latest_version(group: str, artifact: str) -> Optional[str]:
@@ -22,56 +67,29 @@ def _resolve_latest_version(group: str, artifact: str) -> Optional[str]:
     Returns:
         Latest release version string or None if not found
     """
-    # Convert group to path format
-    group_path = group.replace(".", "/")
-    metadata_url = f"https://repo1.maven.org/maven2/{group_path}/{artifact}/maven-metadata.xml"
+    root = _fetch_metadata_root(group, artifact)
+    if root is None:
+        return None
 
-    if is_debug_enabled(logger):
-        logger.debug("Fetching Maven metadata", extra=extra_context(
-            event="function_entry", component="discovery", action="resolve_latest_version",
-            target="maven-metadata.xml", package_manager="maven"
-        ))
-
-    try:
-        response = safe_get(metadata_url, context="maven")
-        if response.status_code != 200:
+    versioning = root.find("versioning")
+    if versioning is not None:
+        release_elem = versioning.find("release")
+        if release_elem is not None and release_elem.text:
             if is_debug_enabled(logger):
-                logger.debug("Maven metadata fetch failed", extra=extra_context(
+                logger.debug("Found release version", extra=extra_context(
                     event="function_exit", component="discovery", action="resolve_latest_version",
-                    outcome="fetch_failed", status_code=response.status_code, package_manager="maven"
+                    outcome="found_release", package_manager="maven"
                 ))
-            return None
+            return release_elem.text
 
-        # Parse XML to find release version
-        root = ET.fromstring(response.text)
-        versioning = root.find("versioning")
-        if versioning is not None:
-            # Try release first, then latest
-            release_elem = versioning.find("release")
-            if release_elem is not None and release_elem.text:
-                if is_debug_enabled(logger):
-                    logger.debug("Found release version", extra=extra_context(
-                        event="function_exit", component="discovery", action="resolve_latest_version",
-                        outcome="found_release", package_manager="maven"
-                    ))
-                return release_elem.text
-
-            latest_elem = versioning.find("latest")
-            if latest_elem is not None and latest_elem.text:
-                if is_debug_enabled(logger):
-                    logger.debug("Found latest version", extra=extra_context(
-                        event="function_exit", component="discovery", action="resolve_latest_version",
-                        outcome="found_latest", package_manager="maven"
-                    ))
-                return latest_elem.text
-
-    except (ET.ParseError, AttributeError):
-        # Quietly ignore parse errors; caller will handle fallback behavior
-        if is_debug_enabled(logger):
-            logger.debug("Maven metadata parse error", extra=extra_context(
-                event="anomaly", component="discovery", action="resolve_latest_version",
-                outcome="parse_error", package_manager="maven"
-            ))
+        latest_elem = versioning.find("latest")
+        if latest_elem is not None and latest_elem.text:
+            if is_debug_enabled(logger):
+                logger.debug("Found latest version", extra=extra_context(
+                    event="function_exit", component="discovery", action="resolve_latest_version",
+                    outcome="found_latest", package_manager="maven"
+                ))
+            return latest_elem.text
 
     if is_debug_enabled(logger):
         logger.debug("No version found in Maven metadata", extra=extra_context(
@@ -79,6 +97,39 @@ def _resolve_latest_version(group: str, artifact: str) -> Optional[str]:
             outcome="no_version", package_manager="maven"
         ))
 
+    return None
+
+
+def _metadata_versions(group: str, artifact: str) -> List[str]:
+    """Return versions listed in maven-metadata.xml in source order."""
+    root = _fetch_metadata_root(group, artifact)
+    if root is None:
+        return []
+    try:
+        versions_elem = root.find("versioning/versions")
+        if versions_elem is None:
+            return []
+        versions = []
+        for item in versions_elem.findall("version"):
+            if item is not None and isinstance(item.text, str) and item.text.strip():
+                versions.append(item.text.strip())
+        return versions
+    except Exception:  # pylint: disable=broad-exception-caught
+        return []
+
+
+def _previous_version(group: str, artifact: str, selected_version: str) -> Optional[str]:
+    """Find previous published version from metadata list."""
+    versions = _metadata_versions(group, artifact)
+    if not versions:
+        return None
+    if selected_version in versions:
+        idx = versions.index(selected_version)
+        if idx > 0:
+            return versions[idx - 1]
+        return None
+    if len(versions) >= 2:
+        return versions[-2]
     return None
 
 
@@ -95,6 +146,73 @@ def _artifact_pom_url(group: str, artifact: str, version: str) -> str:
     """
     group_path = group.replace(".", "/")
     return f"https://repo1.maven.org/maven2/{group_path}/{artifact}/{version}/{artifact}-{version}.pom"
+
+
+def _artifact_base_url(group: str, artifact: str, version: str) -> str:
+    """Construct base artifact URL without extension."""
+    group_path = group.replace(".", "/")
+    return f"https://repo1.maven.org/maven2/{group_path}/{artifact}/{version}/{artifact}-{version}"
+
+
+def _artifact_exists(url: str) -> bool:
+    """Return True when Maven Central URL exists (HTTP 200).
+
+    Uses HEAD to avoid downloading artifact content.
+    """
+    try:
+        response = safe_head(url, context="maven", fatal=False)
+        return response.status_code == 200
+    except Exception:  # pylint: disable=broad-exception-caught
+        return False
+
+
+def _has_any_artifact_suffix(group: str, artifact: str, version: str, suffixes: List[str]) -> Optional[bool]:
+    """Check whether any artifact path with suffix exists."""
+    if not version:
+        return None
+    base = _artifact_base_url(group, artifact, version)
+    checked = False
+    for suffix in suffixes:
+        checked = True
+        if _artifact_exists(base + suffix):
+            return True
+    if not checked:
+        return None
+    return False
+
+
+def _collect_trust_signals(group: str, artifact: str, version: str) -> Dict[str, Optional[bool]]:
+    """Collect Maven supply-chain trust signals for a version."""
+    signatures = _has_any_artifact_suffix(
+        group,
+        artifact,
+        version,
+        [".pom.asc", ".jar.asc"],
+    )
+    provenance = _has_any_artifact_suffix(
+        group,
+        artifact,
+        version,
+        [".pom.sigstore.json", ".jar.sigstore.json", ".pom.sigstore", ".jar.sigstore"],
+    )
+    checksums = _has_any_artifact_suffix(
+        group,
+        artifact,
+        version,
+        [
+            ".pom.sha512",
+            ".jar.sha512",
+            ".pom.sha256",
+            ".jar.sha256",
+            ".pom.sha1",
+            ".jar.sha1",
+        ],
+    )
+    return {
+        "registry_signature_present": signatures,
+        "provenance_present": provenance,
+        "checksums_present": checksums,
+    }
 
 
 def _fetch_pom(group: str, artifact: str, version: str) -> Optional[str]:
@@ -116,7 +234,7 @@ def _fetch_pom(group: str, artifact: str, version: str) -> Optional[str]:
         ))
 
     try:
-        response = safe_get(pom_url, context="maven")
+        response = safe_get(pom_url, context="maven", fatal=False)
         if response.status_code == 200:
             if is_debug_enabled(logger):
                 logger.debug("POM fetch successful", extra=extra_context(

@@ -8,6 +8,7 @@ from metapackage import MetaPackage
 from registry.nuget.client import (
     _fetch_v3_service_index,
     _get_v3_registration_url,
+    _fetch_repository_signature_policy,
     _fetch_v3_package_metadata,
     _fetch_v2_package_metadata,
     _normalize_metadata,
@@ -81,6 +82,46 @@ class TestGetV3RegistrationUrl:
         url = _get_v3_registration_url("TestPackage", service_index)
 
         assert url is None
+
+
+class TestFetchRepositorySignaturePolicy:
+    """Test repository signature policy fetching."""
+
+    SERVICE_INDEX_WITH_REPO_SIGS = {
+        "resources": [
+            {
+                "@id": "https://api.nuget.org/v3-index/repository-signatures/5.0.0/index.json",
+                "@type": "RepositorySignatures/5.0.0",
+            }
+        ]
+    }
+
+    @patch('registry.nuget.client.nuget_pkg.safe_get')
+    def test_returns_none_on_system_exit(self, mock_safe_get):
+        """SystemExit from safe_get must not propagate — the signal is best-effort."""
+        mock_safe_get.side_effect = SystemExit(1)
+
+        result = _fetch_repository_signature_policy(self.SERVICE_INDEX_WITH_REPO_SIGS)
+
+        assert result is None
+
+    @patch('registry.nuget.client.nuget_pkg.safe_get')
+    def test_returns_bool_on_success(self, mock_safe_get):
+        """Happy path: allRepositorySigned is extracted."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.text = json.dumps({"allRepositorySigned": True})
+        mock_safe_get.return_value = mock_response
+
+        result = _fetch_repository_signature_policy(self.SERVICE_INDEX_WITH_REPO_SIGS)
+
+        assert result is True
+
+    def test_returns_none_when_no_endpoint(self):
+        """No RepositorySignatures resource → None."""
+        result = _fetch_repository_signature_policy({"resources": []})
+
+        assert result is None
 
 
 class TestFetchV3PackageMetadata:

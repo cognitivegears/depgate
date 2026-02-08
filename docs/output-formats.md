@@ -43,21 +43,45 @@ CSV output includes the following columns (in order):
 4. `Org/Group ID` - Organization or group identifier
 5. `Score` - Heuristic score (0.0-1.0, if heuristics analysis)
 6. `Version Count` - Number of published versions
-7. `Timestamp` - Package creation timestamp
+7. `Timestamp` - Selected release timestamp (epoch milliseconds)
 8. `Risk: Missing` - Boolean risk flag
 9. `Risk: Low Score` - Boolean risk flag
 10. `Risk: Min Versions` - Boolean risk flag
 11. `Risk: Too New` - Boolean risk flag
-12. `Risk: Any Risks` - Boolean (true if any risk is present)
-13. `[policy fields]` - Policy decision and violated rules (if policy analysis)
-14. `[license fields]` - License information (if license checking enabled)
-15. `[osm fields]` - OpenSourceMalware fields (if OSM enabled)
+12. `Risk: Score Decrease` - Trust score decrease risk flag
+13. `Risk: Provenance Regression` - Provenance regressed risk flag
+14. `Risk: Registry Signature Regression` - Signature regressed risk flag
+15. `Risk: Any Risks` - Boolean (true if any risk is present)
+16. `requested_spec` - Original requested version/range
+17. `resolved_version` - Selected resolved version
+18. `resolution_mode` - Version resolution mode
+19. `dependency_relation` - Dependency relation metadata
+20. `dependency_requirement` - Dependency requirement metadata
+21. `dependency_scope` - Dependency scope metadata
+22. `release_age_days` - Age of selected release in days
+23. `supply_chain_trust_score` - Current trust score (0.0-1.0)
+24. `supply_chain_previous_trust_score` - Previous release trust score
+25. `supply_chain_trust_score_delta` - Current minus previous trust score
+26. `provenance_present` - Current release provenance signal
+27. `previous_provenance_present` - Previous release provenance signal
+28. `provenance_regressed` - True when provenance dropped
+29. `registry_signature_present` - Current release signature signal
+30. `previous_registry_signature_present` - Previous release signature signal
+31. `registry_signature_regressed` - True when signature dropped
+32. `checksums_present` - Current release checksum evidence (ecosystem-dependent)
+33. `previous_checksums_present` - Previous release checksum evidence
+34. `previous_release_version` - Previous version used for regression comparison
+35. `repo_stars` - Repository stars
+36. `repo_contributors` - Repository contributors
+37. `repo_last_activity` - Repository last activity timestamp
+38. `repo_present_in_registry` - Registry metadata includes repository signal
+39. `repo_version_match` - Selected release matches repo tag/release
 
 ### Example
 
 ```csv
-Package Name,Package Type,Exists on External,Org/Group ID,Score,Version Count,Timestamp,Risk: Missing,Risk: Low Score,Risk: Min Versions,Risk: Too New,Risk: Any Risks
-left-pad,npm,true,,0.85,5,2016-03-21T17:40:03.923Z,false,false,false,false,false
+Package Name,Package Type,Exists on External,Org/Group ID,Score,Version Count,Timestamp,Risk: Missing,Risk: Low Score,Risk: Min Versions,Risk: Too New,Risk: Score Decrease,Risk: Provenance Regression,Risk: Registry Signature Regression,Risk: Any Risks,requested_spec,resolved_version,resolution_mode,dependency_relation,dependency_requirement,dependency_scope,release_age_days,supply_chain_trust_score,supply_chain_previous_trust_score,supply_chain_trust_score_delta,provenance_present,previous_provenance_present,provenance_regressed,registry_signature_present,previous_registry_signature_present,registry_signature_regressed,checksums_present,previous_checksums_present,previous_release_version,repo_stars,repo_contributors,repo_last_activity,repo_present_in_registry,repo_version_match
+left-pad,npm,true,,0.85,5,1458582003923,false,false,false,false,false,false,false,false,^1.3.0,1.3.0,range,,,,3600,1.0,1.0,0.0,true,true,false,true,true,false,,,1.2.0,1000,42,2026-01-10T12:00:00Z,true,true
 ```
 
 ## JSON Format
@@ -73,7 +97,21 @@ JSON output is an array of package objects. Each object contains:
 - `orgId` (string|null) - Organization or group identifier
 - `exists` (boolean) - Whether package exists in registry
 - `versionCount` (integer) - Number of published versions
-- `createdTimestamp` (string) - ISO 8601 timestamp of package creation
+- `createdTimestamp` (integer|null) - Selected release timestamp (epoch milliseconds)
+- `release_age_days` (integer|null) - Selected release age in days
+- `supply_chain_trust_score` (float|null) - Trust score from available provenance/signature signals
+- `supply_chain_previous_trust_score` (float|null) - Previous release trust score
+- `supply_chain_trust_score_delta` (float|null) - Current minus previous trust score
+- `supply_chain_trust_score_decreased` (boolean|null) - True when trust score decreased vs previous release
+- `provenance_present` (boolean|null) - Current release provenance signal
+- `previous_provenance_present` (boolean|null) - Previous release provenance signal
+- `provenance_regressed` (boolean|null) - True when provenance existed previously but not currently
+- `registry_signature_present` (boolean|null) - Current release signature signal
+- `previous_registry_signature_present` (boolean|null) - Previous release signature signal
+- `registry_signature_regressed` (boolean|null) - True when signature existed previously but not currently
+- `checksums_present` (boolean|null) - Current release checksum evidence (ecosystem-dependent)
+- `previous_checksums_present` (boolean|null) - Previous release checksum evidence
+- `previous_release_version` (string|null) - Previous version used for regression comparison
 
 #### Risk Fields (heuristics analysis)
 
@@ -82,7 +120,10 @@ JSON output is an array of package objects. Each object contains:
 - `risk.isMissing` (boolean) - Package not found in registry
 - `risk.hasLowScore` (boolean) - Score below threshold (< 0.6)
 - `risk.minVersions` (boolean) - Insufficient version history
-- `risk.isNew` (boolean) - Package is very new (potential typosquatting)
+- `risk.isNew` (boolean) - Release is newer than minimum release-age threshold
+- `risk.scoreDecreased` (boolean|null) - Trust score decrease risk
+- `risk.provenanceRegressed` (boolean|null) - Provenance regression risk
+- `risk.registrySignatureRegressed` (boolean|null) - Signature regression risk
 
 #### Policy Fields (policy analysis)
 
@@ -106,8 +147,8 @@ JSON output is an array of package objects. Each object contains:
 #### Linked Analysis Fields (linked analysis)
 
 - `repositoryUrl` (string|null) - Discovered repository URL
-- `tagMatch` (string|null) - Matching tag name (if found)
-- `releaseMatch` (string|null) - Matching release name (if found)
+- `tagMatch` (boolean|null) - Whether selected release matched a repository tag
+- `releaseMatch` (boolean|null) - Whether selected release matched a repository release
 - `linked` (boolean) - True if repository linkage verified
 
 ### Example
@@ -121,13 +162,27 @@ JSON output is an array of package objects. Each object contains:
     "exists": true,
     "score": 0.85,
     "versionCount": 5,
-    "createdTimestamp": "2016-03-21T17:40:03.923Z",
+    "createdTimestamp": 1458582003923,
+    "release_age_days": 3600,
+    "supply_chain_trust_score": 1.0,
+    "supply_chain_previous_trust_score": 1.0,
+    "supply_chain_trust_score_delta": 0.0,
+    "provenance_present": true,
+    "previous_provenance_present": true,
+    "provenance_regressed": false,
+    "registry_signature_present": true,
+    "previous_registry_signature_present": true,
+    "registry_signature_regressed": false,
+    "previous_release_version": "1.2.0",
     "risk": {
       "hasRisk": false,
       "isMissing": false,
       "hasLowScore": false,
       "minVersions": false,
-      "isNew": false
+      "isNew": false,
+      "scoreDecreased": false,
+      "provenanceRegressed": false,
+      "registrySignatureRegressed": false
     },
     "policy": {
       "decision": "allow",
@@ -144,8 +199,8 @@ JSON output is an array of package objects. Each object contains:
       "source": "registry"
     },
     "repositoryUrl": "https://github.com/stevemao/left-pad",
-    "tagMatch": "1.0.0",
-    "releaseMatch": null,
+    "tagMatch": true,
+    "releaseMatch": false,
     "linked": true
   }
 ]
@@ -279,8 +334,8 @@ depgate scan -t npm -p left-pad -a linked -o results.json
     "packageType": "npm",
     "exists": true,
     "repositoryUrl": "https://github.com/stevemao/left-pad",
-    "tagMatch": "1.0.0",
-    "releaseMatch": null,
+    "tagMatch": true,
+    "releaseMatch": false,
     "linked": true
   }
 ]
@@ -347,9 +402,9 @@ depgate scan -t npm -p left-pad -a heur -o results.json -q
 
 ### Limitations
 
-- Nested objects are flattened (e.g., `risk.hasRisk` becomes `Risk: Has Risk`)
+- Nested objects are flattened (e.g., `risk.hasRisk` becomes `Risk: Any Risks`)
 - Arrays are serialized as strings
-- Some fields may be omitted for brevity
+- Policy, license, and OpenSourceMalware objects are not exported in CSV
 
 ### When to Use CSV
 

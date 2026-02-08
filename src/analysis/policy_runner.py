@@ -12,15 +12,67 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Sequence
+from typing import Sequence, Dict, Any, Optional
 from constants import Constants
+
+
+def _deep_merge(dest: Dict[str, Any], src: Dict[str, Any]) -> None:
+    """Deep-merge src into dest in-place."""
+    for k, v in src.items():
+        if isinstance(v, dict) and isinstance(dest.get(k), dict):
+            _deep_merge(dest[k], v)
+        else:
+            dest[k] = v
+
+
+def build_policy_preset(
+    preset_name: Optional[str],
+    min_release_age_days: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Build a built-in policy preset."""
+    preset = str(preset_name or "default").strip().lower()
+    if preset not in ("default", "supply-chain", "supply-chain-strict"):
+        preset = "default"
+
+    release_age_days = (
+        int(min_release_age_days)
+        if min_release_age_days is not None
+        else int(getattr(Constants, "HEURISTICS_MIN_RELEASE_AGE_DAYS", 2))
+    )
+    release_age_days = max(0, release_age_days)
+
+    if preset == "default":
+        return {
+            "fail_fast": False,
+            "metrics": {
+                "stars_count": {"min": 5},
+                "heuristic_score": {"min": 0.6},
+            },
+        }
+
+    allow_unknown = preset == "supply-chain"
+    return {
+        "fail_fast": False,
+        "rules": [
+            {
+                "type": "metrics",
+                "allow_unknown": allow_unknown,
+                "metrics": {
+                    "release_age_days": {"min": release_age_days},
+                    "supply_chain_trust_score_delta": {"min": 0},
+                    "provenance_regressed": {"eq": False},
+                    "registry_signature_regressed": {"eq": False},
+                },
+            }
+        ],
+    }
 
 
 def run_policy_analysis(args, instances: Sequence[object]) -> None:
     """Run policy analysis for collected packages.
 
     Args:
-        args: Parsed CLI args (provides CONFIG and POLICY_SET)
+        args: Parsed CLI args (provides CONFIG/POLICY_SET and optional POLICY_PRESET)
         instances: Iterable of MetaPackage-like objects (with pkg_name and repo_url_normalized)
     """
     # Import policy modules lazily to keep CLI help fast
@@ -163,33 +215,29 @@ def run_policy_analysis(args, instances: Sequence[object]) -> None:
 
     user_policy = _load_policy_from_user_config(args)
     overrides_present = bool(getattr(args, "POLICY_SET", None))
+    preset_name = getattr(args, "POLICY_PRESET", "default")
+    preset_age = getattr(args, "POLICY_MIN_RELEASE_AGE_DAYS", None)
+    preset_explicit = str(preset_name).strip().lower() != "default"
 
-    if user_policy is not None:
+    if user_policy is not None and not preset_explicit:
         policy_config = dict(user_policy)  # shallow copy from user config
-    elif overrides_present:
-        # If overrides are provided but no user policy config exists, start from empty
-        policy_config = {}
     else:
-        # Built-in fallback defaults
-        policy_config = {
-            "fail_fast": False,
-            "metrics": {
-                "stars_count": {"min": 5},
-                "heuristic_score": {"min": 0.6},
-            },
-        }
+        policy_config = build_policy_preset(preset_name, preset_age)
+        if user_policy is not None:
+            _deep_merge(policy_config, user_policy)
 
     if overrides_present:
         ov = _collect_policy_overrides(getattr(args, "POLICY_SET", []))
-
-        def _deep_merge(dest, src):
-            for k, v in src.items():
-                if isinstance(v, dict) and isinstance(dest.get(k), dict):
-                    _deep_merge(dest[k], v)
-                else:
-                    dest[k] = v
-
         _deep_merge(policy_config, ov)
+
+    try:
+        logger.info(
+            "%sPolicy preset active: %s.",
+            STG,
+            str(preset_name),
+        )
+    except Exception:  # pylint: disable=broad-exception-caught
+        pass
 
     # Evaluate each package
     for pkg in instances:

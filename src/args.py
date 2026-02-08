@@ -387,6 +387,30 @@ def add_scan_arguments(parser: argparse.ArgumentParser) -> None:
         type=str,
         default=[],
     )
+    parser.add_argument(
+        "--policy-preset",
+        dest="POLICY_PRESET",
+        help=(
+            "Built-in policy preset. "
+            "'default' uses baseline heuristics/stars checks; "
+            "'supply-chain' adds release-age and trust-regression denies with allow_unknown=true; "
+            "'supply-chain-strict' enforces the same checks with allow_unknown=false."
+        ),
+        action="store",
+        type=str,
+        choices=["default", "supply-chain", "supply-chain-strict"],
+        default="default",
+    )
+    parser.add_argument(
+        "--policy-min-release-age-days",
+        dest="POLICY_MIN_RELEASE_AGE_DAYS",
+        help=(
+            "Minimum release age in days used by built-in policy presets "
+            "(defaults to heuristics.min_release_age_days)."
+        ),
+        action="store",
+        type=int,
+    )
 
     # deps.dev feature flags and tunables (CLI has highest precedence)
     parser.add_argument(

@@ -106,3 +106,36 @@ class TestMetaPackageNewProperties:
         assert mp.repo_last_merged_pr_at is None
         assert mp.repo_last_closed_issue_at is None
 
+    def test_supply_chain_trust_properties(self):
+        """Trust/provenance fields should be settable for heuristics/policy use."""
+        mp = MetaPackage("test-package", "npm")
+
+        assert mp.provenance_present is None
+        assert mp.registry_signature_present is None
+        assert mp.trust_score is None
+        assert mp.previous_trust_score is None
+        assert mp.trust_score_delta is None
+
+        mp.provenance_present = True
+        mp.registry_signature_present = True
+        mp.previous_provenance_present = False
+        mp.previous_registry_signature_present = True
+        mp.provenance_regressed = False
+        mp.registry_signature_regressed = False
+        mp.trust_score = 1.0
+        mp.previous_trust_score = 0.5
+        mp.trust_score_delta = 0.5
+        mp.trust_score_decreased = False
+        mp.previous_release_version = "1.2.2"
+        mp.release_age_days = 30
+
+        assert mp.provenance_present is True
+        assert mp.registry_signature_present is True
+        assert mp.previous_provenance_present is False
+        assert mp.previous_registry_signature_present is True
+        assert mp.trust_score == 1.0
+        assert mp.previous_trust_score == 0.5
+        assert mp.trust_score_delta == 0.5
+        assert mp.trust_score_decreased is False
+        assert mp.previous_release_version == "1.2.2"
+        assert mp.release_age_days == 30

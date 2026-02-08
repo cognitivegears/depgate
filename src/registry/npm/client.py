@@ -226,7 +226,7 @@ def recv_pkg_info(
                 .get("downloadsCount")
             )
             try:
-                i.timestamp = int(
+                collected_ts = int(
                     dt.timestamp(
                         dt.strptime(
                             info.get("collected", {}).get("metadata", {}).get("date", ""),
@@ -235,9 +235,13 @@ def recv_pkg_info(
                     )
                     * 1000
                 )
+                # Prefer release timestamp collected from packument details when available.
+                if getattr(i, "timestamp", None) in (None, 0):
+                    i.timestamp = collected_ts
             except ValueError:
                 logging.warning("Couldn't parse timestamp")
-                i.timestamp = 0
+                if getattr(i, "timestamp", None) is None:
+                    i.timestamp = 0
         else:
             # Preserve existence set by details fetch if already True
             if getattr(i, "exists", None) is not True:
