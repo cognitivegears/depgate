@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 import xml.etree.ElementTree as ET
 from typing import Optional, Dict, Any, List
 
@@ -11,15 +12,19 @@ from repository.url_normalize import normalize_repo_url
 
 logger = logging.getLogger(__name__)
 
-# Per-session cache for maven-metadata.xml content keyed by (group, artifact)
+# Per-session cache for maven-metadata.xml content keyed by (group, artifact).
+# Guarded by _metadata_cache_lock because the proxy may serve concurrent
+# requests from a background thread.
 _metadata_cache: Dict[str, ET.Element] = {}
+_metadata_cache_lock = threading.Lock()
 
 
 def _fetch_metadata_root(group: str, artifact: str) -> Optional[ET.Element]:
     """Fetch and cache parsed maven-metadata.xml for a group:artifact."""
     cache_key = f"{group}:{artifact}"
-    if cache_key in _metadata_cache:
-        return _metadata_cache[cache_key]
+    with _metadata_cache_lock:
+        if cache_key in _metadata_cache:
+            return _metadata_cache[cache_key]
 
     group_path = group.replace(".", "/")
     metadata_url = f"https://repo1.maven.org/maven2/{group_path}/{artifact}/maven-metadata.xml"
@@ -31,7 +36,7 @@ def _fetch_metadata_root(group: str, artifact: str) -> Optional[ET.Element]:
         ))
 
     try:
-        response = safe_get(metadata_url, context="maven")
+        response = safe_get(metadata_url, context="maven", fatal=False)
         if response.status_code != 200:
             if is_debug_enabled(logger):
                 logger.debug("Maven metadata fetch failed", extra=extra_context(
@@ -40,13 +45,14 @@ def _fetch_metadata_root(group: str, artifact: str) -> Optional[ET.Element]:
                 ))
             return None
         root = ET.fromstring(response.text)
-        _metadata_cache[cache_key] = root
+        with _metadata_cache_lock:
+            _metadata_cache[cache_key] = root
         return root
-    except (ET.ParseError, AttributeError):
+    except Exception:  # pylint: disable=broad-exception-caught
         if is_debug_enabled(logger):
-            logger.debug("Maven metadata parse error", extra=extra_context(
+            logger.debug("Maven metadata fetch/parse error", extra=extra_context(
                 event="anomaly", component="discovery", action="fetch_metadata",
-                outcome="parse_error", package_manager="maven"
+                outcome="error", package_manager="maven"
             ))
         return None
 
@@ -154,7 +160,7 @@ def _artifact_exists(url: str) -> bool:
     Uses HEAD to avoid downloading artifact content.
     """
     try:
-        response = safe_head(url, context="maven")
+        response = safe_head(url, context="maven", fatal=False)
         return response.status_code == 200
     except Exception:  # pylint: disable=broad-exception-caught
         return False
@@ -228,7 +234,7 @@ def _fetch_pom(group: str, artifact: str, version: str) -> Optional[str]:
         ))
 
     try:
-        response = safe_get(pom_url, context="maven")
+        response = safe_get(pom_url, context="maven", fatal=False)
         if response.status_code == 200:
             if is_debug_enabled(logger):
                 logger.debug("POM fetch successful", extra=extra_context(

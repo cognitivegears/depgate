@@ -15,7 +15,7 @@ from registry.pypi.client import (
 from registry.maven.discovery import (
     _has_any_artifact_suffix,
     _collect_trust_signals,
-    _artifact_exists,
+    _fetch_metadata_root,
 )
 from metapackage import MetaPackage
 
@@ -324,6 +324,47 @@ class TestMavenArtifactExists:
         monkeypatch.setattr(disc, "safe_head", _fake_head)
         assert disc._artifact_exists("https://example.com/fake.pom.asc") is False
 
+    def test_passes_fatal_false_to_safe_head(self, monkeypatch):
+        """_artifact_exists passes fatal=False so SystemExit is not raised."""
+        import registry.maven.discovery as disc
+
+        captured = {}
+
+        class FakeResp:
+            status_code = 200
+
+        def _spy_head(url, *, context, fatal=True, **kwargs):
+            captured["fatal"] = fatal
+            return FakeResp()
+
+        monkeypatch.setattr(disc, "safe_head", _spy_head)
+        disc._artifact_exists("https://example.com/fake.pom")
+        assert captured["fatal"] is False
+
+
+class TestMavenFetchMetadataRoot:
+    def setup_method(self):
+        MetaPackage.instances.clear()
+        import registry.maven.discovery as disc
+        disc._metadata_cache.clear()
+
+    def test_returns_none_on_network_error(self, monkeypatch):
+        """_fetch_metadata_root returns None instead of crashing on network errors."""
+        import registry.maven.discovery as disc
+        import requests
+
+        def _fake_get(url, *, context, fatal=True, **kwargs):
+            raise requests.ConnectionError("test")
+
+        monkeypatch.setattr(disc, "safe_get", _fake_get)
+        assert _fetch_metadata_root("com.example", "lib") is None
+
+    def test_cache_uses_lock(self):
+        """_metadata_cache_lock exists and is a threading.Lock."""
+        import threading
+        import registry.maven.discovery as disc
+        assert isinstance(disc._metadata_cache_lock, type(threading.Lock()))
+
 
 class TestMavenHasAnyArtifactSuffix:
     def setup_method(self):
@@ -337,7 +378,6 @@ class TestMavenHasAnyArtifactSuffix:
         import registry.maven.discovery as disc
 
         call_count = 0
-        original = disc._artifact_exists
 
         def _counting_exists(url):
             nonlocal call_count

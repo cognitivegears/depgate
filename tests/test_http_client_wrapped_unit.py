@@ -6,7 +6,7 @@ import sys
 
 import requests
 
-from common.http_client import safe_get, safe_post, robust_get
+from common.http_client import safe_get, safe_head, safe_post, robust_get
 from common.http_errors import RateLimitExhausted, RetryBudgetExceeded
 
 
@@ -63,6 +63,70 @@ class TestSafeGet:
         safe_get("https://api.example.com/test", context="test")
 
         mock_exit.assert_called_once_with(2)  # ExitCodes.CONNECTION_ERROR.value
+
+
+class TestSafeGetNonFatal:
+    """Test safe_get with fatal=False re-raises instead of sys.exit."""
+
+    @patch('common.http_client.middleware_request')
+    def test_rate_limit_raises(self, mock_middleware):
+        mock_middleware.side_effect = RateLimitExhausted(
+            "api.example.com", "GET", "https://api.example.com/test",
+            3, "Rate limit exceeded", {}, 429
+        )
+        with pytest.raises(RateLimitExhausted):
+            safe_get("https://api.example.com/test", context="test", fatal=False)
+
+    @patch('common.http_client.middleware_request')
+    def test_timeout_raises(self, mock_middleware):
+        mock_middleware.side_effect = requests.Timeout("timed out")
+        with pytest.raises(requests.Timeout):
+            safe_get("https://api.example.com/test", context="test", fatal=False)
+
+    @patch('common.http_client.middleware_request')
+    def test_connection_error_raises(self, mock_middleware):
+        mock_middleware.side_effect = requests.ConnectionError("failed")
+        with pytest.raises(requests.ConnectionError):
+            safe_get("https://api.example.com/test", context="test", fatal=False)
+
+    @patch('common.http_client.middleware_request')
+    def test_success_unaffected(self, mock_middleware):
+        mock_response = Mock(status_code=200)
+        mock_middleware.return_value = mock_response
+        result = safe_get("https://api.example.com/test", context="test", fatal=False)
+        assert result == mock_response
+
+
+class TestSafeHeadNonFatal:
+    """Test safe_head with fatal=False re-raises instead of sys.exit."""
+
+    @patch('common.http_client.middleware_request')
+    def test_rate_limit_raises(self, mock_middleware):
+        mock_middleware.side_effect = RetryBudgetExceeded(
+            "api.example.com", "HEAD", "https://api.example.com/test",
+            2, 5.0, 10.0, "Budget exceeded"
+        )
+        with pytest.raises(RetryBudgetExceeded):
+            safe_head("https://api.example.com/test", context="test", fatal=False)
+
+    @patch('common.http_client.middleware_request')
+    def test_timeout_raises(self, mock_middleware):
+        mock_middleware.side_effect = requests.Timeout("timed out")
+        with pytest.raises(requests.Timeout):
+            safe_head("https://api.example.com/test", context="test", fatal=False)
+
+    @patch('common.http_client.middleware_request')
+    def test_connection_error_raises(self, mock_middleware):
+        mock_middleware.side_effect = requests.ConnectionError("failed")
+        with pytest.raises(requests.ConnectionError):
+            safe_head("https://api.example.com/test", context="test", fatal=False)
+
+    @patch('common.http_client.middleware_request')
+    def test_success_unaffected(self, mock_middleware):
+        mock_response = Mock(status_code=200)
+        mock_middleware.return_value = mock_response
+        result = safe_head("https://api.example.com/test", context="test", fatal=False)
+        assert result == mock_response
 
 
 class TestSafePost:

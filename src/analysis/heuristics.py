@@ -316,9 +316,7 @@ def run_min_analysis(pkgs):
     """
     logger = logging.getLogger(__name__)
     for x in pkgs:
-        final_score = getattr(x, "score", None)
         breakdown = {}
-        weights_used = {}
         test_exists(x)
 
         # Check OpenSourceMalware status for ALL packages (including non-existent ones)
@@ -481,8 +479,8 @@ def test_timestamp(x):
     """
     if x.timestamp is not None:
         dayspast = (time.time() * 1000 - x.timestamp) / 86400000
-        x.release_age_days = int(dayspast)
-        logging.info("%s.... package is %d days old.", STG, int(dayspast))
+        x.release_age_days = max(0, int(dayspast))
+        logging.info("%s.... package is %d days old.", STG, x.release_age_days)
         min_release_age = int(getattr(Constants, "HEURISTICS_MIN_RELEASE_AGE_DAYS", 2))
         if min_release_age > 0 and dayspast < min_release_age:
             logging.warning(

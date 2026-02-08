@@ -101,6 +101,18 @@ def _fetch_repository_signature_policy(service_index: Dict[str, Any]) -> Optiona
             v = payload.get("allRepositorySigned")
             if isinstance(v, bool):
                 return v
+    except SystemExit:
+        logger.debug(
+            "Repository signature policy fetch aborted (non-essential)",
+            extra=extra_context(
+                event="http_response",
+                outcome="aborted",
+                component="client",
+                action="fetch_repo_signature_policy",
+                package_manager="nuget",
+            ),
+        )
+        return None
     except Exception:
         return None
     return None

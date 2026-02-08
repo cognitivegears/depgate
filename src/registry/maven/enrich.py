@@ -246,6 +246,7 @@ def _enrich_with_repo(mp, group: str, artifact: str, version: Optional[str]) -> 
         mp.trust_score_delta = delta
         mp.trust_score_decreased = decreased
     except Exception:
+        # Defensive: never fail Maven enrichment due to trust-signal issues
         pass
 
     candidates, provenance = _build_candidates_and_provenance(
