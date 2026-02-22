@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import json
-import sys
 import time
 import logging
 from datetime import datetime as dt
 from urllib.parse import urlsplit, urlunsplit, quote
 from typing import Optional, Dict, Any, List
 
-from constants import ExitCodes, Constants
+from constants import Constants
 from common.logging_utils import extra_context, is_debug_enabled, Timer, safe_url
 
 import registry.npm as npm_pkg
@@ -21,6 +20,7 @@ logger = logging.getLogger(__name__)
 # Shared HTTP JSON headers and timestamp format for this module
 HEADERS_JSON = {"Accept": "application/json", "Content-Type": "application/json"}
 TIME_FORMAT_ISO = "%Y-%m-%dT%H:%M:%S.%fZ"
+NPMS_MGET_BATCH_SIZE = 250
 
 def _log_http_pre(url: str, method: str, encode_brackets: bool = False) -> None:
     """Debug-log outbound HTTP request for NPM client."""
@@ -178,67 +178,86 @@ def recv_pkg_info(
                 continue
             details_cache[pkg_name] = get_package_details(pkg, details_url)
 
-    # Pre-call DEBUG log via helper (encode brackets for log consistency)
-    _log_http_pre(url, "POST", encode_brackets=True)
+    # Build deduplicated package name list
+    unique_pkg_names: List[str] = []
+    seen_names = set()
+    for p in pkgs:
+        name = str(getattr(p, "pkg_name", ""))
+        if name in seen_names:
+            continue
+        seen_names.add(name)
+        unique_pkg_names.append(name)
 
-    with Timer() as timer:
+    # Fetch npms.io stats in batches (API limit: 250 packages per mget request)
+    pkg_map: Dict[str, Any] = {}
+    for batch_start in range(0, len(unique_pkg_names), NPMS_MGET_BATCH_SIZE):
+        chunk = unique_pkg_names[batch_start:batch_start + NPMS_MGET_BATCH_SIZE]
+        batch_num = batch_start // NPMS_MGET_BATCH_SIZE + 1
+        total_batches = (len(unique_pkg_names) + NPMS_MGET_BATCH_SIZE - 1) // NPMS_MGET_BATCH_SIZE
+
+        logger.info(
+            "mget batch %s/%s (%s packages)",
+            batch_num, total_batches, len(chunk),
+        )
+
+        # Pre-call DEBUG log via helper (encode brackets for log consistency)
+        _log_http_pre(url, "POST", encode_brackets=True)
+
         try:
-            unique_pkg_names: List[str] = []
-            seen_names = set()
-            for p in pkgs:
-                name = str(getattr(p, "pkg_name", ""))
-                if name in seen_names:
-                    continue
-                seen_names.add(name)
-                unique_pkg_names.append(name)
-            res = npm_pkg.safe_post(
-                url,
-                context="npm",
-                data=json.dumps(unique_pkg_names),
-                headers=HEADERS_JSON,
-            )
+            with Timer() as timer:
+                res = npm_pkg.safe_post(
+                    url,
+                    context="npm",
+                    data=json.dumps(chunk),
+                    headers=HEADERS_JSON,
+                )
         except SystemExit:
-            # safe_post calls sys.exit on errors, so we need to catch and re-raise as exception
-            logger.error(
-                "HTTP error",
-                exc_info=True,
+            logger.warning(
+                "mget batch %s/%s failed (network/timeout); continuing without npms stats for %s packages",
+                batch_num, total_batches, len(chunk),
                 extra=extra_context(
                     event="http_error",
-                    outcome="exception",
+                    outcome="mget_batch_skipped",
                     target=safe_url(url),
                     package_manager="npm",
                 ),
             )
-            raise
+            continue
 
-    if res.status_code == 200:
-        if is_debug_enabled(logger):
-            logger.debug(
-                "HTTP response ok",
+        if res.status_code == 200:
+            if is_debug_enabled(logger):
+                logger.debug(
+                    "HTTP response ok",
+                    extra=extra_context(
+                        event="http_response",
+                        outcome="success",
+                        status_code=res.status_code,
+                        duration_ms=timer.duration_ms(),
+                        package_manager="npm",
+                    ),
+                )
+            try:
+                batch_data = json.loads(res.text)
+                pkg_map.update(batch_data)
+            except json.JSONDecodeError:
+                logger.warning(
+                    "mget batch %s/%s returned invalid JSON; skipping",
+                    batch_num, total_batches,
+                )
+        else:
+            logger.warning(
+                "mget batch %s/%s returned HTTP %s; continuing without npms stats for %s packages",
+                batch_num, total_batches, res.status_code, len(chunk),
                 extra=extra_context(
                     event="http_response",
-                    outcome="success",
+                    outcome="handled_non_2xx",
                     status_code=res.status_code,
                     duration_ms=timer.duration_ms(),
+                    target=safe_url(url),
                     package_manager="npm",
                 ),
             )
-    else:
-        logger.warning(
-            "HTTP non-2xx handled",
-            extra=extra_context(
-                event="http_response",
-                outcome="handled_non_2xx",
-                status_code=res.status_code,
-                duration_ms=timer.duration_ms(),
-                target=safe_url(url),
-                package_manager="npm",
-            ),
-        )
-        logging.error("Unexpected status code (%s)", res.status_code)
-        sys.exit(ExitCodes.CONNECTION_ERROR.value)
 
-    pkg_map = json.loads(res.text)
     for i in pkgs:
         info = pkg_map.get(i.pkg_name)
         if info is not None:
