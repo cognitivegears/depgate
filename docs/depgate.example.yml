@@ -40,9 +40,24 @@ http:
          respect_reset_headers: true
          allow_non_idempotent_retry: false
       # Per-service overrides (keyed by hostname)
+      # GitHub and ReadTheDocs have built-in defaults (shown below); override here if needed.
       per_service:
          "api.github.com":
-            max_retries: 2
+            max_retries: 5
+            initial_backoff_sec: 2.0
+            multiplier: 2.5
+            max_backoff_sec: 120.0
+            total_retry_time_cap_sec: 600.0
+            respect_retry_after: true
+            respect_reset_headers: true
+            strategy: "exponential_jitter"
+         "readthedocs.org":
+            max_retries: 5
+            initial_backoff_sec: 2.0
+            multiplier: 2.0
+            max_backoff_sec: 30.0
+            total_retry_time_cap_sec: 120.0
+            respect_retry_after: true
             strategy: "exponential_jitter"
          "gitlab.com":
             max_retries: 2

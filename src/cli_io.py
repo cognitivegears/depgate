@@ -126,13 +126,8 @@ def export_csv(instances, path):
             _nv(getattr(x, "repo_contributors", None)),
             _nv(getattr(x, "repo_last_activity_at", None)),
         ]
-        # repo_present_in_registry with special-case blanking
-        _present = getattr(x, "repo_present_in_registry", None)
-        _norm_url = getattr(x, "repo_url_normalized", None)
-        if (_present is False) and (_norm_url is None):
-            row.append("")
-        else:
-            row.append(_nv(_present))
+        # repo_present_in_registry — always emit the actual value
+        row.append(_nv(getattr(x, "repo_present_in_registry", None)))
         # repo_version_match simplified to boolean 'matched' or blank
         _ver_match = getattr(x, "repo_version_match", None)
         if _ver_match is None:
@@ -173,14 +168,7 @@ def export_json(instances, path):
             "repo_stars": x.repo_stars,
             "repo_contributors": x.repo_contributors,
             "repo_last_activity": x.repo_last_activity_at,
-            "repo_present_in_registry": (
-                None
-                if (
-                    getattr(x, "repo_url_normalized", None) is None
-                    and x.repo_present_in_registry is False
-                )
-                else x.repo_present_in_registry
-            ),
+            "repo_present_in_registry": x.repo_present_in_registry,
             "repo_version_match": x.repo_version_match,
             "release_age_days": getattr(x, "release_age_days", None),
             "supply_chain_trust_score": getattr(x, "trust_score", None),

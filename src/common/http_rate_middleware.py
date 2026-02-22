@@ -290,11 +290,6 @@ def request(
                     policy.total_retry_time_cap_sec - total_wait_time,
                     "service cooldown would exceed total retry time cap"
                 )
-            if wait_needed > timeout:
-                raise RetryBudgetExceeded(
-                    hostname, method, url, attempt, wait_needed, timeout,
-                    "service cooldown exceeds request timeout"
-                )
 
             if is_debug_enabled(logger):
                 logger.debug(
@@ -378,12 +373,6 @@ def request(
                     hostname, method, url, attempt, wait_time,
                     policy.total_retry_time_cap_sec - total_wait_time,
                     "computed wait would exceed total retry time cap"
-                )
-
-            if wait_time > timeout:
-                raise RetryBudgetExceeded(
-                    hostname, method, url, attempt, wait_time, timeout,
-                    "computed wait exceeds request timeout"
                 )
 
             # Set service cooldown

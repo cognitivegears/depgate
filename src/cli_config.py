@@ -189,3 +189,40 @@ def apply_osm_overrides(args) -> None:
     except Exception:  # pylint: disable=broad-exception-caught
         # Defensive: never break CLI on config overrides
         pass
+
+
+def apply_github_overrides(args) -> None:
+    """Apply CLI overrides for GitHub token and rate limit behavior.
+
+    This mirrors the OSM override pattern and is intentionally
+    defensive: any exception is swallowed to avoid breaking the CLI.
+    """
+    try:
+        # Token resolution (priority: CLI arg > env var > YAML already loaded)
+        cli_token = getattr(args, "GITHUB_TOKEN", None)
+        if cli_token:
+            os.environ["GITHUB_TOKEN"] = cli_token
+
+        has_token = bool(os.environ.get("GITHUB_TOKEN"))
+
+        # Startup message
+        if has_token:
+            logger.info(
+                "GitHub token configured. Repository enrichment will use "
+                "authenticated API (5,000 requests/hour)."
+            )
+        else:
+            logger.info(
+                "GitHub token not configured. Repository enrichment will use "
+                "unauthenticated API (60 requests/hour). Set GITHUB_TOKEN "
+                "environment variable or use --github-token for higher limits."
+            )
+
+        # Behavior override from CLI arg
+        cli_rate = getattr(args, "GITHUB_ON_RATE_LIMIT", None)
+        if cli_rate and cli_rate.lower() in ("warn", "fail", "retry"):
+            Constants.GITHUB_ON_RATE_LIMIT = cli_rate.lower()  # type: ignore[attr-defined]
+
+    except Exception:  # pylint: disable=broad-exception-caught
+        # Defensive: never break CLI on config overrides
+        pass

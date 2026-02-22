@@ -131,29 +131,62 @@ def _fetch_simple_index_json(normalized_name: str) -> Optional[Dict[str, Any]]:
     return None
 
 
-def _extract_simple_trust(simple_json: Optional[Dict[str, Any]], version: str) -> tuple[Optional[bool], Optional[bool], Optional[str]]:
-    """Return (registry_signature_present, provenance_present, provenance_url)."""
+def _file_matches_version(filename: str, version: str) -> bool:
+    """Check if a distribution filename corresponds to the given version.
+
+    Matches version in standard PyPI filename patterns:
+      - wheels:  ``{name}-{version}-{tags}.whl``
+      - sdists:  ``{name}-{version}.tar.gz`` / ``.zip``
+    """
+    marker = f"-{version}"
+    # Strip common archive extensions to get the base name
+    base = filename
+    for ext in (".tar.gz", ".tar.bz2", ".tar.xz", ".zip", ".whl", ".egg"):
+        if base.endswith(ext):
+            base = base[: -len(ext)]
+            break
+    # After stripping the extension, the base should contain '-{version}'
+    # followed by end-of-string (sdist) or '-' (wheel build/platform tags).
+    idx = base.find(marker)
+    if idx < 0:
+        return False
+    after = base[idx + len(marker) :]
+    return after == "" or after.startswith("-")
+
+
+def _extract_simple_trust(
+    simple_json: Optional[Dict[str, Any]], version: str
+) -> tuple[Optional[bool], Optional[bool], Optional[str], Optional[bool]]:
+    """Return (provenance_present, provenance_url, checksums_present).
+
+    GPG signatures (``gpg-sig``) are no longer checked because PyPI
+    deprecated GPG signature uploads in May 2023 and the field is absent
+    from current Simple API responses.  ``registry_signature_present``
+    is left as *None* (not applicable) so it does not penalise packages.
+
+    Returns a 4-tuple for call-site compatibility; the first element is
+    always *None* (reserved for future registry-signature work).
+    """
     if not isinstance(simple_json, dict):
-        return None, None, None
+        return None, None, None, None
     files = simple_json.get("files", [])
     if not isinstance(files, list):
-        return None, None, None
+        return None, None, None, None
 
     version_files = []
     for file_entry in files:
         if not isinstance(file_entry, dict):
             continue
-        if str(file_entry.get("version", "")) == str(version):
+        fname = file_entry.get("filename", "")
+        if isinstance(fname, str) and _file_matches_version(fname, version):
             version_files.append(file_entry)
     if not version_files:
-        return None, None, None
+        return None, None, None, None
 
-    has_signature = False
     has_provenance = False
     provenance_url = None
+    has_checksums = False
     for entry in version_files:
-        if bool(entry.get("gpg-sig")):
-            has_signature = True
         prov = entry.get("provenance")
         if prov:
             has_provenance = True
@@ -163,7 +196,11 @@ def _extract_simple_trust(simple_json: Optional[Dict[str, Any]], version: str) -
                 url = prov.get("url")
                 if isinstance(url, str) and url.strip():
                     provenance_url = url.strip()
-    return has_signature, has_provenance, provenance_url
+        hashes = entry.get("hashes")
+        if isinstance(hashes, dict) and hashes:
+            has_checksums = True
+    # First element is None (registry_signature_present — not applicable for PyPI)
+    return None, has_provenance, provenance_url, has_checksums
 
 
 def _extract_legacy_json_signature(releases: Dict[str, Any], version: str) -> Optional[bool]:
@@ -303,28 +340,27 @@ def recv_pkg_info(pkgs, url: str = Constants.REGISTRY_URL_PYPI) -> None:
             x.weekly_downloads = _fetch_weekly_downloads(normalized)
 
             # Trust/provenance signals from Simple API (best effort)
+            # GPG signatures are deprecated on PyPI (May 2023) and the
+            # ``gpg-sig`` field is absent from current Simple API responses,
+            # so registry_signature_present is left as None (not applicable).
             simple_json = _fetch_simple_index_json(normalized)
-            cur_sig, cur_prov, cur_prov_url = _extract_simple_trust(simple_json, selected_version)
-            prev_sig = prev_prov = None
+            _cur_sig, cur_prov, cur_prov_url, cur_cksum = _extract_simple_trust(simple_json, selected_version)
+            _prev_sig = prev_prov = prev_cksum = None
             if previous_version:
-                prev_sig, prev_prov, _ = _extract_simple_trust(simple_json, previous_version)
+                _prev_sig, prev_prov, _, prev_cksum = _extract_simple_trust(simple_json, previous_version)
 
-            # Fallback signature source from Warehouse JSON `has_sig`
-            if cur_sig is None:
-                cur_sig = _extract_legacy_json_signature(releases, selected_version)
-            if previous_version and prev_sig is None:
-                prev_sig = _extract_legacy_json_signature(releases, previous_version)
-
-            x.registry_signature_present = cur_sig
-            x.previous_registry_signature_present = prev_sig
+            x.registry_signature_present = None   # GPG deprecated; not applicable
+            x.previous_registry_signature_present = None
             x.provenance_present = cur_prov
             x.previous_provenance_present = prev_prov
             x.provenance_url = cur_prov_url
             x.provenance_source = "pypi_simple_api"
-            x.registry_signature_regressed = regressed(cur_sig, prev_sig)
+            x.checksums_present = cur_cksum
+            x.previous_checksums_present = prev_cksum
+            x.registry_signature_regressed = None  # not applicable
             x.provenance_regressed = regressed(cur_prov, prev_prov)
-            x.trust_score = score_from_boolean_signals([cur_sig, cur_prov])
-            x.previous_trust_score = score_from_boolean_signals([prev_sig, prev_prov])
+            x.trust_score = score_from_boolean_signals([cur_prov])
+            x.previous_trust_score = score_from_boolean_signals([prev_prov])
             delta, decreased = score_delta(x.trust_score, x.previous_trust_score)
             x.trust_score_delta = delta
             x.trust_score_decreased = decreased

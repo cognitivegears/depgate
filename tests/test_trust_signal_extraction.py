@@ -9,6 +9,7 @@ from registry.npm.enrich import (
 from registry.pypi.client import (
     _extract_simple_trust,
     _extract_legacy_json_signature,
+    _file_matches_version,
     _release_timestamp_ms,
     _ordered_release_versions,
 )
@@ -183,57 +184,153 @@ class TestNpmSetTrustSignals:
 # ──────────────────────────── PyPI ────────────────────────────
 
 
+class TestPypiFileMatchesVersion:
+    def test_sdist_tar_gz(self):
+        assert _file_matches_version("requests-2.32.5.tar.gz", "2.32.5") is True
+
+    def test_sdist_zip(self):
+        assert _file_matches_version("requests-2.32.5.zip", "2.32.5") is True
+
+    def test_wheel(self):
+        assert _file_matches_version("requests-2.32.5-py3-none-any.whl", "2.32.5") is True
+
+    def test_wheel_with_build_tags(self):
+        assert _file_matches_version(
+            "cffi-2.0.0-cp312-cp312-manylinux1_x86_64.whl", "2.0.0"
+        ) is True
+
+    def test_wrong_version(self):
+        assert _file_matches_version("requests-2.32.5.tar.gz", "2.32.4") is False
+
+    def test_partial_version_no_match(self):
+        # Version "2.3" should not match "2.32.5"
+        assert _file_matches_version("requests-2.32.5.tar.gz", "2.3") is False
+
+    def test_hyphenated_package_name(self):
+        assert _file_matches_version("my-package-1.0.0.tar.gz", "1.0.0") is True
+
+    def test_underscore_package_name(self):
+        assert _file_matches_version("my_package-1.0.0.tar.gz", "1.0.0") is True
+
+    def test_tar_bz2(self):
+        assert _file_matches_version("pkg-0.1.0.tar.bz2", "0.1.0") is True
+
+    def test_prerelease_version(self):
+        assert _file_matches_version("pkg-1.0.0a1.tar.gz", "1.0.0a1") is True
+
+    def test_prerelease_wheel(self):
+        assert _file_matches_version(
+            "pkg-1.0.0rc1-py3-none-any.whl", "1.0.0rc1"
+        ) is True
+
+
 class TestPypiExtractSimpleTrust:
     def setup_method(self):
         MetaPackage.instances.clear()
-
-    def test_gpg_sig_present(self):
-        simple = {
-            "files": [
-                {"version": "1.0.0", "gpg-sig": True, "filename": "pkg-1.0.0.tar.gz"},
-            ]
-        }
-        sig, prov, prov_url = _extract_simple_trust(simple, "1.0.0")
-        assert sig is True
-        assert prov is False
 
     def test_provenance_present(self):
         simple = {
             "files": [
                 {
-                    "version": "1.0.0",
                     "provenance": "https://provenance.example.com",
                     "filename": "pkg-1.0.0.tar.gz",
+                    "hashes": {"sha256": "abc123"},
                 },
             ]
         }
-        sig, prov, prov_url = _extract_simple_trust(simple, "1.0.0")
+        sig, prov, prov_url, cksum = _extract_simple_trust(simple, "1.0.0")
+        assert sig is None  # GPG deprecated; always None
         assert prov is True
         assert prov_url == "https://provenance.example.com"
+        assert cksum is True
+
+    def test_provenance_dict_url(self):
+        simple = {
+            "files": [
+                {
+                    "provenance": {"url": "https://prov.example.com/att"},
+                    "filename": "pkg-1.0.0-py3-none-any.whl",
+                    "hashes": {"sha256": "abc"},
+                },
+            ]
+        }
+        sig, prov, prov_url, cksum = _extract_simple_trust(simple, "1.0.0")
+        assert prov is True
+        assert prov_url == "https://prov.example.com/att"
 
     def test_version_not_found(self):
         simple = {
             "files": [
-                {"version": "2.0.0", "gpg-sig": True, "filename": "pkg-2.0.0.tar.gz"},
+                {"filename": "pkg-2.0.0.tar.gz", "hashes": {"sha256": "abc"}},
             ]
         }
-        sig, prov, prov_url = _extract_simple_trust(simple, "1.0.0")
+        sig, prov, prov_url, cksum = _extract_simple_trust(simple, "1.0.0")
         assert sig is None
         assert prov is None
+        assert cksum is None
 
     def test_none_input(self):
-        sig, prov, prov_url = _extract_simple_trust(None, "1.0.0")
+        sig, prov, prov_url, cksum = _extract_simple_trust(None, "1.0.0")
         assert sig is None
+        assert prov is None
+        assert cksum is None
 
     def test_no_signals(self):
         simple = {
             "files": [
-                {"version": "1.0.0", "filename": "pkg-1.0.0.tar.gz"},
+                {"filename": "pkg-1.0.0.tar.gz", "hashes": {"sha256": "abc"}},
             ]
         }
-        sig, prov, prov_url = _extract_simple_trust(simple, "1.0.0")
-        assert sig is False
+        sig, prov, prov_url, cksum = _extract_simple_trust(simple, "1.0.0")
+        assert sig is None  # GPG deprecated; always None
         assert prov is False
+        assert cksum is True
+
+    def test_checksums_detected_from_hashes(self):
+        simple = {
+            "files": [
+                {"filename": "pkg-1.0.0.tar.gz", "hashes": {"sha256": "abc"}},
+                {"filename": "pkg-1.0.0-py3-none-any.whl", "hashes": {}},
+            ]
+        }
+        sig, prov, prov_url, cksum = _extract_simple_trust(simple, "1.0.0")
+        assert cksum is True  # at least one file has non-empty hashes
+
+    def test_no_checksums_when_hashes_empty(self):
+        simple = {
+            "files": [
+                {"filename": "pkg-1.0.0.tar.gz", "hashes": {}},
+            ]
+        }
+        sig, prov, prov_url, cksum = _extract_simple_trust(simple, "1.0.0")
+        assert cksum is False
+
+    def test_wheel_filename_matching(self):
+        simple = {
+            "files": [
+                {
+                    "filename": "mypackage-2.5.3-cp312-cp312-manylinux1_x86_64.whl",
+                    "hashes": {"sha256": "abc"},
+                },
+            ]
+        }
+        sig, prov, prov_url, cksum = _extract_simple_trust(simple, "2.5.3")
+        assert prov is False
+        assert cksum is True
+        # Should NOT match a different version
+        sig2, prov2, _, cksum2 = _extract_simple_trust(simple, "2.5.0")
+        assert prov2 is None
+        assert cksum2 is None
+
+    def test_sdist_filename_matching(self):
+        simple = {
+            "files": [
+                {"filename": "my-package-0.1.0.tar.gz", "hashes": {"sha256": "abc"}},
+            ]
+        }
+        sig, prov, prov_url, cksum = _extract_simple_trust(simple, "0.1.0")
+        assert prov is False
+        assert cksum is True
 
 
 class TestPypiLegacyJsonSignature:

@@ -5,12 +5,15 @@ information including metadata, tags, releases, and contributor counts.
 """
 from __future__ import annotations
 
+import logging
 import os
 from typing import List, Optional, Dict, Any
 from urllib.parse import urlparse, parse_qs
 
 from constants import Constants
 from common.http_client import get_json
+
+logger = logging.getLogger(__name__)
 
 
 class GitHubClient:
@@ -57,6 +60,16 @@ class GitHubClient:
                 'forks_count': data.get('forks_count'),
                 'open_issues_count': data.get('open_issues_count'),
             }
+        if status in (403, 429):
+            logger.warning(
+                "GitHub API rate limited (HTTP %s) for %s/%s. "
+                "Set GITHUB_TOKEN for higher limits.",
+                status, owner, repo
+            )
+        elif status != 0:  # 0 = already logged by robust_get
+            logger.warning(
+                "GitHub API returned HTTP %s for %s/%s", status, owner, repo
+            )
         return None
 
     def get_tags(self, owner: str, repo: str) -> List[Dict[str, Any]]:
@@ -114,7 +127,17 @@ class GitHubClient:
             # Fallback: count actual results (limited by API)
             if data:
                 return len(data)
-
+        elif status in (403, 429):
+            logger.warning(
+                "GitHub API rate limited (HTTP %s) for %s/%s contributors. "
+                "Set GITHUB_TOKEN for higher limits.",
+                status, owner, repo
+            )
+        elif status != 0:
+            logger.warning(
+                "GitHub API returned HTTP %s for %s/%s contributors",
+                status, owner, repo
+            )
         return None
 
     def get_open_prs_count(self, owner: str, repo: str) -> Optional[int]:
@@ -209,6 +232,16 @@ class GitHubClient:
                     return total
             if data is not None:
                 return len(data)
+        elif status in (403, 429):
+            logger.warning(
+                "GitHub API rate limited (HTTP %s) for %s. "
+                "Set GITHUB_TOKEN for higher limits.",
+                status, url
+            )
+        elif status != 0:
+            logger.warning(
+                "GitHub API returned HTTP %s for %s", status, url
+            )
         return None
 
     def _get_paginated_results(self, url: str) -> List[Dict[str, Any]]:
@@ -227,6 +260,17 @@ class GitHubClient:
             status, headers, data = get_json(current_url, headers=self._get_headers())
 
             if status != 200 or not data:
+                if status in (403, 429):
+                    logger.warning(
+                        "GitHub API rate limited (HTTP %s) during pagination for %s. "
+                        "Set GITHUB_TOKEN for higher limits.",
+                        status, url
+                    )
+                elif status != 0 and status != 200:
+                    logger.warning(
+                        "GitHub API returned HTTP %s during pagination for %s",
+                        status, url
+                    )
                 break
 
             results.extend(data)

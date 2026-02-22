@@ -123,6 +123,20 @@ def _is_cache_valid(cache_entry: Tuple[Any, float]) -> bool:
     return time.time() - cached_time < Constants.HTTP_CACHE_TTL_SEC
 
 
+def _get_on_rate_limit_behavior(service: str) -> str:
+    """Return the configured on-rate-limit behavior for a service.
+
+    Args:
+        service: Hostname of the service (e.g., 'api.github.com').
+
+    Returns:
+        One of 'warn', 'fail', or 'retry'.
+    """
+    if service == "api.github.com":
+        return getattr(Constants, "GITHUB_ON_RATE_LIMIT", "warn")
+    return "warn"
+
+
 def robust_get(
     url: str,
     *,
@@ -180,12 +194,24 @@ def robust_get(
 
         return response.status_code, dict(response.headers), response.text
 
-    except (RateLimitExhausted, RetryBudgetExceeded):
-        # Return failure tuple to preserve existing behavior
+    except (RateLimitExhausted, RetryBudgetExceeded) as exc:
+        service = getattr(exc, 'service', 'unknown')
+        logger.warning(
+            "Rate limit exhausted for %s: %s", service, exc
+        )
+        on_rate_limit = _get_on_rate_limit_behavior(service)
+        if on_rate_limit == "fail":
+            logger.error(
+                "Exiting due to rate limit (github.on_rate_limit=fail). "
+                "Set GITHUB_TOKEN or use --github-on-rate-limit=retry to retry with backoff."
+            )
+            sys.exit(ExitCodes.CONNECTION_ERROR.value)
         return 0, {}, "Rate limit exhausted"
     except requests.Timeout:
+        logger.warning("Request timed out for %s", safe_target)
         return 0, {}, "Request timed out"
     except requests.RequestException as exc:
+        logger.warning("Request failed for %s: %s", safe_target, exc)
         return 0, {}, f"Request failed: {exc}"
 
 
