@@ -163,3 +163,54 @@ class TestProviderValidationService:
         assert result is True
         assert mp.repo_exists is True
         assert mp.repo_version_match["matched"] is False
+
+    def test_tags_fallback_called_once_when_releases_unmatched(self):
+        """Test tags are fetched exactly once by validation fallback logic."""
+        mp = MetaPackage("testpackage")
+        ref = RepoRef("https://github.com/owner/repo", "github", "owner", "repo")
+
+        provider = MockProviderClient(
+            releases=[{"name": "v2.0.0", "tag_name": "v2.0.0"}],
+            tags=[{"name": "v1.2.3", "tag_name": "v1.2.3"}]
+        )
+        provider.get_releases = MagicMock(return_value=provider.releases)
+        provider.get_tags = MagicMock(return_value=provider.tags)
+
+        result = ProviderValidationService.validate_and_populate(mp, ref, "1.2.3", provider)
+
+        assert result is True
+        assert mp.repo_version_match["matched"] is True
+        provider.get_releases.assert_called_once_with("owner", "repo")
+        provider.get_tags.assert_called_once_with("owner", "repo")
+
+    def test_uses_provider_optimized_match_methods_when_available(self):
+        """Test provider-specific match methods are used when exposed."""
+        mp = MetaPackage("testpackage")
+        ref = RepoRef("https://github.com/owner/repo", "github", "owner", "repo")
+
+        provider = MockProviderClient()
+        provider.get_releases = MagicMock(return_value=[{"name": "v9.9.9", "tag_name": "v9.9.9"}])
+        provider.get_tags = MagicMock(return_value=[{"name": "v8.8.8", "tag_name": "v8.8.8"}])
+        provider.find_release_match = MagicMock(return_value={
+            "matched": False,
+            "match_type": None,
+            "artifact": None,
+            "tag_or_release": None,
+        })
+        provider.find_tag_match = MagicMock(return_value={
+            "matched": True,
+            "match_type": "exact",
+            "artifact": {"name": "v1.2.3", "tag_name": "v1.2.3"},
+            "tag_or_release": "1.2.3",
+        })
+
+        result = ProviderValidationService.validate_and_populate(mp, ref, "1.2.3", provider)
+
+        assert result is True
+        assert mp.repo_exists is True
+        assert mp.repo_version_match["matched"] is True
+        assert mp.repo_version_match["tag_or_release"] == "1.2.3"
+        provider.find_release_match.assert_called_once()
+        provider.find_tag_match.assert_called_once()
+        provider.get_releases.assert_not_called()
+        provider.get_tags.assert_not_called()

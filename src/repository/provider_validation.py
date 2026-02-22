@@ -137,9 +137,19 @@ class ProviderValidationService:  # pylint: disable=too-few-public-methods
             m = matcher or VersionMatcher()
             empty_version = (version or "") == ""
 
-            # Releases first
-            rel_artifacts = _to_artifacts_list(_safe_get_releases(provider, ref.owner, ref.repo))
-            release_result = _match_version(m, version, rel_artifacts) if rel_artifacts else None
+            # Releases first (use provider-optimized lookup when available)
+            release_result = None
+            find_release_match = getattr(provider, "find_release_match", None)
+            if callable(find_release_match):
+                optimized_release = find_release_match(ref.owner, ref.repo, version, m)
+                if isinstance(optimized_release, dict) and "matched" in optimized_release:
+                    release_result = optimized_release
+                else:
+                    rel_artifacts = _to_artifacts_list(_safe_get_releases(provider, ref.owner, ref.repo))
+                    release_result = _match_version(m, version, rel_artifacts) if rel_artifacts else None
+            else:
+                rel_artifacts = _to_artifacts_list(_safe_get_releases(provider, ref.owner, ref.repo))
+                release_result = _match_version(m, version, rel_artifacts) if rel_artifacts else None
 
             # Tags fallback only when version is not empty and releases didn't match
             tag_result = None
@@ -151,8 +161,17 @@ class ProviderValidationService:  # pylint: disable=too-few-public-methods
                     and release_result.get('matched', False)
                 )
             ):
-                tag_artifacts = _to_artifacts_list(_safe_get_tags(provider, ref.owner, ref.repo))
-                tag_result = _match_version(m, version, tag_artifacts) if tag_artifacts else None
+                find_tag_match = getattr(provider, "find_tag_match", None)
+                if callable(find_tag_match):
+                    optimized_tag = find_tag_match(ref.owner, ref.repo, version, m)
+                    if isinstance(optimized_tag, dict) and "matched" in optimized_tag:
+                        tag_result = optimized_tag
+                    else:
+                        tag_artifacts = _to_artifacts_list(_safe_get_tags(provider, ref.owner, ref.repo))
+                        tag_result = _match_version(m, version, tag_artifacts) if tag_artifacts else None
+                else:
+                    tag_artifacts = _to_artifacts_list(_safe_get_tags(provider, ref.owner, ref.repo))
+                    tag_result = _match_version(m, version, tag_artifacts) if tag_artifacts else None
 
             # Record match sources for downstream (non-breaking diagnostics)
             try:

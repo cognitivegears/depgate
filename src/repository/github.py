@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 import os
 from typing import List, Optional, Dict, Any
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, quote
 
 from constants import Constants
 from common.http_client import get_json
@@ -98,6 +98,94 @@ class GitHubClient:
         """
         return self._get_paginated_results(
             f"{self.base_url}/repos/{owner}/{repo}/releases"
+        )
+
+    def get_release_by_tag(self, owner: str, repo: str, tag: str) -> Optional[Dict[str, Any]]:
+        """Fetch a single release by exact tag name."""
+        if not tag:
+            return None
+        tag_enc = quote(tag, safe='')
+        url = f"{self.base_url}/repos/{owner}/{repo}/releases/tags/{tag_enc}"
+        status, _, data = get_json(url, headers=self._get_headers())
+        if status == 200 and isinstance(data, dict):
+            return data
+        if status in (403, 429):
+            logger.warning(
+                "GitHub API rate limited (HTTP %s) for %s/%s release tag %s. "
+                "Set GITHUB_TOKEN for higher limits.",
+                status, owner, repo, tag
+            )
+        elif status not in (0, 404):
+            logger.warning(
+                "GitHub API returned HTTP %s for %s/%s release tag %s",
+                status, owner, repo, tag
+            )
+        return None
+
+    def get_tag_by_ref(self, owner: str, repo: str, tag: str) -> Optional[Dict[str, Any]]:
+        """Fetch a single tag reference by exact tag name."""
+        if not tag:
+            return None
+        tag_enc = quote(tag, safe='')
+        url = f"{self.base_url}/repos/{owner}/{repo}/git/ref/tags/{tag_enc}"
+        status, _, data = get_json(url, headers=self._get_headers())
+        if status == 200 and isinstance(data, dict):
+            return {
+                "name": tag,
+                "ref": data.get("ref"),
+                "object": data.get("object"),
+            }
+        if status in (403, 429):
+            logger.warning(
+                "GitHub API rate limited (HTTP %s) for %s/%s tag ref %s. "
+                "Set GITHUB_TOKEN for higher limits.",
+                status, owner, repo, tag
+            )
+        elif status not in (0, 404):
+            logger.warning(
+                "GitHub API returned HTTP %s for %s/%s tag ref %s",
+                status, owner, repo, tag
+            )
+        return None
+
+    def find_release_match(
+        self, owner: str, repo: str, version: str, matcher: Any
+    ) -> Optional[Dict[str, Any]]:
+        """Find release match using exact lookups before paginated fallback."""
+        if not version:
+            return None
+
+        for candidate in self._candidate_tag_labels(version):
+            release = self.get_release_by_tag(owner, repo, candidate)
+            if release:
+                result = matcher.find_match(version, [release])
+                if result and isinstance(result, dict) and result.get("matched", False):
+                    return result
+
+        return self._find_first_match_in_paginated(
+            f"{self.base_url}/repos/{owner}/{repo}/releases",
+            version,
+            matcher,
+        )
+
+    def find_tag_match(
+        self, owner: str, repo: str, version: str, matcher: Any
+    ) -> Optional[Dict[str, Any]]:
+        """Find tag match using exact lookups before paginated fallback."""
+        if not version:
+            return None
+
+        for candidate in self._candidate_tag_labels(version):
+            tag_ref = self.get_tag_by_ref(owner, repo, candidate)
+            if tag_ref:
+                result = matcher.find_match(version, [tag_ref])
+                if result and isinstance(result, dict) and result.get("matched", False):
+                    return result
+
+        return self._find_first_match_in_paginated(
+            f"{self.base_url}/repos/{owner}/{repo}/tags",
+            version,
+            matcher,
         )
 
     def get_contributors_count(self, owner: str, repo: str) -> Optional[int]:
@@ -300,6 +388,63 @@ class GitHubClient:
             current_url = self._get_next_page_url(link_header)
 
         return results
+
+    def _find_first_match_in_paginated(
+        self, url: str, version: str, matcher: Any
+    ) -> Optional[Dict[str, Any]]:
+        """Scan paginated endpoint page-by-page and stop at first match."""
+        current_url = f"{url}?per_page={Constants.REPO_API_PER_PAGE}"
+
+        while current_url:
+            status, headers, data = get_json(current_url, headers=self._get_headers())
+
+            if status != 200 or not data:
+                if status in (403, 429):
+                    logger.warning(
+                        "GitHub API rate limited (HTTP %s) during pagination for %s. "
+                        "Set GITHUB_TOKEN for higher limits.",
+                        status, url
+                    )
+                elif status != 0 and status != 200:
+                    logger.warning(
+                        "GitHub API returned HTTP %s during pagination for %s",
+                        status, url
+                    )
+                break
+
+            if isinstance(data, list):
+                result = matcher.find_match(version, data)
+                if result and isinstance(result, dict) and result.get("matched", False):
+                    return result
+
+            link_header = headers.get('link', '')
+            current_url = self._get_next_page_url(link_header)
+
+        return None
+
+    def _candidate_tag_labels(self, version: str) -> List[str]:
+        """Build exact tag-label candidates for direct endpoint lookups."""
+        labels: List[str] = []
+        seen = set()
+
+        def _add(candidate: str) -> None:
+            c = str(candidate or "").strip()
+            if not c or c in seen:
+                return
+            seen.add(c)
+            labels.append(c)
+
+        v = str(version or "").strip()
+        if not v:
+            return labels
+
+        _add(v)
+        if v.startswith("v"):
+            _add(v[1:])
+        else:
+            _add(f"v{v}")
+
+        return labels
 
     def _get_next_page_url(self, link_header: str) -> Optional[str]:
         """Extract next page URL from Link header.

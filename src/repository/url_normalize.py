@@ -9,6 +9,7 @@ from __future__ import annotations
 import re
 from typing import Optional
 from dataclasses import dataclass
+from urllib.parse import urlparse
 
 
 @dataclass
@@ -71,10 +72,9 @@ def normalize_repo_url(url: Optional[str], directory: Optional[str] = None) -> O
         return _create_repo_ref(host, owner, repo, directory)
 
     # Handle HTTPS/HTTP URLs
-    https_pattern = r'^https?://([^/]+)/(.+)/([^/]+?)(\.git)?/?$'
-    match = re.match(https_pattern, url)
-    if match:
-        host, owner, repo, _ = match.groups()
+    parsed = _parse_http_repo_url(url)
+    if parsed:
+        host, owner, repo = parsed
         return _create_repo_ref(host, owner, repo, directory)
 
     # Handle git:// protocol
@@ -101,6 +101,10 @@ def _create_repo_ref(host: str, owner: str, repo: str, directory: Optional[str])
     """
     # Normalize host to lowercase
     host = host.lower()
+    owner = owner.strip("/")
+    repo = repo.strip("/")
+    if repo.endswith(".git"):
+        repo = repo[:-4]
 
     # Detect host type
     if 'github.com' in host:
@@ -120,3 +124,41 @@ def _create_repo_ref(host: str, owner: str, repo: str, directory: Optional[str])
         repo=repo,
         directory=directory
     )
+
+
+def _parse_http_repo_url(url: str) -> Optional[tuple[str, str, str]]:
+    """Parse HTTP(S) repository URLs, trimming known non-repo path suffixes."""
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        return None
+
+    host = parsed.netloc.lower()
+    segments = [seg for seg in (parsed.path or "").split("/") if seg]
+    if len(segments) < 2:
+        return None
+
+    # GitHub repositories are always /owner/repo; ignore any trailing resource paths.
+    if "github.com" in host:
+        return host, segments[0], segments[1]
+
+    # GitLab can have nested groups: /group/subgroup/repo
+    if "gitlab.com" in host:
+        marker_index = _find_marker_index(segments, {
+            "-", "blob", "tree", "issues", "merge_requests", "wikis",
+            "commits", "tags", "releases",
+        })
+        project_segments = segments[:marker_index] if marker_index is not None else segments
+        if len(project_segments) < 2:
+            return None
+        return host, "/".join(project_segments[:-1]), project_segments[-1]
+
+    # Generic host fallback: treat final path segment as repo.
+    return host, "/".join(segments[:-1]), segments[-1]
+
+
+def _find_marker_index(segments: list[str], markers: set[str]) -> Optional[int]:
+    """Return first index containing a marker segment, if any."""
+    for idx, segment in enumerate(segments):
+        if segment in markers:
+            return idx
+    return None

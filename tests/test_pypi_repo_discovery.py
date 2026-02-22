@@ -2,6 +2,7 @@
 import pytest
 from unittest.mock import patch, MagicMock
 
+from constants import Constants
 from metapackage import MetaPackage
 from registry.pypi import _extract_repo_candidates, _maybe_resolve_via_rtd, _enrich_with_repo
 
@@ -322,10 +323,69 @@ class TestEnrichWithRepo:
             'home_page': 'https://example.com'
         }
 
-        _enrich_with_repo(mp, 'testpackage', info, '1.0.0')
+        old_mode = Constants.GITHUB_ON_RATE_LIMIT
+        try:
+            Constants.GITHUB_ON_RATE_LIMIT = "warn"  # type: ignore[attr-defined]
+            _enrich_with_repo(mp, 'testpackage', info, '1.0.0')
+        finally:
+            Constants.GITHUB_ON_RATE_LIMIT = old_mode  # type: ignore[attr-defined]
 
         assert mp.repo_resolved is False
         assert mp.repo_exists is None
         assert isinstance(mp.repo_errors, list)
         assert any(err.get('error_type') == 'rate_limit_skip' for err in mp.repo_errors)
         mock_github_client.assert_not_called()
+
+    @patch('registry.pypi.enrich.get_service_cooldown_remaining')
+    @patch('registry.pypi.normalize_repo_url')
+    @patch('registry.pypi.GitHubClient')
+    def test_retry_mode_does_not_skip_on_long_cooldown(
+        self, mock_github_client, mock_normalize, mock_cooldown
+    ):
+        """In retry mode, long cooldown should not trigger package-level skip."""
+        mock_cooldown.return_value = 120.0
+        mock_repo_ref = MagicMock()
+        mock_repo_ref.normalized_url = 'https://github.com/owner/repo'
+        mock_repo_ref.host = 'github'
+        mock_repo_ref.owner = 'owner'
+        mock_repo_ref.repo = 'repo'
+        mock_normalize.return_value = mock_repo_ref
+
+        mock_client = MagicMock()
+        mock_client.get_repo.return_value = {
+            'stargazers_count': 100,
+            'pushed_at': '2023-01-01T00:00:00Z'
+        }
+        mock_client.get_contributors_count.return_value = 10
+        mock_client.get_releases.return_value = [
+            {'name': 'v1.0.0', 'tag_name': 'v1.0.0'}
+        ]
+        mock_github_client.return_value = mock_client
+
+        with patch('registry.pypi.VersionMatcher') as mock_matcher_class:
+            mock_matcher = MagicMock()
+            mock_matcher.find_match.return_value = {
+                'matched': True,
+                'match_type': 'exact',
+                'artifact': {'name': 'v1.0.0', 'tag_name': 'v1.0.0'},
+                'tag_or_release': '1.0.0'
+            }
+            mock_matcher_class.return_value = mock_matcher
+
+            mp = MetaPackage('testpackage')
+            info = {
+                'project_urls': {'Repository': 'https://github.com/owner/repo'},
+                'home_page': 'https://example.com'
+            }
+
+            old_mode = Constants.GITHUB_ON_RATE_LIMIT
+            try:
+                Constants.GITHUB_ON_RATE_LIMIT = "retry"  # type: ignore[attr-defined]
+                _enrich_with_repo(mp, 'testpackage', info, '1.0.0')
+            finally:
+                Constants.GITHUB_ON_RATE_LIMIT = old_mode  # type: ignore[attr-defined]
+
+        assert mp.repo_resolved is True
+        assert mp.repo_exists is True
+        assert getattr(mp, "repo_errors", None) in (None, [])
+        mock_github_client.assert_called_once()

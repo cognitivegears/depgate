@@ -71,6 +71,18 @@ class TestGitHubProviderAdapterNewMetrics:
         assert result == '2023-11-20T10:00:00Z'
         mock_client.get_last_closed_issue.assert_called_once_with('owner', 'repo')
 
+    def test_get_releases_does_not_fallback_to_tags(self):
+        """Test get_releases returns releases only and does not call tags."""
+        mock_client = Mock()
+        mock_client.get_releases.return_value = []
+
+        adapter = GitHubProviderAdapter(client=mock_client)
+        result = adapter.get_releases('owner', 'repo')
+
+        assert result == []
+        mock_client.get_releases.assert_called_once_with('owner', 'repo')
+        mock_client.get_tags.assert_not_called()
+
 
 class TestGitLabProviderAdapterNewMetrics:
     """Test GitLabProviderAdapter with new methods."""
@@ -139,3 +151,14 @@ class TestGitLabProviderAdapterNewMetrics:
         assert result == '2023-11-20T10:00:00Z'
         mock_client.get_last_closed_issue.assert_called_once_with('owner', 'repo')
 
+    def test_get_releases_does_not_fallback_to_tags(self):
+        """Test get_releases returns releases only and does not call tags."""
+        mock_client = Mock()
+        mock_client.get_releases.return_value = []
+
+        adapter = GitLabProviderAdapter(client=mock_client)
+        result = adapter.get_releases('owner', 'repo')
+
+        assert result == []
+        mock_client.get_releases.assert_called_once_with('owner', 'repo')
+        mock_client.get_tags.assert_not_called()

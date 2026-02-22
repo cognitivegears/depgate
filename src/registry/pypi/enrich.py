@@ -285,7 +285,8 @@ def _enrich_with_repo(mp, _name: str, info: Dict[str, Any], version: str) -> Non
         if "github" in (normalized.host or "").lower():
             remaining = get_service_cooldown_remaining("api.github.com")
             max_wait = float(getattr(Constants, "GITHUB_ENRICHMENT_MAX_WAIT_SEC", 10.0))
-            if remaining > max_wait:
+            on_rate_limit = str(getattr(Constants, "GITHUB_ON_RATE_LIMIT", "warn")).lower()
+            if remaining > max_wait and on_rate_limit != "retry":
                 logger.warning(
                     "Skipping GitHub enrichment for %s due to cooldown (%.1fs > %.1fs).",
                     getattr(mp, "pkg_name", ""),

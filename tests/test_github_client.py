@@ -5,6 +5,7 @@ import pytest
 from unittest.mock import patch, Mock
 
 from repository.github import GitHubClient
+from repository.version_match import VersionMatcher
 
 
 class TestGitHubClient:
@@ -209,3 +210,90 @@ class TestGitHubClient:
             client._get_last_page_url(link_header)
             == 'https://api.github.com/repos/owner/repo/contributors?page=9'
         )
+
+    @patch('repository.github.get_json')
+    def test_get_release_by_tag_success(self, mock_get_json):
+        """Test fetching a release by exact tag name."""
+        mock_get_json.return_value = (
+            200,
+            {},
+            {"tag_name": "v1.2.3", "name": "v1.2.3"},
+        )
+        client = GitHubClient()
+        result = client.get_release_by_tag("owner", "repo", "v1.2.3")
+        assert result is not None
+        assert result["tag_name"] == "v1.2.3"
+
+    @patch('repository.github.get_json')
+    def test_get_tag_by_ref_success(self, mock_get_json):
+        """Test fetching a tag reference by exact tag name."""
+        mock_get_json.return_value = (
+            200,
+            {},
+            {"ref": "refs/tags/v1.2.3", "object": {"sha": "abc123"}},
+        )
+        client = GitHubClient()
+        result = client.get_tag_by_ref("owner", "repo", "v1.2.3")
+        assert result is not None
+        assert result["name"] == "v1.2.3"
+        assert result["ref"] == "refs/tags/v1.2.3"
+
+    @patch('repository.github.get_json')
+    def test_find_release_match_uses_exact_endpoint_first(self, mock_get_json):
+        """Test release match lookup tries exact endpoints before pagination."""
+        mock_get_json.side_effect = [
+            (404, {}, None),  # release by tag: 1.2.3
+            (200, {}, {"tag_name": "v1.2.3", "name": "v1.2.3"}),  # release by tag: v1.2.3
+        ]
+
+        client = GitHubClient()
+        matcher = VersionMatcher()
+        result = client.find_release_match("owner", "repo", "1.2.3", matcher)
+
+        assert result is not None
+        assert result["matched"] is True
+        assert mock_get_json.call_count == 2
+
+    @patch('repository.github.get_json')
+    def test_find_release_match_pagination_stops_after_first_page_match(self, mock_get_json):
+        """Test paginated fallback stops once a match is found on a page."""
+        mock_get_json.side_effect = [
+            (404, {}, None),  # release by tag: 1.2.3
+            (404, {}, None),  # release by tag: v1.2.3
+            (
+                200,
+                {'link': '<https://api.github.com/repos/owner/repo/releases?page=2>; rel="next"'},
+                [{"tag_name": "v9.9.9", "name": "v9.9.9"}],
+            ),
+            (
+                200,
+                {'link': '<https://api.github.com/repos/owner/repo/releases?page=3>; rel="next"'},
+                [{"tag_name": "v1.2.3", "name": "v1.2.3"}],
+            ),
+            # This page must not be fetched if early-stop works:
+            (200, {}, [{"tag_name": "v0.0.1", "name": "v0.0.1"}]),
+        ]
+
+        client = GitHubClient()
+        matcher = VersionMatcher()
+        result = client.find_release_match("owner", "repo", "1.2.3", matcher)
+
+        assert result is not None
+        assert result["matched"] is True
+        assert mock_get_json.call_count == 4
+
+    @patch('repository.github.get_json')
+    def test_find_tag_match_uses_exact_endpoint_first(self, mock_get_json):
+        """Test tag match lookup tries exact endpoints before pagination."""
+        mock_get_json.side_effect = [
+            (404, {}, None),  # tag ref: 1.2.3
+            (200, {}, {"ref": "refs/tags/v1.2.3", "object": {"sha": "abc123"}}),  # tag ref: v1.2.3
+        ]
+
+        client = GitHubClient()
+        matcher = VersionMatcher()
+        result = client.find_tag_match("owner", "repo", "1.2.3", matcher)
+
+        assert result is not None
+        assert result["matched"] is True
+        assert mock_get_json.call_count == 2
