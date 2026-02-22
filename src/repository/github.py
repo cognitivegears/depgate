@@ -163,7 +163,8 @@ class GitHubClient:
         return None
 
     def find_release_match(
-        self, owner: str, repo: str, version: str, matcher: Any
+        self, owner: str, repo: str, version: str, matcher: Any,
+        skip_paginated_fallback: Optional[bool] = None,
     ) -> Optional[Dict[str, Any]]:
         """Find release match using exact lookups before paginated fallback."""
         if not version:
@@ -181,13 +182,15 @@ class GitHubClient:
                 if result and isinstance(result, dict) and result.get("matched", False):
                     return result
 
-        result = self._find_first_match_in_paginated(
-            f"{self.base_url}/repos/{owner}/{repo}/releases",
-            version,
-            matcher,
-        )
-        if isinstance(result, dict):
-            return result
+        _skip = self._resolve_skip_paginated(skip_paginated_fallback)
+        if not _skip:
+            result = self._find_first_match_in_paginated(
+                f"{self.base_url}/repos/{owner}/{repo}/releases",
+                version,
+                matcher,
+            )
+            if isinstance(result, dict):
+                return result
         return {
             "matched": False,
             "match_type": None,
@@ -196,7 +199,8 @@ class GitHubClient:
         }
 
     def find_tag_match(
-        self, owner: str, repo: str, version: str, matcher: Any
+        self, owner: str, repo: str, version: str, matcher: Any,
+        skip_paginated_fallback: Optional[bool] = None,
     ) -> Optional[Dict[str, Any]]:
         """Find tag match using exact lookups before paginated fallback."""
         if not version:
@@ -209,13 +213,15 @@ class GitHubClient:
                 if result and isinstance(result, dict) and result.get("matched", False):
                     return result
 
-        result = self._find_first_match_in_paginated(
-            f"{self.base_url}/repos/{owner}/{repo}/tags",
-            version,
-            matcher,
-        )
-        if isinstance(result, dict):
-            return result
+        _skip = self._resolve_skip_paginated(skip_paginated_fallback)
+        if not _skip:
+            result = self._find_first_match_in_paginated(
+                f"{self.base_url}/repos/{owner}/{repo}/tags",
+                version,
+                matcher,
+            )
+            if isinstance(result, dict):
+                return result
         return {
             "matched": False,
             "match_type": None,
@@ -436,6 +442,16 @@ class GitHubClient:
             current_url = self._get_next_page_url(link_header)
 
         return None
+
+    def _resolve_skip_paginated(self, override: Optional[bool]) -> bool:
+        """Resolve skip_paginated_fallback: explicit > config > auto (skip when no token)."""
+        if override is not None:
+            return override
+        configured = getattr(Constants, 'GITHUB_SKIP_PAGINATED_FALLBACK', None)
+        if configured is not None:
+            return configured
+        # Auto: skip when unauthenticated (60 req/hr budget is too tight)
+        return not bool(self.token)
 
     def _candidate_tag_labels(self, version: str) -> List[str]:
         """Build exact tag-label candidates for direct endpoint lookups."""

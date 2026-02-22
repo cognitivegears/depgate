@@ -224,8 +224,6 @@ def recv_pkg_info(pkgs, url: str = Constants.REGISTRY_URL_PYPI) -> None:
     weekly_cache: Dict[str, Optional[int]] = {}
     simple_cache: Dict[str, Optional[Dict[str, Any]]] = {}
     for x in pkgs:
-        # Sleep to avoid rate limiting
-        time.sleep(0.1)
         name = getattr(x, "pkg_name", "")
         sanitized = _sanitize_identifier(str(name)).strip()
         normalized = canonicalize_name(sanitized)

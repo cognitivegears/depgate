@@ -1,7 +1,7 @@
 """Unit tests for HTTP client functions with middleware integration."""
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import ANY, Mock, patch, MagicMock
 import sys
 
 import requests
@@ -27,6 +27,7 @@ class TestSafeGet:
             "https://api.example.com/test",
             timeout=30,  # Constants.REQUEST_TIMEOUT
             context="test",
+            session=ANY,
             extra_log_fields={"component": "http_client", "action": "GET"}
         )
         assert result == mock_response
@@ -189,6 +190,7 @@ class TestRobustGet:
             headers=None,
             timeout=30,
             context="robust_get",
+            session=ANY,
             extra_log_fields={"component": "http_client", "action": "GET"}
         )
 
@@ -211,6 +213,7 @@ class TestRobustGet:
             headers=custom_headers,
             timeout=30,
             context="robust_get",
+            session=ANY,
             extra_log_fields={"component": "http_client", "action": "GET"}
         )
 
@@ -318,6 +321,7 @@ class TestMiddlewareIntegration:
             "https://api.example.com/test",
             timeout=30,
             context="test_context",
+            session=ANY,
             extra_log_fields={"component": "http_client", "action": "GET"},
             headers={'User-Agent': 'test'},
             params={'q': 'test'}

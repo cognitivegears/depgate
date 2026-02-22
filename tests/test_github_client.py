@@ -273,7 +273,7 @@ class TestGitHubClient:
 
         client = GitHubClient()
         matcher = VersionMatcher()
-        result = client.find_release_match("owner", "repo", "1.2.3", matcher)
+        result = client.find_release_match("owner", "repo", "1.2.3", matcher, skip_paginated_fallback=False)
 
         assert result is not None
         assert result["matched"] is True

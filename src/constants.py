@@ -95,6 +95,8 @@ class Constants:  # pylint: disable=too-few-public-methods
     # Skip per-package repository enrichment when global GitHub cooldown is too high.
     GITHUB_ENRICHMENT_MAX_WAIT_SEC = 10.0
     GITHUB_ON_RATE_LIMIT = "warn"  # "warn", "fail", "retry"
+    GITHUB_PROACTIVE_THROTTLE_MAX_DELAY_SEC = 0.05
+    GITHUB_SKIP_PAGINATED_FALLBACK: Optional[bool] = None  # None = auto (True without token, False with token)
     HTTP_RETRY_MAX = 3
     HTTP_RETRY_BASE_DELAY_SEC = 0.3
     HTTP_CACHE_TTL_SEC = 300
@@ -571,6 +573,20 @@ def _apply_config_overrides(cfg: Dict[str, Any]) -> None:  # pylint: disable=too
     gh_rate = github_cfg.get("on_rate_limit")
     if isinstance(gh_rate, str) and gh_rate.lower() in ("warn", "fail", "retry"):
         Constants.GITHUB_ON_RATE_LIMIT = gh_rate.lower()  # type: ignore[attr-defined]
+    try:
+        val = github_cfg.get("proactive_throttle_max_delay_sec")
+        if val is not None:
+            Constants.GITHUB_PROACTIVE_THROTTLE_MAX_DELAY_SEC = float(val)  # type: ignore[attr-defined]
+    except Exception:  # pylint: disable=broad-exception-caught
+        pass
+    try:
+        val = github_cfg.get("skip_paginated_fallback")
+        if val is not None:
+            parsed = _parse_bool_env(str(val)) if isinstance(val, str) else bool(val)
+            if parsed is not None:
+                Constants.GITHUB_SKIP_PAGINATED_FALLBACK = parsed  # type: ignore[attr-defined]
+    except Exception:  # pylint: disable=broad-exception-caught
+        pass
 
     # Dependency scanning options
     scan_opts = cfg.get("scan", {}) or {}
@@ -642,6 +658,19 @@ def _apply_env_overrides() -> None:
     gh_rate = os.environ.get("DEPGATE_GITHUB_ON_RATE_LIMIT")
     if gh_rate and gh_rate.lower() in ("warn", "fail", "retry"):
         Constants.GITHUB_ON_RATE_LIMIT = gh_rate.lower()  # type: ignore[attr-defined]
+
+    gh_throttle = os.environ.get("DEPGATE_GITHUB_PROACTIVE_THROTTLE_MAX_DELAY_SEC")
+    if gh_throttle:
+        try:
+            Constants.GITHUB_PROACTIVE_THROTTLE_MAX_DELAY_SEC = float(gh_throttle)  # type: ignore[attr-defined]
+        except Exception:  # pylint: disable=broad-exception-caught
+            pass
+
+    gh_skip_pag = os.environ.get("DEPGATE_GITHUB_SKIP_PAGINATED_FALLBACK")
+    if gh_skip_pag is not None:
+        parsed = _parse_bool_env(gh_skip_pag)
+        if parsed is not None:
+            Constants.GITHUB_SKIP_PAGINATED_FALLBACK = parsed  # type: ignore[attr-defined]
 
     # OpenSourceMalware environment overrides
     osm_enabled = os.environ.get("DEPGATE_OSM_ENABLED")

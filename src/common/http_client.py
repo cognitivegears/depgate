@@ -12,6 +12,9 @@ import time
 import json
 from typing import Any, Optional, Dict, Tuple
 
+import threading
+from urllib.parse import urlparse
+
 import requests
 
 from constants import Constants, ExitCodes
@@ -20,6 +23,21 @@ from common.http_rate_middleware import request as middleware_request
 from common.http_errors import RateLimitExhausted, RetryBudgetExceeded
 
 logger = logging.getLogger(__name__)
+
+# Per-hostname connection pooling via requests.Session
+_session_pool: Dict[str, requests.Session] = {}
+_session_pool_lock = threading.Lock()
+
+
+def _get_session(url: str) -> requests.Session:
+    """Return a cached requests.Session for the hostname of *url*."""
+    hostname = urlparse(url).hostname or ""
+    with _session_pool_lock:
+        sess = _session_pool.get(hostname)
+        if sess is None:
+            sess = requests.Session()
+            _session_pool[hostname] = sess
+        return sess
 
 
 def safe_get(url: str, *, context: str, fatal: bool = True, **kwargs: Any) -> requests.Response:
@@ -34,11 +52,13 @@ def safe_get(url: str, *, context: str, fatal: bool = True, **kwargs: Any) -> re
         **kwargs: Passed through to the middleware request.
     """
     try:
+        session = kwargs.pop("session", None) or _get_session(url)
         return middleware_request(
             "GET",
             url,
             timeout=Constants.REQUEST_TIMEOUT,
             context=context,
+            session=session,
             extra_log_fields={"component": "http_client", "action": "GET"},
             **kwargs
         )
@@ -172,12 +192,14 @@ def robust_get(
         return cached_data
 
     try:
+        session = kwargs.pop("session", None) or _get_session(url)
         response = middleware_request(
             "GET",
             url,
             headers=headers,
             timeout=Constants.REQUEST_TIMEOUT,
             context="robust_get",
+            session=session,
             extra_log_fields={"component": "http_client", "action": "GET"},
             **kwargs
         )

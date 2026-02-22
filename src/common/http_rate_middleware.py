@@ -411,9 +411,10 @@ def request(
                 # remaining requests evenly across the reset window so
                 # we never hit the limit in the first place.
                 if hostname in ('api.github.com', 'github.com'):
-                    proactive_max = min(
-                        float(policy.total_retry_time_cap_sec),
-                        float(policy.max_backoff),
+                    proactive_max = getattr(
+                        Constants,
+                        'GITHUB_PROACTIVE_THROTTLE_MAX_DELAY_SEC',
+                        0.05,
                     )
                     _apply_proactive_throttle(
                         hostname,

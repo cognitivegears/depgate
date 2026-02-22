@@ -114,6 +114,20 @@ heuristics:
     # Supply-chain trust score from provenance/signature signals.
     supply_chain_trust_score: 0.20
 
+# GitHub API behavior
+github:
+  # Rate limit exhaustion behavior: "warn" (skip and continue), "fail" (exit), "retry" (backoff)
+  on_rate_limit: "warn"
+  # Maximum per-request proactive throttle delay (seconds).
+  # The proactive throttle spreads remaining API budget across the reset window.
+  # With a token (5000 req/hr), the uncapped delay is ~0.7s — too high for batch scans.
+  # Default 0.05s keeps scans fast while still providing some request spacing.
+  proactive_throttle_max_delay_sec: 0.05
+  # Skip paginated tag/release search when exact tag lookups (v{version}, {version}) fail.
+  # Saves many API calls at the cost of missing version matches for non-standard tag names.
+  # Default: auto — true without GITHUB_TOKEN (60 req/hr), false with token (5000 req/hr).
+  # skip_paginated_fallback: true
+
 # Read the Docs API used for resolving documentation URLs to source repositories.
 rtd:
   api_base: "https://readthedocs.org/api/v3"

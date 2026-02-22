@@ -177,6 +177,26 @@ def enrich_metapackage(
     if not getattr(Constants, "DEPSDEV_ENABLED", True):
         return
 
+    # Skip enrichment when both primary backfill fields are already populated
+    _cur_lic = getattr(mp, "license_id", None)
+    _cur_repo = getattr(mp, "repo_url_normalized", None)
+    _lic_set = isinstance(_cur_lic, str) and _cur_lic.strip()
+    _repo_set = isinstance(_cur_repo, str) and _cur_repo.strip()
+    if _lic_set and _repo_set:
+        if is_debug_enabled(logger):
+            logger.debug(
+                "deps.dev enrichment skipped (fields already populated)",
+                extra=extra_context(
+                    event="depsdev_enrich_skip",
+                    component="depsdev_enrich",
+                    ecosystem=ecosystem,
+                    pkg=name,
+                    license_id=_cur_lic,
+                    repo_url=_cur_repo,
+                ),
+            )
+        return
+
     _strict = bool(Constants.DEPSDEV_STRICT_OVERRIDE if strict is None else strict)
     try:
         with Timer() as t:
