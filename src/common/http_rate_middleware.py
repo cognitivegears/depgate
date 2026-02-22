@@ -208,6 +208,64 @@ def _clear_service_cooldown(service: str) -> None:
         _service_cooldowns.pop(service, None)
 
 
+def _apply_proactive_throttle(
+    service: str,
+    headers: Dict[str, str],
+    *,
+    max_delay_sec: Optional[float] = None,
+) -> None:
+    """Spread remaining GitHub API requests evenly across the reset window.
+
+    After each successful response, read X-RateLimit-Remaining and
+    X-RateLimit-Reset and set a per-request cooldown so that we never
+    exhaust the budget.  With a token (5 000 req/hr) the delay is ~0.7 s;
+    without one (60 req/hr) it is ~60 s — slow but ensures every package
+    gets repo data.
+    """
+    remaining_str = headers.get('X-RateLimit-Remaining')
+    reset_str = headers.get('X-RateLimit-Reset')
+    if not remaining_str or not reset_str:
+        return
+    try:
+        remaining = int(remaining_str)
+        reset_ts = float(reset_str)
+    except (ValueError, TypeError):
+        return
+
+    now = time.time()
+    time_until_reset = max(0.0, reset_ts - now)
+    if remaining <= 0 or time_until_reset <= 0:
+        return  # Already exhausted or reset imminent — reactive handler will cope
+
+    delay = time_until_reset / max(1, remaining)
+    if max_delay_sec is not None and delay > max_delay_sec:
+        if is_debug_enabled(logger):
+            logger.debug(
+                "Skipping proactive throttle due to delay cap",
+                extra=extra_context(
+                    event="proactive_throttle_skipped",
+                    service=service,
+                    remaining=remaining,
+                    delay_sec=round(delay, 2),
+                    max_delay_sec=round(max_delay_sec, 2),
+                )
+            )
+        return
+    _set_service_cooldown(service, now + delay)
+
+    if is_debug_enabled(logger):
+        logger.debug(
+            "Proactive GitHub throttle applied",
+            extra=extra_context(
+                event="proactive_throttle",
+                service=service,
+                remaining=remaining,
+                reset_in_sec=round(time_until_reset, 1),
+                delay_sec=round(delay, 2),
+            )
+        )
+
+
 def request(
     method: str,
     url: str,
@@ -349,6 +407,20 @@ def request(
                             dict(response.headers), response.status_code
                         )
 
+                # Proactive rate throttling for GitHub API: spread
+                # remaining requests evenly across the reset window so
+                # we never hit the limit in the first place.
+                if hostname in ('api.github.com', 'github.com'):
+                    proactive_max = min(
+                        float(policy.total_retry_time_cap_sec),
+                        float(policy.max_backoff),
+                    )
+                    _apply_proactive_throttle(
+                        hostname,
+                        dict(response.headers),
+                        max_delay_sec=proactive_max,
+                    )
+
                 if is_debug_enabled(logger):
                     logger.debug(
                         "HTTP response",
@@ -398,7 +470,6 @@ def request(
             total_wait_time += wait_time
             add_wait(hostname, wait_time)
             increment(hostname, 'retries_total')
-
         except requests.Timeout:
             if not can_retry or attempt > policy.max_retries:
                 raise
@@ -415,7 +486,6 @@ def request(
             total_wait_time += wait_time
             add_wait(hostname, wait_time)
             increment(hostname, 'retries_total')
-
         except requests.RequestException as exc:
             if not can_retry or attempt > policy.max_retries:
                 raise
@@ -432,3 +502,9 @@ def request(
             total_wait_time += wait_time
             add_wait(hostname, wait_time)
             increment(hostname, 'retries_total')
+
+
+def get_service_cooldown_remaining(service: str) -> float:
+    """Return remaining cooldown in seconds for the service."""
+    now = time.time()
+    return max(0.0, _get_service_cooldown(service) - now)

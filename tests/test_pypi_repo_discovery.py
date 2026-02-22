@@ -54,6 +54,19 @@ class TestExtractRepoCandidates:
 
         assert candidates == ['https://docs.example.com', 'https://github.com/owner/repo']
 
+    def test_repo_key_recognized(self):
+        """Test that 'repo' key in project_urls is recognized as priority-1."""
+        info = {
+            'project_urls': {
+                'GitHub: repo': 'https://github.com/owner/repo',
+                'Homepage': 'https://example.com'
+            },
+        }
+
+        candidates = _extract_repo_candidates(info)
+
+        assert 'https://github.com/owner/repo' in candidates
+
     def test_handles_missing_fields(self):
         """Test handling of missing project_urls or home_page."""
         info = {}
@@ -219,9 +232,12 @@ class TestEnrichWithRepo:
         assert mp.repo_present_in_registry is True
         assert mp.repo_resolved is False
 
+    @patch('registry.pypi.enrich.get_service_cooldown_remaining', return_value=0.0)
     @patch('registry.pypi.normalize_repo_url')
     @patch('registry.pypi.GitHubClient')
-    def test_enrich_with_repo_exact_mode_unsatisfiable_version(self, mock_github_client, mock_normalize):
+    def test_enrich_with_repo_exact_mode_unsatisfiable_version(
+        self, mock_github_client, mock_normalize, _mock_cooldown
+    ):
         """Test enrichment guard for exact mode with unsatisfiable version."""
         # Setup mocks
         mock_repo_ref = MagicMock()
@@ -284,3 +300,32 @@ class TestEnrichWithRepo:
             # Verify that matcher was called with empty string (not None)
             mock_matcher.find_match.assert_called_once_with('', mock_client.get_releases.return_value)
         assert mp.repo_resolved is False
+
+    @patch('registry.pypi.enrich.get_service_cooldown_remaining')
+    @patch('registry.pypi.normalize_repo_url')
+    @patch('registry.pypi.GitHubClient')
+    def test_skips_github_enrichment_on_long_cooldown(
+        self, mock_github_client, mock_normalize, mock_cooldown
+    ):
+        """Skip package-level GitHub enrichment when cooldown exceeds threshold."""
+        mock_cooldown.return_value = 120.0
+        mock_repo_ref = MagicMock()
+        mock_repo_ref.normalized_url = 'https://github.com/owner/repo'
+        mock_repo_ref.host = 'github'
+        mock_repo_ref.owner = 'owner'
+        mock_repo_ref.repo = 'repo'
+        mock_normalize.return_value = mock_repo_ref
+
+        mp = MetaPackage('testpackage')
+        info = {
+            'project_urls': {'Repository': 'https://github.com/owner/repo'},
+            'home_page': 'https://example.com'
+        }
+
+        _enrich_with_repo(mp, 'testpackage', info, '1.0.0')
+
+        assert mp.repo_resolved is False
+        assert mp.repo_exists is None
+        assert isinstance(mp.repo_errors, list)
+        assert any(err.get('error_type') == 'rate_limit_skip' for err in mp.repo_errors)
+        mock_github_client.assert_not_called()

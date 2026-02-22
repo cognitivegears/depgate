@@ -35,6 +35,7 @@ def _extract_repo_candidates(info: Dict) -> List[str]:
         "source",
         "source code",
         "code",
+        "repo",
         "project-urls.repository",
         "project-urls.source",
     ]

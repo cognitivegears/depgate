@@ -17,6 +17,11 @@ def test_score_from_boolean_signals():
     assert score_from_boolean_signals([None, None]) is None
 
 
+def test_score_from_boolean_signals_weighted():
+    assert score_from_boolean_signals([True, False], weights=[0.8, 0.2]) == 0.8
+    assert score_from_boolean_signals([False, True], weights=[0.8, 0.2]) == 0.2
+
+
 def test_regressed():
     assert regressed(False, True) is True
     assert regressed(True, True) is False

@@ -3,9 +3,12 @@ from __future__ import annotations
 
 import importlib
 import logging
+import os
 from typing import Any, Dict, List, Optional
 
+from common.http_rate_middleware import get_service_cooldown_remaining
 from common.logging_utils import extra_context, is_debug_enabled, Timer
+from constants import Constants
 from repository.providers import ProviderType, map_host_to_type
 from repository.provider_registry import ProviderRegistry
 from repository.provider_validation import ProviderValidationService
@@ -34,6 +37,8 @@ class _PkgAccessor:
 
 # Expose as module attribute for tests to patch like registry.pypi.enrich.pypi_pkg.normalize_repo_url
 pypi_pkg = _PkgAccessor('registry.pypi')
+
+_github_token_warned = False
 
 def _extract_license_from_info(info: Dict[str, Any]) -> tuple[Optional[str], Optional[str], Optional[str]]:
     """Extract license information from PyPI info metadata.
@@ -226,6 +231,15 @@ def _enrich_with_repo(mp, _name: str, info: Dict[str, Any], version: str) -> Non
         info: PyPI package info dict
         version: Package version string
     """
+    global _github_token_warned  # noqa: PLW0603
+    if not _github_token_warned and not os.environ.get(Constants.ENV_GITHUB_TOKEN):
+        _github_token_warned = True
+        logger.warning(
+            "GITHUB_TOKEN is not set. Repository enrichment will be severely "
+            "rate-limited (60 requests/hour). Set GITHUB_TOKEN for up to "
+            "5 000 requests/hour."
+        )
+
     with Timer() as t:
         if is_debug_enabled(logger):
             logger.debug("Starting PyPI enrichment", extra=extra_context(
@@ -266,6 +280,26 @@ def _enrich_with_repo(mp, _name: str, info: Dict[str, Any], version: str) -> Non
         mp.repo_url_normalized = normalized.normalized_url
         mp.repo_host = normalized.host
         mp.provenance = provenance
+
+        # Avoid long stalls when GitHub is already in a long cooldown window.
+        if "github" in (normalized.host or "").lower():
+            remaining = get_service_cooldown_remaining("api.github.com")
+            max_wait = float(getattr(Constants, "GITHUB_ENRICHMENT_MAX_WAIT_SEC", 10.0))
+            if remaining > max_wait:
+                logger.warning(
+                    "Skipping GitHub enrichment for %s due to cooldown (%.1fs > %.1fs).",
+                    getattr(mp, "pkg_name", ""),
+                    remaining,
+                    max_wait,
+                )
+                repo_errors.append(
+                    {
+                        "url": final_url,
+                        "error_type": "rate_limit_skip",
+                        "message": f"github cooldown {remaining:.1f}s exceeds {max_wait:.1f}s",
+                    }
+                )
+                continue
 
         # Compute version used for repository version matching (with exact guard)
         version_for_match = _version_for_match(mp, version)

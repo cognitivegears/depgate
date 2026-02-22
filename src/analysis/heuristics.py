@@ -212,6 +212,19 @@ def _norm_version_match(vm):
         return None
 
 
+def _norm_weekly_downloads(downloads):
+    """Normalize weekly downloads to [0,1] using a log scale, saturating around 1M."""
+    if downloads is None:
+        return None
+    try:
+        d = float(downloads)
+        if d < 0:
+            d = 0.0
+        # min(1.0, log10(downloads+1)/6.0) — ~1.0 around 1M downloads/week
+        return min(1.0, max(0.0, math.log10(d + 1.0) / 6.0))
+    except (ValueError, TypeError):
+        return None
+
 def _norm_trust_score(score):
     """Normalize supply-chain trust score into [0,1]."""
     if score is None:
@@ -227,20 +240,22 @@ def compute_final_score(mp):
     Normalized inputs (each in [0,1], None if missing):
       - base_score (existing pkg.score if provided)
       - repo_version_match
+      - weekly_downloads
       - repo_stars
       - repo_contributors
       - repo_last_activity
       - repo_present_in_registry
       - supply_chain_trust_score
 
-    Default weights (sum to 1.0; re-normalized when some are missing):
-      - base_score: 0.25
-      - repo_version_match: 0.25
-      - repo_stars: 0.12
-      - repo_contributors: 0.10
+    Default weights (sum to ~1.0; re-normalized when some are missing):
+      - base_score: 0.20
+      - repo_version_match: 0.20
+      - weekly_downloads: 0.12
+      - repo_stars: 0.10
+      - repo_contributors: 0.08
       - repo_last_activity: 0.08
       - repo_present_in_registry: 0.05
-      - supply_chain_trust_score: 0.15
+      - supply_chain_trust_score: 0.12
 
     Returns:
       tuple(final_score: float, breakdown: dict, weights_used: dict)
@@ -249,6 +264,7 @@ def compute_final_score(mp):
     raw = {
         'base_score': getattr(mp, 'score', None),
         'repo_version_match': getattr(mp, 'repo_version_match', None),
+        'weekly_downloads': getattr(mp, 'weekly_downloads', None),
         'repo_stars': getattr(mp, 'repo_stars', None),
         'repo_contributors': getattr(mp, 'repo_contributors', None),
         'repo_last_activity': getattr(mp, 'repo_last_activity_at', None),
@@ -260,6 +276,7 @@ def compute_final_score(mp):
     norm = {
         'base_score': _norm_base_score(raw['base_score']),
         'repo_version_match': _norm_version_match(raw['repo_version_match']),
+        'weekly_downloads': _norm_weekly_downloads(raw['weekly_downloads']),
         'repo_stars': _norm_repo_stars(raw['repo_stars']),
         'repo_contributors': _norm_repo_contributors(raw['repo_contributors']),
         'repo_last_activity': _norm_repo_last_activity(raw['repo_last_activity']),
@@ -274,13 +291,14 @@ def compute_final_score(mp):
 
     # Configurable weights loaded from Constants (overridable via YAML)
     weights = dict(getattr(Constants, "HEURISTICS_WEIGHTS", {
-        'base_score': 0.25,
-        'repo_version_match': 0.25,
-        'repo_stars': 0.12,
-        'repo_contributors': 0.10,
+        'base_score': 0.20,
+        'repo_version_match': 0.20,
+        'weekly_downloads': 0.12,
+        'repo_stars': 0.10,
+        'repo_contributors': 0.08,
         'repo_last_activity': 0.08,
         'repo_present_in_registry': 0.05,
-        'supply_chain_trust_score': 0.15,
+        'supply_chain_trust_score': 0.12,
     }))
 
     # Re-normalize weights to only those metrics that are present (norm != None)

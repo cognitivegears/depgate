@@ -118,13 +118,43 @@ class TestGitHubClient:
 
     @patch('repository.github.get_json')
     def test_get_contributors_count_fallback(self, mock_get_json):
-        """Test contributor count fallback when Link header unavailable."""
-        mock_get_json.return_value = (200, {}, [{'login': 'user1'}, {'login': 'user2'}])
+        """Test contributor count fallback when Link header unavailable.
+
+        When the per_page=1 request has no Link header, a follow-up
+        request with per_page=100 is made to get accurate count.
+        """
+        mock_get_json.side_effect = [
+            # First call: per_page=1, no Link header
+            (200, {}, [{'login': 'user1'}]),
+            # Second call: per_page=100, returns actual list
+            (200, {}, [{'login': f'user{i}'} for i in range(15)]),
+        ]
 
         client = GitHubClient()
         result = client.get_contributors_count('owner', 'repo')
 
-        assert result == 2  # Count of returned items
+        assert result == 15  # Count from per_page=100 follow-up
+        assert mock_get_json.call_count == 2
+
+    @patch('repository.github.get_json')
+    def test_get_contributors_count_fallback_with_link(self, mock_get_json):
+        """Test contributor fallback computes exact count from partial last page."""
+        mock_get_json.side_effect = [
+            # First call: per_page=1, no Link header
+            (200, {}, [{'login': 'user1'}]),
+            # Second call: per_page=100, has Link header indicating 3 pages
+            (200, {
+                'link': '<https://api.github.com/repos/owner/repo/contributors?page=3>; rel="last"'
+            }, [{'login': f'user{i}'} for i in range(100)]),
+            # Third call: last page has only 20 contributors
+            (200, {}, [{'login': f'user{i}'} for i in range(20)]),
+        ]
+
+        client = GitHubClient()
+        result = client.get_contributors_count('owner', 'repo')
+
+        assert result == 220
+        assert mock_get_json.call_count == 3
 
     @patch('repository.github.get_json')
     def test_get_contributors_count_failure(self, mock_get_json):
@@ -167,3 +197,15 @@ class TestGitHubClient:
         total = client._parse_link_header_total(link_header)
 
         assert total is None
+
+    def test_get_last_page_url_from_link_header(self):
+        """Test extracting last page URL from Link header."""
+        client = GitHubClient()
+        link_header = (
+            '<https://api.github.com/repos/owner/repo/contributors?page=2>; rel="next", '
+            '<https://api.github.com/repos/owner/repo/contributors?page=9>; rel="last"'
+        )
+        assert (
+            client._get_last_page_url(link_header)
+            == 'https://api.github.com/repos/owner/repo/contributors?page=9'
+        )

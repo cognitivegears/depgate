@@ -40,6 +40,7 @@ def _sanitize_identifier(identifier: str) -> str:
 HEADERS_JSON = {"Accept": "application/json", "Content-Type": "application/json"}
 TIME_FORMAT_ISO = "%Y-%m-%dT%H:%M:%S.%fZ"
 HEADERS_SIMPLE_JSON = {"Accept": "application/vnd.pypi.simple.v1+json"}
+PYPI_TRUST_SIGNAL_WEIGHTS = (0.8, 0.2)  # provenance, checksums
 
 def _log_http_pre(url: str) -> None:
     """Debug-log outbound HTTP request for PyPI client."""
@@ -359,8 +360,14 @@ def recv_pkg_info(pkgs, url: str = Constants.REGISTRY_URL_PYPI) -> None:
             x.previous_checksums_present = prev_cksum
             x.registry_signature_regressed = None  # not applicable
             x.provenance_regressed = regressed(cur_prov, prev_prov)
-            x.trust_score = score_from_boolean_signals([cur_prov])
-            x.previous_trust_score = score_from_boolean_signals([prev_prov])
+            x.trust_score = score_from_boolean_signals(
+                [cur_prov, cur_cksum],
+                weights=PYPI_TRUST_SIGNAL_WEIGHTS,
+            )
+            x.previous_trust_score = score_from_boolean_signals(
+                [prev_prov, prev_cksum],
+                weights=PYPI_TRUST_SIGNAL_WEIGHTS,
+            )
             delta, decreased = score_delta(x.trust_score, x.previous_trust_score)
             x.trust_score_delta = delta
             x.trust_score_decreased = decreased

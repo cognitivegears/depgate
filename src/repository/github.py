@@ -124,9 +124,29 @@ class GitHubClient:
                 if total is not None:
                     return total
 
-            # Fallback: count actual results (limited by API)
-            if data:
-                return len(data)
+            # No Link header: the per_page=1 trick returned only 1 result
+            # which is ambiguous (could be 1 contributor or many). Make a
+            # follow-up request with per_page=100 to get an accurate count.
+            url_100 = f"{self.base_url}/repos/{owner}/{repo}/contributors?per_page=100"
+            status_100, headers_100, data_100 = get_json(url_100, headers=self._get_headers())
+            if status_100 == 200:
+                link_100 = headers_100.get('link', '')
+                if link_100:
+                    total_pages = self._parse_link_header_total(link_100)
+                    if total_pages is not None:
+                        # Fetch the last page to avoid over-counting when the page is partial.
+                        last_page_url = self._get_last_page_url(link_100)
+                        if last_page_url:
+                            status_last, _, data_last = get_json(
+                                last_page_url, headers=self._get_headers()
+                            )
+                            if status_last == 200 and isinstance(data_last, list):
+                                return max(0, ((total_pages - 1) * 100) + len(data_last))
+                        # Conservative fallback: avoid synthetic over-counting.
+                        if isinstance(data_100, list):
+                            return len(data_100)
+                if isinstance(data_100, list):
+                    return len(data_100)
         elif status in (403, 429):
             logger.warning(
                 "GitHub API rate limited (HTTP %s) for %s/%s contributors. "
@@ -331,5 +351,19 @@ class GitHubClient:
                             return int(page)
                         except ValueError:
                             pass
+
+        return None
+
+    def _get_last_page_url(self, link_header: str) -> Optional[str]:
+        """Extract last page URL from Link header."""
+        if not link_header:
+            return None
+
+        links = link_header.split(',')
+        for link in links:
+            if 'rel="last"' in link:
+                url_match = link.strip().split(';')[0].strip()
+                if url_match.startswith('<') and url_match.endswith('>'):
+                    return url_match[1:-1]
 
         return None

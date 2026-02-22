@@ -92,6 +92,8 @@ class Constants:  # pylint: disable=too-few-public-methods
     ENV_GITHUB_TOKEN = "GITHUB_TOKEN"
     ENV_GITLAB_TOKEN = "GITLAB_TOKEN"
     REPO_API_PER_PAGE = 100
+    # Skip per-package repository enrichment when global GitHub cooldown is too high.
+    GITHUB_ENRICHMENT_MAX_WAIT_SEC = 10.0
     GITHUB_ON_RATE_LIMIT = "warn"  # "warn", "fail", "retry"
     HTTP_RETRY_MAX = 3
     HTTP_RETRY_BASE_DELAY_SEC = 0.3
@@ -145,13 +147,14 @@ class Constants:  # pylint: disable=too-few-public-methods
     # Values sum to 1.0 and are re-normalized at runtime across available
     # (non-None) metrics.
     HEURISTICS_WEIGHTS_DEFAULT = {
-        "base_score": 0.25,
-        "repo_version_match": 0.25,
-        "repo_stars": 0.12,
-        "repo_contributors": 0.10,
+        "base_score": 0.20,
+        "repo_version_match": 0.20,
+        "weekly_downloads": 0.12,
+        "repo_stars": 0.10,
+        "repo_contributors": 0.08,
         "repo_last_activity": 0.08,
         "repo_present_in_registry": 0.05,
-        "supply_chain_trust_score": 0.15,
+        "supply_chain_trust_score": 0.12,
     }
     # Runtime copy that may be overridden via YAML configuration
     HEURISTICS_WEIGHTS = dict(HEURISTICS_WEIGHTS_DEFAULT)
