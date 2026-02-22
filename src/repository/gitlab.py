@@ -31,7 +31,7 @@ class GitLabClient:
 
     def _get_headers(self) -> Dict[str, str]:
         """Get request headers including authorization if token is available."""
-        headers = {}
+        headers = {'Accept': 'application/json'}
         if self.token:
             headers['Private-Token'] = self.token
         return headers
@@ -91,6 +91,93 @@ class GitLabClient:
         return self._get_paginated_results(
             f"{self.base_url}/projects/{project_path}/releases"
         )
+
+    def get_release_by_tag(self, owner: str, repo: str, tag: str) -> Optional[Dict[str, Any]]:
+        """Fetch a single release by exact tag name."""
+        if not tag:
+            return None
+        project_path = quote(f"{owner}/{repo}", safe='')
+        tag_enc = quote(tag, safe='')
+        url = f"{self.base_url}/projects/{project_path}/releases/{tag_enc}"
+        status, _, data = get_json(url, headers=self._get_headers())
+        if status == 200 and isinstance(data, dict):
+            return data
+        return None
+
+    def get_tag_by_name(self, owner: str, repo: str, tag: str) -> Optional[Dict[str, Any]]:
+        """Fetch a single repository tag by exact name."""
+        if not tag:
+            return None
+        project_path = quote(f"{owner}/{repo}", safe='')
+        tag_enc = quote(tag, safe='')
+        url = f"{self.base_url}/projects/{project_path}/repository/tags/{tag_enc}"
+        status, _, data = get_json(url, headers=self._get_headers())
+        if status == 200 and isinstance(data, dict):
+            return data
+        return None
+
+    def find_release_match(
+        self, owner: str, repo: str, version: str, matcher: Any
+    ) -> Optional[Dict[str, Any]]:
+        """Find release match using exact lookups before paginated fallback."""
+        if not version:
+            return {
+                "matched": False,
+                "match_type": None,
+                "artifact": None,
+                "tag_or_release": None,
+            }
+
+        for candidate in self._candidate_tag_labels(version):
+            release = self.get_release_by_tag(owner, repo, candidate)
+            if release:
+                result = matcher.find_match(version, [release])
+                if result and isinstance(result, dict) and result.get("matched", False):
+                    return result
+
+        project_path = quote(f"{owner}/{repo}", safe='')
+        result = self._find_first_match_in_paginated(
+            f"{self.base_url}/projects/{project_path}/releases",
+            version,
+            matcher,
+        )
+        if isinstance(result, dict):
+            return result
+        return {
+            "matched": False,
+            "match_type": None,
+            "artifact": None,
+            "tag_or_release": None,
+        }
+
+    def find_tag_match(
+        self, owner: str, repo: str, version: str, matcher: Any
+    ) -> Optional[Dict[str, Any]]:
+        """Find tag match using exact lookups before paginated fallback."""
+        if not version:
+            return None
+
+        for candidate in self._candidate_tag_labels(version):
+            tag_obj = self.get_tag_by_name(owner, repo, candidate)
+            if tag_obj:
+                result = matcher.find_match(version, [tag_obj])
+                if result and isinstance(result, dict) and result.get("matched", False):
+                    return result
+
+        project_path = quote(f"{owner}/{repo}", safe='')
+        result = self._find_first_match_in_paginated(
+            f"{self.base_url}/projects/{project_path}/repository/tags",
+            version,
+            matcher,
+        )
+        if isinstance(result, dict):
+            return result
+        return {
+            "matched": False,
+            "match_type": None,
+            "artifact": None,
+            "tag_or_release": None,
+        }
 
     def get_contributors_count(self, owner: str, repo: str) -> Optional[int]:
         """Get contributor count for project.
@@ -223,6 +310,32 @@ class GitLabClient:
 
         return results
 
+    def _find_first_match_in_paginated(
+        self, url: str, version: str, matcher: Any
+    ) -> Optional[Dict[str, Any]]:
+        """Scan paginated endpoint page-by-page and stop at first match."""
+        current_url = f"{url}?per_page={Constants.REPO_API_PER_PAGE}"
+
+        while current_url:
+            status, headers, data = get_json(current_url, headers=self._get_headers())
+            if status != 200 or not data:
+                break
+
+            if isinstance(data, list):
+                result = matcher.find_match(version, data)
+                if result and isinstance(result, dict) and result.get("matched", False):
+                    return result
+
+            current_page = self._get_current_page(headers)
+            total_pages = self._get_total_pages(headers)
+            if current_page and total_pages and current_page < total_pages:
+                next_page = current_page + 1
+                current_url = f"{url}?per_page={Constants.REPO_API_PER_PAGE}&page={next_page}"
+            else:
+                current_url = None
+
+        return None
+
     def _get_paginated_count(self, url: str) -> Optional[int]:
         """Get a total count from a paginated endpoint."""
         status, headers, data = get_json(url, headers=self._get_headers())
@@ -270,3 +383,28 @@ class GitLabClient:
             except ValueError:
                 pass
         return None
+
+    def _candidate_tag_labels(self, version: str) -> List[str]:
+        """Build exact tag-label candidates for direct endpoint lookups."""
+        labels: List[str] = []
+        seen = set()
+
+        def _add(candidate: str) -> None:
+            c = str(candidate or "").strip()
+            if not c or c in seen:
+                return
+            seen.add(c)
+            labels.append(c)
+
+        v = str(version or "").strip()
+        if not v:
+            return labels
+
+        if v.startswith("v"):
+            _add(v)
+            _add(v[1:])
+        else:
+            _add(f"v{v}")
+            _add(v)
+
+        return labels

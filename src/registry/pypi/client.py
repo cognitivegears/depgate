@@ -220,81 +220,93 @@ def recv_pkg_info(pkgs, url: str = Constants.REGISTRY_URL_PYPI) -> None:
         url (str, optional): Url for PyPI. Defaults to Constants.REGISTRY_URL_PYPI.
     """
     logging.info("PyPI registry engaged.")
+    metadata_cache: Dict[str, Optional[Dict[str, Any]]] = {}
+    weekly_cache: Dict[str, Optional[int]] = {}
+    simple_cache: Dict[str, Optional[Dict[str, Any]]] = {}
     for x in pkgs:
         # Sleep to avoid rate limiting
         time.sleep(0.1)
         name = getattr(x, "pkg_name", "")
         sanitized = _sanitize_identifier(str(name)).strip()
         normalized = canonicalize_name(sanitized)
-        fullurl = url + normalized + "/json"
+        if normalized in metadata_cache:
+            j = metadata_cache[normalized]
+            if j is None:
+                x.exists = False
+                continue
+        else:
+            fullurl = url + normalized + "/json"
 
-        # Pre-call DEBUG log via helper
-        _log_http_pre(fullurl)
+            # Pre-call DEBUG log via helper
+            _log_http_pre(fullurl)
 
-        with Timer() as timer:
-            try:
-                res = pypi_pkg.safe_get(fullurl, context="pypi", params=None, headers=HEADERS_JSON)
-            except SystemExit:
-                # safe_get calls sys.exit on errors, so we need to catch and re-raise as exception
-                logger.error(
-                    "HTTP error",
-                    exc_info=True,
+            with Timer() as timer:
+                try:
+                    res = pypi_pkg.safe_get(fullurl, context="pypi", params=None, headers=HEADERS_JSON)
+                except SystemExit:
+                    # safe_get calls sys.exit on errors, so we need to catch and re-raise as exception
+                    logger.error(
+                        "HTTP error",
+                        exc_info=True,
+                        extra=extra_context(
+                            event="http_error",
+                            outcome="exception",
+                            target=safe_url(fullurl),
+                            package_manager="pypi",
+                        ),
+                    )
+                    raise
+
+            if res.status_code == 404:
+                logger.warning(
+                    "HTTP 404 received; applying fallback",
                     extra=extra_context(
-                        event="http_error",
-                        outcome="exception",
+                        event="http_response",
+                        outcome="not_found_fallback",
+                        status_code=404,
                         target=safe_url(fullurl),
                         package_manager="pypi",
                     ),
                 )
-                raise
-
-        if res.status_code == 404:
-            logger.warning(
-                "HTTP 404 received; applying fallback",
-                extra=extra_context(
-                    event="http_response",
-                    outcome="not_found_fallback",
-                    status_code=404,
-                    target=safe_url(fullurl),
-                    package_manager="pypi",
-                ),
-            )
-            # Package not found
-            x.exists = False
-            continue
-        if res.status_code == 200:
-            if is_debug_enabled(logger):
-                logger.debug(
-                    "HTTP response ok",
+                # Package not found
+                metadata_cache[normalized] = None
+                x.exists = False
+                continue
+            if res.status_code == 200:
+                if is_debug_enabled(logger):
+                    logger.debug(
+                        "HTTP response ok",
+                        extra=extra_context(
+                            event="http_response",
+                            outcome="success",
+                            status_code=res.status_code,
+                            duration_ms=timer.duration_ms(),
+                            package_manager="pypi",
+                        ),
+                    )
+            else:
+                logger.warning(
+                    "HTTP non-2xx handled",
                     extra=extra_context(
                         event="http_response",
-                        outcome="success",
+                        outcome="handled_non_2xx",
                         status_code=res.status_code,
                         duration_ms=timer.duration_ms(),
+                        target=safe_url(fullurl),
                         package_manager="pypi",
                     ),
                 )
-        else:
-            logger.warning(
-                "HTTP non-2xx handled",
-                extra=extra_context(
-                    event="http_response",
-                    outcome="handled_non_2xx",
-                    status_code=res.status_code,
-                    duration_ms=timer.duration_ms(),
-                    target=safe_url(fullurl),
-                    package_manager="pypi",
-                ),
-            )
-            logging.error("Connection error, status code: %s", res.status_code)
-            sys.exit(ExitCodes.CONNECTION_ERROR.value)
+                logging.error("Connection error, status code: %s", res.status_code)
+                sys.exit(ExitCodes.CONNECTION_ERROR.value)
 
-        try:
-            j = json.loads(res.text)
-        except json.JSONDecodeError:
-            logging.warning("Couldn't decode JSON, assuming package missing.")
-            x.exists = False
-            continue
+            try:
+                j = json.loads(res.text)
+            except json.JSONDecodeError:
+                logging.warning("Couldn't decode JSON, assuming package missing.")
+                metadata_cache[normalized] = None
+                x.exists = False
+                continue
+            metadata_cache[normalized] = j
 
         if j.get("info"):
             x.exists = True
@@ -338,13 +350,17 @@ def recv_pkg_info(pkgs, url: str = Constants.REGISTRY_URL_PYPI) -> None:
             _enrich_with_repo(x, x.pkg_name, j["info"], selected_version)
 
             # Fetch weekly download stats (best-effort)
-            x.weekly_downloads = _fetch_weekly_downloads(normalized)
+            if normalized not in weekly_cache:
+                weekly_cache[normalized] = _fetch_weekly_downloads(normalized)
+            x.weekly_downloads = weekly_cache.get(normalized)
 
             # Trust/provenance signals from Simple API (best effort)
             # GPG signatures are deprecated on PyPI (May 2023) and the
             # ``gpg-sig`` field is absent from current Simple API responses,
             # so registry_signature_present is left as None (not applicable).
-            simple_json = _fetch_simple_index_json(normalized)
+            if normalized not in simple_cache:
+                simple_cache[normalized] = _fetch_simple_index_json(normalized)
+            simple_json = simple_cache.get(normalized)
             _cur_sig, cur_prov, cur_prov_url, cur_cksum = _extract_simple_trust(simple_json, selected_version)
             _prev_sig = prev_prov = prev_cksum = None
             if previous_version:

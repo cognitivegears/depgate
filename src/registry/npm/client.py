@@ -8,6 +8,7 @@ import time
 import logging
 from datetime import datetime as dt
 from urllib.parse import urlsplit, urlunsplit, quote
+from typing import Optional, Dict, Any, List
 
 from constants import ExitCodes, Constants
 from common.logging_utils import extra_context, is_debug_enabled, Timer, safe_url
@@ -38,7 +39,15 @@ def _log_http_pre(url: str, method: str, encode_brackets: bool = False) -> None:
     )
 
 
-def get_package_details(pkg, url: str) -> None:
+def _apply_package_details(pkg, package_info: Dict[str, Any]) -> None:
+    """Apply packument-derived fields and enrichment to a package."""
+    pkg.exists = True
+    pkg.version_count = len(package_info["versions"])
+    # Enrich with repository discovery and validation
+    _enrich_with_repo(pkg, package_info)
+
+
+def get_package_details(pkg, url: str) -> Optional[Dict[str, Any]]:
     """Get the details of a package from the NPM registry.
 
     Args:
@@ -105,7 +114,7 @@ def get_package_details(pkg, url: str) -> None:
             )
         )
         pkg.exists = False
-        return
+        return None
     if res.status_code >= 200 and res.status_code < 300:
         if is_debug_enabled(logger):
             logger.debug(
@@ -137,11 +146,9 @@ def get_package_details(pkg, url: str) -> None:
     except json.JSONDecodeError:
         logging.warning("Couldn't decode JSON, assuming package missing.")
         pkg.exists = False
-        return
-    pkg.exists = True
-    pkg.version_count = len(package_info["versions"])
-    # Enrich with repository discovery and validation
-    _enrich_with_repo(pkg, package_info)
+        return None
+    _apply_package_details(pkg, package_info)
+    return package_info
 
 
 def recv_pkg_info(
@@ -159,18 +166,35 @@ def recv_pkg_info(
     logging.info("npm checker engaged.")
 
     if should_fetch_details:
+        details_cache: Dict[str, Optional[Dict[str, Any]]] = {}
         for pkg in pkgs:
-            get_package_details(pkg, details_url)
+            pkg_name = str(getattr(pkg, "pkg_name", ""))
+            if pkg_name in details_cache:
+                cached_info = details_cache[pkg_name]
+                if isinstance(cached_info, dict):
+                    _apply_package_details(pkg, cached_info)
+                else:
+                    pkg.exists = False
+                continue
+            details_cache[pkg_name] = get_package_details(pkg, details_url)
 
     # Pre-call DEBUG log via helper (encode brackets for log consistency)
     _log_http_pre(url, "POST", encode_brackets=True)
 
     with Timer() as timer:
         try:
+            unique_pkg_names: List[str] = []
+            seen_names = set()
+            for p in pkgs:
+                name = str(getattr(p, "pkg_name", ""))
+                if name in seen_names:
+                    continue
+                seen_names.add(name)
+                unique_pkg_names.append(name)
             res = npm_pkg.safe_post(
                 url,
                 context="npm",
-                data="[" + ",".join(f'"{p.pkg_name}"' for p in pkgs) + "]",
+                data=json.dumps(unique_pkg_names),
                 headers=HEADERS_JSON,
             )
         except SystemExit:

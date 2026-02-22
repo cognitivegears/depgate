@@ -118,44 +118,35 @@ class TestGitHubClient:
         assert result == 5  # From last page
 
     @patch('repository.github.get_json')
-    def test_get_contributors_count_fallback(self, mock_get_json):
-        """Test contributor count fallback when Link header unavailable.
-
-        When the per_page=1 request has no Link header, a follow-up
-        request with per_page=100 is made to get accurate count.
-        """
-        mock_get_json.side_effect = [
-            # First call: per_page=1, no Link header
-            (200, {}, [{'login': 'user1'}]),
-            # Second call: per_page=100, returns actual list
-            (200, {}, [{'login': f'user{i}'} for i in range(15)]),
-        ]
+    def test_get_contributors_count_without_link_header(self, mock_get_json):
+        """Test contributor count when Link header is unavailable."""
+        mock_get_json.return_value = (200, {}, [{'login': 'user1'}])
 
         client = GitHubClient()
         result = client.get_contributors_count('owner', 'repo')
 
-        assert result == 15  # Count from per_page=100 follow-up
-        assert mock_get_json.call_count == 2
+        assert result == 1
+        assert mock_get_json.call_count == 1
 
     @patch('repository.github.get_json')
-    def test_get_contributors_count_fallback_with_link(self, mock_get_json):
-        """Test contributor fallback computes exact count from partial last page."""
-        mock_get_json.side_effect = [
-            # First call: per_page=1, no Link header
-            (200, {}, [{'login': 'user1'}]),
-            # Second call: per_page=100, has Link header indicating 3 pages
-            (200, {
-                'link': '<https://api.github.com/repos/owner/repo/contributors?page=3>; rel="last"'
-            }, [{'login': f'user{i}'} for i in range(100)]),
-            # Third call: last page has only 20 contributors
-            (200, {}, [{'login': f'user{i}'} for i in range(20)]),
-        ]
+    def test_get_contributors_count_with_capitalized_link_header(self, mock_get_json):
+        """Test contributor count parses Link header case-insensitively."""
+        mock_get_json.return_value = (
+            200,
+            {
+                'Link': (
+                    '<https://api.github.com/repos/owner/repo/contributors?page=1>; rel="first", '
+                    '<https://api.github.com/repos/owner/repo/contributors?page=7>; rel="last"'
+                )
+            },
+            [{'login': 'user1'}],
+        )
 
         client = GitHubClient()
         result = client.get_contributors_count('owner', 'repo')
 
-        assert result == 220
-        assert mock_get_json.call_count == 3
+        assert result == 7
+        assert mock_get_json.call_count == 1
 
     @patch('repository.github.get_json')
     def test_get_contributors_count_failure(self, mock_get_json):
@@ -210,6 +201,12 @@ class TestGitHubClient:
             client._get_last_page_url(link_header)
             == 'https://api.github.com/repos/owner/repo/contributors?page=9'
         )
+
+    def test_candidate_tag_labels_prefers_v_prefix(self):
+        """Non-v versions should try v-prefixed label first."""
+        client = GitHubClient()
+        labels = client._candidate_tag_labels("1.2.3")
+        assert labels == ["v1.2.3", "1.2.3"]
 
     @patch('repository.github.get_json')
     def test_get_release_by_tag_success(self, mock_get_json):

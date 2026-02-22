@@ -173,6 +173,24 @@ class GitLabProviderAdapter(ProviderClient):
         """Fetch project tags for version matching."""
         return self.client.get_tags(owner, repo) or []
 
+    def find_release_match(
+        self, owner: str, repo: str, version: str, matcher: Any
+    ) -> Optional[Dict[str, Any]]:
+        """Find release match using provider-optimized lookup strategy."""
+        fn = getattr(self.client, "find_release_match", None)
+        if callable(fn):
+            return fn(owner, repo, version, matcher)
+        return None
+
+    def find_tag_match(
+        self, owner: str, repo: str, version: str, matcher: Any
+    ) -> Optional[Dict[str, Any]]:
+        """Find tag match using provider-optimized lookup strategy."""
+        fn = getattr(self.client, "find_tag_match", None)
+        if callable(fn):
+            return fn(owner, repo, version, matcher)
+        return None
+
     def get_open_prs_count(self, owner: str, repo: str) -> Optional[int]:
         """Get open merge request count for project."""
         return self.client.get_open_prs_count(owner, repo)

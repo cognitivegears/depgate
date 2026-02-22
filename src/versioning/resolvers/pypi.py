@@ -58,7 +58,7 @@ class PyPIVersionResolver(VersionResolver):
         # Ensure we strip any whitespace and version specifiers from the identifier
         sanitized_name = _sanitize_identifier(req.identifier).strip()
         url = f"{Constants.REGISTRY_URL_PYPI}{sanitized_name}/json"
-        status_code, _, data = get_json(url)
+        status_code, _, data = get_json(url, headers={"Accept": "application/json"})
 
         if status_code != 200 or not data:
             return []

@@ -39,6 +39,20 @@ class GitHubClient:
             headers['Authorization'] = f'token {self.token}'
         return headers
 
+    @staticmethod
+    def _get_header_value(headers: Dict[str, Any], key: str) -> str:
+        """Read response header value case-insensitively."""
+        if not isinstance(headers, dict):
+            return ""
+        direct = headers.get(key)
+        if isinstance(direct, str):
+            return direct
+        lower_key = key.lower()
+        for k, v in headers.items():
+            if isinstance(k, str) and k.lower() == lower_key and isinstance(v, str):
+                return v
+        return ""
+
     def get_repo(self, owner: str, repo: str) -> Optional[Dict[str, Any]]:
         """Fetch repository metadata.
 
@@ -153,7 +167,12 @@ class GitHubClient:
     ) -> Optional[Dict[str, Any]]:
         """Find release match using exact lookups before paginated fallback."""
         if not version:
-            return None
+            return {
+                "matched": False,
+                "match_type": None,
+                "artifact": None,
+                "tag_or_release": None,
+            }
 
         for candidate in self._candidate_tag_labels(version):
             release = self.get_release_by_tag(owner, repo, candidate)
@@ -162,11 +181,19 @@ class GitHubClient:
                 if result and isinstance(result, dict) and result.get("matched", False):
                     return result
 
-        return self._find_first_match_in_paginated(
+        result = self._find_first_match_in_paginated(
             f"{self.base_url}/repos/{owner}/{repo}/releases",
             version,
             matcher,
         )
+        if isinstance(result, dict):
+            return result
+        return {
+            "matched": False,
+            "match_type": None,
+            "artifact": None,
+            "tag_or_release": None,
+        }
 
     def find_tag_match(
         self, owner: str, repo: str, version: str, matcher: Any
@@ -182,17 +209,25 @@ class GitHubClient:
                 if result and isinstance(result, dict) and result.get("matched", False):
                     return result
 
-        return self._find_first_match_in_paginated(
+        result = self._find_first_match_in_paginated(
             f"{self.base_url}/repos/{owner}/{repo}/tags",
             version,
             matcher,
         )
+        if isinstance(result, dict):
+            return result
+        return {
+            "matched": False,
+            "match_type": None,
+            "artifact": None,
+            "tag_or_release": None,
+        }
 
     def get_contributors_count(self, owner: str, repo: str) -> Optional[int]:
         """Get contributor count for repository.
 
-        Uses per_page=1 to efficiently get total count from Link header.
-        Falls back to counting first page if Link header unavailable.
+        Uses per_page=1 and Link pagination metadata when available.
+        If Link metadata is absent, falls back to the returned page size.
 
         Args:
             owner: Repository owner
@@ -206,35 +241,15 @@ class GitHubClient:
 
         if status == 200:
             # Try to parse Link header for total count
-            link_header = headers.get('link', '')
+            link_header = self._get_header_value(headers, 'link')
             if link_header:
                 total = self._parse_link_header_total(link_header)
                 if total is not None:
                     return total
 
-            # No Link header: the per_page=1 trick returned only 1 result
-            # which is ambiguous (could be 1 contributor or many). Make a
-            # follow-up request with per_page=100 to get an accurate count.
-            url_100 = f"{self.base_url}/repos/{owner}/{repo}/contributors?per_page=100"
-            status_100, headers_100, data_100 = get_json(url_100, headers=self._get_headers())
-            if status_100 == 200:
-                link_100 = headers_100.get('link', '')
-                if link_100:
-                    total_pages = self._parse_link_header_total(link_100)
-                    if total_pages is not None:
-                        # Fetch the last page to avoid over-counting when the page is partial.
-                        last_page_url = self._get_last_page_url(link_100)
-                        if last_page_url:
-                            status_last, _, data_last = get_json(
-                                last_page_url, headers=self._get_headers()
-                            )
-                            if status_last == 200 and isinstance(data_last, list):
-                                return max(0, ((total_pages - 1) * 100) + len(data_last))
-                        # Conservative fallback: avoid synthetic over-counting.
-                        if isinstance(data_100, list):
-                            return len(data_100)
-                if isinstance(data_100, list):
-                    return len(data_100)
+            # No Link header: treat as single-page response.
+            if isinstance(data, list):
+                return len(data)
         elif status in (403, 429):
             logger.warning(
                 "GitHub API rate limited (HTTP %s) for %s/%s contributors. "
@@ -333,7 +348,7 @@ class GitHubClient:
         """
         status, headers, data = get_json(url, headers=self._get_headers())
         if status == 200:
-            link_header = headers.get('link', '')
+            link_header = self._get_header_value(headers, 'link')
             if link_header:
                 total = self._parse_link_header_total(link_header)
                 if total is not None:
@@ -384,7 +399,7 @@ class GitHubClient:
             results.extend(data)
 
             # Check for next page
-            link_header = headers.get('link', '')
+            link_header = self._get_header_value(headers, 'link')
             current_url = self._get_next_page_url(link_header)
 
         return results
@@ -417,7 +432,7 @@ class GitHubClient:
                 if result and isinstance(result, dict) and result.get("matched", False):
                     return result
 
-            link_header = headers.get('link', '')
+            link_header = self._get_header_value(headers, 'link')
             current_url = self._get_next_page_url(link_header)
 
         return None
@@ -438,11 +453,12 @@ class GitHubClient:
         if not v:
             return labels
 
-        _add(v)
         if v.startswith("v"):
+            _add(v)
             _add(v[1:])
         else:
             _add(f"v{v}")
+            _add(v)
 
         return labels
 

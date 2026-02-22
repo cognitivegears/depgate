@@ -118,7 +118,11 @@ def _fetch_repository_signature_policy(service_index: Dict[str, Any]) -> Optiona
     return None
 
 
-def _fetch_v3_package_metadata(package_id: str) -> Tuple[Optional[Dict[str, Any]], str]:
+def _fetch_v3_package_metadata(
+    package_id: str,
+    service_index: Optional[Dict[str, Any]] = None,
+    repository_signed_policy: Optional[bool] = None,
+) -> Tuple[Optional[Dict[str, Any]], str]:
     """Fetch package metadata from NuGet V3 API.
 
     Args:
@@ -127,11 +131,12 @@ def _fetch_v3_package_metadata(package_id: str) -> Tuple[Optional[Dict[str, Any]
     Returns:
         Tuple of (package_metadata_dict, api_version_used)
     """
-    service_index = _fetch_v3_service_index()
+    service_index = service_index or _fetch_v3_service_index()
     if not service_index:
         return None, "v2"
 
-    repository_signed_policy = _fetch_repository_signature_policy(service_index)
+    if repository_signed_policy is None:
+        repository_signed_policy = _fetch_repository_signature_policy(service_index)
 
     registration_url = _get_v3_registration_url(package_id, service_index)
     if not registration_url:
@@ -330,6 +335,15 @@ def recv_pkg_info(pkgs, url: Optional[str] = None) -> None:
         url: Optional registry URL (not used, kept for API compatibility)
     """
     logging.info("NuGet registry engaged.")
+    # Fetch V3 service metadata once per scan to avoid repeating index/policy
+    # requests for every package.
+    shared_service_index = _fetch_v3_service_index()
+    shared_repo_signed_policy = (
+        _fetch_repository_signature_policy(shared_service_index)
+        if shared_service_index
+        else None
+    )
+    metadata_cache: Dict[str, Tuple[Optional[Dict[str, Any]], str]] = {}
     for pkg in pkgs:
         # Sleep to avoid rate limiting
         time.sleep(0.1)
@@ -339,12 +353,20 @@ def recv_pkg_info(pkgs, url: Optional[str] = None) -> None:
             pkg.exists = False
             continue
 
-        # Try V3 first (primary)
-        metadata, api_version = _fetch_v3_package_metadata(package_id)
-        if not metadata:
-            # Fallback to V2
-            metadata = _fetch_v2_package_metadata(package_id)
-            api_version = "v2"
+        if package_id in metadata_cache:
+            metadata, api_version = metadata_cache[package_id]
+        else:
+            # Try V3 first (primary)
+            metadata, api_version = _fetch_v3_package_metadata(
+                package_id,
+                service_index=shared_service_index,
+                repository_signed_policy=shared_repo_signed_policy,
+            )
+            if not metadata:
+                # Fallback to V2
+                metadata = _fetch_v2_package_metadata(package_id)
+                api_version = "v2"
+            metadata_cache[package_id] = (metadata, api_version)
 
         if not metadata:
             logger.warning(

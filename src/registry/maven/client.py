@@ -25,7 +25,7 @@ def recv_pkg_info(pkgs, url: str = Constants.REGISTRY_URL_MAVEN) -> None:
         url (str, optional): Maven Url. Defaults to Constants.REGISTRY_URL_MAVEN.
     """
     logging.info("Maven checker engaged.")
-    payload = {"wt": "json", "rows": 20}
+    payload = {"wt": "json", "rows": 1}
     # NOTE: move everything off names and modify instances instead
     for x in pkgs:
         tempstring = "g:" + x.org_id + " a:" + x.pkg_name

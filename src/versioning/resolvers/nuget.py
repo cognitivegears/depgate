@@ -21,10 +21,42 @@ from .base import VersionResolver
 class NuGetVersionResolver(VersionResolver):
     """Resolver for NuGet packages using semantic versioning."""
 
+    def __init__(self, cache=None):
+        """Initialize resolver and cache V3 registration base per resolver run."""
+        super().__init__(cache)
+        self._v3_registration_base: Optional[str] = None
+        self._v3_registration_base_checked = False
+
     @property
     def ecosystem(self) -> Ecosystem:
         """Return NuGet ecosystem."""
         return Ecosystem.NUGET
+
+    def _get_v3_registration_base(self) -> Optional[str]:
+        """Resolve and cache NuGet V3 registration base URL."""
+        if self._v3_registration_base_checked:
+            return self._v3_registration_base
+
+        self._v3_registration_base_checked = True
+        try:
+            service_index_url = Constants.REGISTRY_URL_NUGET_V3
+            status_code, _, index_data = get_json(
+                service_index_url, headers={"Accept": "application/json"}
+            )
+            if status_code != 200 or not index_data:
+                return None
+
+            resources = index_data.get("resources", [])
+            for resource in resources:
+                if resource.get("@type") == "RegistrationsBaseUrl/3.6.0":
+                    base = resource.get("@id")
+                    if isinstance(base, str) and base:
+                        self._v3_registration_base = base
+                        break
+        except Exception:
+            return None
+
+        return self._v3_registration_base
 
     def _fetch_v3_versions(self, package_id: str) -> List[str]:
         """Fetch versions from NuGet V3 API.
@@ -36,20 +68,7 @@ class NuGetVersionResolver(VersionResolver):
             List of version strings, empty if V3 unavailable
         """
         try:
-            # First, get service index
-            service_index_url = Constants.REGISTRY_URL_NUGET_V3
-            status_code, _, index_data = get_json(service_index_url, headers={"Accept": "application/json"})
-            if status_code != 200 or not index_data:
-                return []
-
-            # Find registration endpoint
-            resources = index_data.get("resources", [])
-            registration_base = None
-            for resource in resources:
-                if resource.get("@type") == "RegistrationsBaseUrl/3.6.0":
-                    registration_base = resource.get("@id")
-                    break
-
+            registration_base = self._get_v3_registration_base()
             if not registration_base:
                 return []
 
