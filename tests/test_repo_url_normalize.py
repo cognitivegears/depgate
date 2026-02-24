@@ -101,6 +101,54 @@ class TestNormalizeRepoUrl:
         result = normalize_repo_url("https://github.com/owner")
         assert result is None
 
+    def test_github_blob_url_salvages_repo(self):
+        """Test GitHub blob URL is normalized to owner/repo."""
+        result = normalize_repo_url(
+            "https://github.com/owner/repo/blob/main/path/to/file.py"
+        )
+        assert result is not None
+        assert result.normalized_url == "https://github.com/owner/repo"
+        assert result.owner == "owner"
+        assert result.repo == "repo"
+
+    def test_github_tree_url_with_query_and_fragment_salvages_repo(self):
+        """Test GitHub tree URL with query/fragment normalizes to owner/repo."""
+        result = normalize_repo_url(
+            "https://github.com/owner/repo/tree/main/pkg?tab=readme#section"
+        )
+        assert result is not None
+        assert result.normalized_url == "https://github.com/owner/repo"
+        assert result.owner == "owner"
+        assert result.repo == "repo"
+
+    def test_github_issues_url_salvages_repo(self):
+        """Test GitHub issues URL is normalized to owner/repo."""
+        result = normalize_repo_url("https://github.com/owner/repo/issues/123")
+        assert result is not None
+        assert result.normalized_url == "https://github.com/owner/repo"
+        assert result.owner == "owner"
+        assert result.repo == "repo"
+
+    def test_gitlab_subgroup_url_preserved(self):
+        """Test GitLab subgroup project paths are preserved."""
+        result = normalize_repo_url("https://gitlab.com/group/subgroup/project")
+        assert result is not None
+        assert result.host == "gitlab"
+        assert result.owner == "group/subgroup"
+        assert result.repo == "project"
+        assert result.normalized_url == "https://gitlab.com/group/subgroup/project"
+
+    def test_gitlab_blob_url_salvages_project(self):
+        """Test GitLab blob URLs normalize to subgroup project path."""
+        result = normalize_repo_url(
+            "https://gitlab.com/group/subgroup/project/-/blob/main/README.md"
+        )
+        assert result is not None
+        assert result.host == "gitlab"
+        assert result.owner == "group/subgroup"
+        assert result.repo == "project"
+        assert result.normalized_url == "https://gitlab.com/group/subgroup/project"
+
 
 class TestRepoRef:
     """Test cases for RepoRef dataclass."""

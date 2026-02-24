@@ -43,7 +43,7 @@ class NpmVersionResolver(VersionResolver):
 
         encoded = urllib.parse.quote(req.identifier, safe="")
         url = f"{Constants.REGISTRY_URL_NPM}{encoded}"
-        status_code, _, data = get_json(url)
+        status_code, _, data = get_json(url, headers={"Accept": "application/json"})
 
         if status_code != 200 or not data:
             return []

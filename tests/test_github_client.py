@@ -5,11 +5,13 @@ import pytest
 from unittest.mock import patch, Mock
 
 from repository.github import GitHubClient
+from repository.version_match import VersionMatcher
 
 
 class TestGitHubClient:
     """Test cases for GitHubClient class."""
 
+    @patch.dict('os.environ', {}, clear=True)
     def test_initialization_default(self):
         """Test client initialization with defaults."""
         client = GitHubClient()
@@ -28,6 +30,7 @@ class TestGitHubClient:
             client = GitHubClient()
             assert client.token == "env-token"
 
+    @patch.dict('os.environ', {}, clear=True)
     def test_get_headers_without_token(self):
         """Test headers generation without token."""
         client = GitHubClient()
@@ -41,6 +44,7 @@ class TestGitHubClient:
         headers = client._get_headers()
         assert headers['Authorization'] == "token test-token"
 
+    @patch.dict('os.environ', {}, clear=True)
     @patch('repository.github.get_json')
     def test_get_repo_success(self, mock_get_json):
         """Test successful repository metadata retrieval."""
@@ -117,14 +121,35 @@ class TestGitHubClient:
         assert result == 5  # From last page
 
     @patch('repository.github.get_json')
-    def test_get_contributors_count_fallback(self, mock_get_json):
-        """Test contributor count fallback when Link header unavailable."""
-        mock_get_json.return_value = (200, {}, [{'login': 'user1'}, {'login': 'user2'}])
+    def test_get_contributors_count_without_link_header(self, mock_get_json):
+        """Test contributor count when Link header is unavailable."""
+        mock_get_json.return_value = (200, {}, [{'login': 'user1'}])
 
         client = GitHubClient()
         result = client.get_contributors_count('owner', 'repo')
 
-        assert result == 2  # Count of returned items
+        assert result == 1
+        assert mock_get_json.call_count == 1
+
+    @patch('repository.github.get_json')
+    def test_get_contributors_count_with_capitalized_link_header(self, mock_get_json):
+        """Test contributor count parses Link header case-insensitively."""
+        mock_get_json.return_value = (
+            200,
+            {
+                'Link': (
+                    '<https://api.github.com/repos/owner/repo/contributors?page=1>; rel="first", '
+                    '<https://api.github.com/repos/owner/repo/contributors?page=7>; rel="last"'
+                )
+            },
+            [{'login': 'user1'}],
+        )
+
+        client = GitHubClient()
+        result = client.get_contributors_count('owner', 'repo')
+
+        assert result == 7
+        assert mock_get_json.call_count == 1
 
     @patch('repository.github.get_json')
     def test_get_contributors_count_failure(self, mock_get_json):
@@ -167,3 +192,108 @@ class TestGitHubClient:
         total = client._parse_link_header_total(link_header)
 
         assert total is None
+
+    def test_get_last_page_url_from_link_header(self):
+        """Test extracting last page URL from Link header."""
+        client = GitHubClient()
+        link_header = (
+            '<https://api.github.com/repos/owner/repo/contributors?page=2>; rel="next", '
+            '<https://api.github.com/repos/owner/repo/contributors?page=9>; rel="last"'
+        )
+        assert (
+            client._get_last_page_url(link_header)
+            == 'https://api.github.com/repos/owner/repo/contributors?page=9'
+        )
+
+    def test_candidate_tag_labels_prefers_v_prefix(self):
+        """Non-v versions should try v-prefixed label first."""
+        client = GitHubClient()
+        labels = client._candidate_tag_labels("1.2.3")
+        assert labels == ["v1.2.3", "1.2.3"]
+
+    @patch('repository.github.get_json')
+    def test_get_release_by_tag_success(self, mock_get_json):
+        """Test fetching a release by exact tag name."""
+        mock_get_json.return_value = (
+            200,
+            {},
+            {"tag_name": "v1.2.3", "name": "v1.2.3"},
+        )
+        client = GitHubClient()
+        result = client.get_release_by_tag("owner", "repo", "v1.2.3")
+        assert result is not None
+        assert result["tag_name"] == "v1.2.3"
+
+    @patch('repository.github.get_json')
+    def test_get_tag_by_ref_success(self, mock_get_json):
+        """Test fetching a tag reference by exact tag name."""
+        mock_get_json.return_value = (
+            200,
+            {},
+            {"ref": "refs/tags/v1.2.3", "object": {"sha": "abc123"}},
+        )
+        client = GitHubClient()
+        result = client.get_tag_by_ref("owner", "repo", "v1.2.3")
+        assert result is not None
+        assert result["name"] == "v1.2.3"
+        assert result["ref"] == "refs/tags/v1.2.3"
+
+    @patch('repository.github.get_json')
+    def test_find_release_match_uses_exact_endpoint_first(self, mock_get_json):
+        """Test release match lookup tries exact endpoints before pagination."""
+        mock_get_json.side_effect = [
+            (404, {}, None),  # release by tag: 1.2.3
+            (200, {}, {"tag_name": "v1.2.3", "name": "v1.2.3"}),  # release by tag: v1.2.3
+        ]
+
+        client = GitHubClient()
+        matcher = VersionMatcher()
+        result = client.find_release_match("owner", "repo", "1.2.3", matcher)
+
+        assert result is not None
+        assert result["matched"] is True
+        assert mock_get_json.call_count == 2
+
+    @patch('repository.github.get_json')
+    def test_find_release_match_pagination_stops_after_first_page_match(self, mock_get_json):
+        """Test paginated fallback stops once a match is found on a page."""
+        mock_get_json.side_effect = [
+            (404, {}, None),  # release by tag: 1.2.3
+            (404, {}, None),  # release by tag: v1.2.3
+            (
+                200,
+                {'link': '<https://api.github.com/repos/owner/repo/releases?page=2>; rel="next"'},
+                [{"tag_name": "v9.9.9", "name": "v9.9.9"}],
+            ),
+            (
+                200,
+                {'link': '<https://api.github.com/repos/owner/repo/releases?page=3>; rel="next"'},
+                [{"tag_name": "v1.2.3", "name": "v1.2.3"}],
+            ),
+            # This page must not be fetched if early-stop works:
+            (200, {}, [{"tag_name": "v0.0.1", "name": "v0.0.1"}]),
+        ]
+
+        client = GitHubClient()
+        matcher = VersionMatcher()
+        result = client.find_release_match("owner", "repo", "1.2.3", matcher, skip_paginated_fallback=False)
+
+        assert result is not None
+        assert result["matched"] is True
+        assert mock_get_json.call_count == 4
+
+    @patch('repository.github.get_json')
+    def test_find_tag_match_uses_exact_endpoint_first(self, mock_get_json):
+        """Test tag match lookup tries exact endpoints before pagination."""
+        mock_get_json.side_effect = [
+            (404, {}, None),  # tag ref: 1.2.3
+            (200, {}, {"ref": "refs/tags/v1.2.3", "object": {"sha": "abc123"}}),  # tag ref: v1.2.3
+        ]
+
+        client = GitHubClient()
+        matcher = VersionMatcher()
+        result = client.find_tag_match("owner", "repo", "1.2.3", matcher)
+
+        assert result is not None
+        assert result["matched"] is True
+        assert mock_get_json.call_count == 2

@@ -92,6 +92,11 @@ class Constants:  # pylint: disable=too-few-public-methods
     ENV_GITHUB_TOKEN = "GITHUB_TOKEN"
     ENV_GITLAB_TOKEN = "GITLAB_TOKEN"
     REPO_API_PER_PAGE = 100
+    # Skip per-package repository enrichment when global GitHub cooldown is too high.
+    GITHUB_ENRICHMENT_MAX_WAIT_SEC = 10.0
+    GITHUB_ON_RATE_LIMIT = "warn"  # "warn", "fail", "retry"
+    GITHUB_PROACTIVE_THROTTLE_MAX_DELAY_SEC = 0.05
+    GITHUB_SKIP_PAGINATED_FALLBACK: Optional[bool] = None  # None = auto (True without token, False with token)
     HTTP_RETRY_MAX = 3
     HTTP_RETRY_BASE_DELAY_SEC = 0.3
     HTTP_CACHE_TTL_SEC = 300
@@ -144,13 +149,14 @@ class Constants:  # pylint: disable=too-few-public-methods
     # Values sum to 1.0 and are re-normalized at runtime across available
     # (non-None) metrics.
     HEURISTICS_WEIGHTS_DEFAULT = {
-        "base_score": 0.25,
-        "repo_version_match": 0.25,
-        "repo_stars": 0.12,
-        "repo_contributors": 0.10,
+        "base_score": 0.20,
+        "repo_version_match": 0.20,
+        "weekly_downloads": 0.12,
+        "repo_stars": 0.10,
+        "repo_contributors": 0.08,
         "repo_last_activity": 0.08,
         "repo_present_in_registry": 0.05,
-        "supply_chain_trust_score": 0.15,
+        "supply_chain_trust_score": 0.12,
     }
     # Runtime copy that may be overridden via YAML configuration
     HEURISTICS_WEIGHTS = dict(HEURISTICS_WEIGHTS_DEFAULT)
@@ -562,6 +568,26 @@ def _apply_config_overrides(cfg: Dict[str, Any]) -> None:  # pylint: disable=too
     except Exception:  # pylint: disable=broad-exception-caught
         pass
 
+    # GitHub configuration
+    github_cfg = cfg.get("github", {}) or {}
+    gh_rate = github_cfg.get("on_rate_limit")
+    if isinstance(gh_rate, str) and gh_rate.lower() in ("warn", "fail", "retry"):
+        Constants.GITHUB_ON_RATE_LIMIT = gh_rate.lower()  # type: ignore[attr-defined]
+    try:
+        val = github_cfg.get("proactive_throttle_max_delay_sec")
+        if val is not None:
+            Constants.GITHUB_PROACTIVE_THROTTLE_MAX_DELAY_SEC = float(val)  # type: ignore[attr-defined]
+    except Exception:  # pylint: disable=broad-exception-caught
+        pass
+    try:
+        val = github_cfg.get("skip_paginated_fallback")
+        if val is not None:
+            parsed = _parse_bool_env(str(val)) if isinstance(val, str) else bool(val)
+            if parsed is not None:
+                Constants.GITHUB_SKIP_PAGINATED_FALLBACK = parsed  # type: ignore[attr-defined]
+    except Exception:  # pylint: disable=broad-exception-caught
+        pass
+
     # Dependency scanning options
     scan_opts = cfg.get("scan", {}) or {}
     try:
@@ -628,6 +654,24 @@ def _apply_env_overrides() -> None:
         if parsed is not None:
             Constants.DEPSDEV_STRICT_OVERRIDE = parsed  # type: ignore[attr-defined]
 
+    # GitHub environment overrides
+    gh_rate = os.environ.get("DEPGATE_GITHUB_ON_RATE_LIMIT")
+    if gh_rate and gh_rate.lower() in ("warn", "fail", "retry"):
+        Constants.GITHUB_ON_RATE_LIMIT = gh_rate.lower()  # type: ignore[attr-defined]
+
+    gh_throttle = os.environ.get("DEPGATE_GITHUB_PROACTIVE_THROTTLE_MAX_DELAY_SEC")
+    if gh_throttle:
+        try:
+            Constants.GITHUB_PROACTIVE_THROTTLE_MAX_DELAY_SEC = float(gh_throttle)  # type: ignore[attr-defined]
+        except Exception:  # pylint: disable=broad-exception-caught
+            pass
+
+    gh_skip_pag = os.environ.get("DEPGATE_GITHUB_SKIP_PAGINATED_FALLBACK")
+    if gh_skip_pag is not None:
+        parsed = _parse_bool_env(gh_skip_pag)
+        if parsed is not None:
+            Constants.GITHUB_SKIP_PAGINATED_FALLBACK = parsed  # type: ignore[attr-defined]
+
     # OpenSourceMalware environment overrides
     osm_enabled = os.environ.get("DEPGATE_OSM_ENABLED")
     if osm_enabled is not None:
@@ -686,6 +730,27 @@ try:
                 "respect_retry_after": True,
                 "strategy": "exponential_jitter",
             }
+        if "api.github.com" not in Constants.HTTP_RATE_POLICY_PER_SERVICE:  # type: ignore[attr-defined]
+            Constants.HTTP_RATE_POLICY_PER_SERVICE["api.github.com"] = {  # type: ignore[attr-defined]
+                "max_retries": 5,
+                "initial_backoff_sec": 2.0,
+                "multiplier": 2.5,
+                "max_backoff_sec": 120.0,
+                "total_retry_time_cap_sec": 600.0,
+                "respect_retry_after": True,
+                "respect_reset_headers": True,
+                "strategy": "exponential_jitter",
+            }
+        if "readthedocs.org" not in Constants.HTTP_RATE_POLICY_PER_SERVICE:  # type: ignore[attr-defined]
+            Constants.HTTP_RATE_POLICY_PER_SERVICE["readthedocs.org"] = {  # type: ignore[attr-defined]
+                "max_retries": 5,
+                "initial_backoff_sec": 2.0,
+                "multiplier": 2.0,
+                "max_backoff_sec": 30.0,
+                "total_retry_time_cap_sec": 120.0,
+                "respect_retry_after": True,
+                "strategy": "exponential_jitter",
+            }
     else:
         # Initialize if it doesn't exist or is not a dict
         Constants.HTTP_RATE_POLICY_PER_SERVICE = {  # type: ignore[attr-defined]
@@ -696,7 +761,26 @@ try:
                 "max_backoff_sec": 60.0,
                 "respect_retry_after": True,
                 "strategy": "exponential_jitter",
-            }
+            },
+            "api.github.com": {
+                "max_retries": 5,
+                "initial_backoff_sec": 2.0,
+                "multiplier": 2.5,
+                "max_backoff_sec": 120.0,
+                "total_retry_time_cap_sec": 600.0,
+                "respect_retry_after": True,
+                "respect_reset_headers": True,
+                "strategy": "exponential_jitter",
+            },
+            "readthedocs.org": {
+                "max_retries": 5,
+                "initial_backoff_sec": 2.0,
+                "multiplier": 2.0,
+                "max_backoff_sec": 30.0,
+                "total_retry_time_cap_sec": 120.0,
+                "respect_retry_after": True,
+                "strategy": "exponential_jitter",
+            },
         }
 except Exception:  # pylint: disable=broad-exception-caught
     # Never fail import due to config issues

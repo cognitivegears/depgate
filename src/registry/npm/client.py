@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import json
-import sys
 import time
 import logging
 from datetime import datetime as dt
 from urllib.parse import urlsplit, urlunsplit, quote
+from typing import Optional, Dict, Any, List
 
-from constants import ExitCodes, Constants
+from constants import Constants
 from common.logging_utils import extra_context, is_debug_enabled, Timer, safe_url
 
 import registry.npm as npm_pkg
@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 # Shared HTTP JSON headers and timestamp format for this module
 HEADERS_JSON = {"Accept": "application/json", "Content-Type": "application/json"}
 TIME_FORMAT_ISO = "%Y-%m-%dT%H:%M:%S.%fZ"
+NPMS_MGET_BATCH_SIZE = 250
 
 def _log_http_pre(url: str, method: str, encode_brackets: bool = False) -> None:
     """Debug-log outbound HTTP request for NPM client."""
@@ -38,7 +39,15 @@ def _log_http_pre(url: str, method: str, encode_brackets: bool = False) -> None:
     )
 
 
-def get_package_details(pkg, url: str) -> None:
+def _apply_package_details(pkg, package_info: Dict[str, Any]) -> None:
+    """Apply packument-derived fields and enrichment to a package."""
+    pkg.exists = True
+    pkg.version_count = len(package_info["versions"])
+    # Enrich with repository discovery and validation
+    _enrich_with_repo(pkg, package_info)
+
+
+def get_package_details(pkg, url: str) -> Optional[Dict[str, Any]]:
     """Get the details of a package from the NPM registry.
 
     Args:
@@ -105,7 +114,7 @@ def get_package_details(pkg, url: str) -> None:
             )
         )
         pkg.exists = False
-        return
+        return None
     if res.status_code >= 200 and res.status_code < 300:
         if is_debug_enabled(logger):
             logger.debug(
@@ -137,11 +146,57 @@ def get_package_details(pkg, url: str) -> None:
     except json.JSONDecodeError:
         logging.warning("Couldn't decode JSON, assuming package missing.")
         pkg.exists = False
+        return None
+    _apply_package_details(pkg, package_info)
+    return package_info
+
+
+NPM_DOWNLOADS_BATCH_SIZE = 128
+NPM_DOWNLOADS_BASE_URL = "https://api.npmjs.org/downloads/point/last-week"
+
+
+def _fetch_missing_downloads(pkgs) -> None:
+    """Fetch weekly downloads from the npm registry downloads API for packages
+    where npms.io returned no download data (None or 0).
+
+    Uses the scoped-package endpoint:
+        GET https://api.npmjs.org/downloads/point/last-week/<pkg>
+
+    This is a best-effort fallback; failures are silently ignored.
+    """
+    need_downloads = [
+        p for p in pkgs
+        if getattr(p, 'exists', False) is True
+        and (getattr(p, 'weekly_downloads', None) or 0) == 0
+    ]
+    if not need_downloads:
         return
-    pkg.exists = True
-    pkg.version_count = len(package_info["versions"])
-    # Enrich with repository discovery and validation
-    _enrich_with_repo(pkg, package_info)
+
+    logger.info(
+        "Fetching download counts for %s packages missing npms.io data",
+        len(need_downloads),
+    )
+
+    for pkg in need_downloads:
+        encoded_name = quote(str(pkg.pkg_name), safe='@')
+        dl_url = f"{NPM_DOWNLOADS_BASE_URL}/{encoded_name}"
+        try:
+            res = npm_pkg.safe_get(
+                dl_url, context="npm-downloads", fatal=False,
+            )
+        except Exception:  # pylint: disable=broad-exception-caught
+            continue
+
+        if res.status_code != 200:
+            continue
+
+        try:
+            data = json.loads(res.text)
+            downloads = data.get("downloads")
+            if downloads is not None and int(downloads) > 0:
+                pkg.weekly_downloads = int(downloads)
+        except (json.JSONDecodeError, ValueError, TypeError):
+            continue
 
 
 def recv_pkg_info(
@@ -159,62 +214,98 @@ def recv_pkg_info(
     logging.info("npm checker engaged.")
 
     if should_fetch_details:
+        details_cache: Dict[str, Optional[Dict[str, Any]]] = {}
         for pkg in pkgs:
-            get_package_details(pkg, details_url)
+            pkg_name = str(getattr(pkg, "pkg_name", ""))
+            if pkg_name in details_cache:
+                cached_info = details_cache[pkg_name]
+                if isinstance(cached_info, dict):
+                    _apply_package_details(pkg, cached_info)
+                else:
+                    pkg.exists = False
+                continue
+            details_cache[pkg_name] = get_package_details(pkg, details_url)
 
-    # Pre-call DEBUG log via helper (encode brackets for log consistency)
-    _log_http_pre(url, "POST", encode_brackets=True)
+    # Build deduplicated package name list
+    unique_pkg_names: List[str] = []
+    seen_names = set()
+    for p in pkgs:
+        name = str(getattr(p, "pkg_name", ""))
+        if name in seen_names:
+            continue
+        seen_names.add(name)
+        unique_pkg_names.append(name)
 
-    with Timer() as timer:
+    # Fetch npms.io stats in batches (API limit: 250 packages per mget request)
+    pkg_map: Dict[str, Any] = {}
+    for batch_start in range(0, len(unique_pkg_names), NPMS_MGET_BATCH_SIZE):
+        chunk = unique_pkg_names[batch_start:batch_start + NPMS_MGET_BATCH_SIZE]
+        batch_num = batch_start // NPMS_MGET_BATCH_SIZE + 1
+        total_batches = (len(unique_pkg_names) + NPMS_MGET_BATCH_SIZE - 1) // NPMS_MGET_BATCH_SIZE
+
+        logger.info(
+            "mget batch %s/%s (%s packages)",
+            batch_num, total_batches, len(chunk),
+        )
+
+        # Pre-call DEBUG log via helper (encode brackets for log consistency)
+        _log_http_pre(url, "POST", encode_brackets=True)
+
         try:
-            res = npm_pkg.safe_post(
-                url,
-                context="npm",
-                data="[" + ",".join(f'"{p.pkg_name}"' for p in pkgs) + "]",
-                headers=HEADERS_JSON,
-            )
+            with Timer() as timer:
+                res = npm_pkg.safe_post(
+                    url,
+                    context="npm",
+                    data=json.dumps(chunk),
+                    headers=HEADERS_JSON,
+                )
         except SystemExit:
-            # safe_post calls sys.exit on errors, so we need to catch and re-raise as exception
-            logger.error(
-                "HTTP error",
-                exc_info=True,
+            logger.warning(
+                "mget batch %s/%s failed (network/timeout); continuing without npms stats for %s packages",
+                batch_num, total_batches, len(chunk),
                 extra=extra_context(
                     event="http_error",
-                    outcome="exception",
+                    outcome="mget_batch_skipped",
                     target=safe_url(url),
                     package_manager="npm",
                 ),
             )
-            raise
+            continue
 
-    if res.status_code == 200:
-        if is_debug_enabled(logger):
-            logger.debug(
-                "HTTP response ok",
+        if res.status_code == 200:
+            if is_debug_enabled(logger):
+                logger.debug(
+                    "HTTP response ok",
+                    extra=extra_context(
+                        event="http_response",
+                        outcome="success",
+                        status_code=res.status_code,
+                        duration_ms=timer.duration_ms(),
+                        package_manager="npm",
+                    ),
+                )
+            try:
+                batch_data = json.loads(res.text)
+                pkg_map.update(batch_data)
+            except json.JSONDecodeError:
+                logger.warning(
+                    "mget batch %s/%s returned invalid JSON; skipping",
+                    batch_num, total_batches,
+                )
+        else:
+            logger.warning(
+                "mget batch %s/%s returned HTTP %s; continuing without npms stats for %s packages",
+                batch_num, total_batches, res.status_code, len(chunk),
                 extra=extra_context(
                     event="http_response",
-                    outcome="success",
+                    outcome="handled_non_2xx",
                     status_code=res.status_code,
                     duration_ms=timer.duration_ms(),
+                    target=safe_url(url),
                     package_manager="npm",
                 ),
             )
-    else:
-        logger.warning(
-            "HTTP non-2xx handled",
-            extra=extra_context(
-                event="http_response",
-                outcome="handled_non_2xx",
-                status_code=res.status_code,
-                duration_ms=timer.duration_ms(),
-                target=safe_url(url),
-                package_manager="npm",
-            ),
-        )
-        logging.error("Unexpected status code (%s)", res.status_code)
-        sys.exit(ExitCodes.CONNECTION_ERROR.value)
 
-    pkg_map = json.loads(res.text)
     for i in pkgs:
         info = pkg_map.get(i.pkg_name)
         if info is not None:
@@ -246,3 +337,7 @@ def recv_pkg_info(
             # Preserve existence set by details fetch if already True
             if getattr(i, "exists", None) is not True:
                 i.exists = False
+
+    # Fallback: fetch weekly downloads from the npm registry downloads API
+    # for packages where npms.io returned no download data.
+    _fetch_missing_downloads(pkgs)

@@ -58,14 +58,18 @@ class TestNormalization:
         assert _norm_repo_last_activity(now_iso) == 1.0
         assert _norm_repo_last_activity(d200_iso) == 0.6
         assert _norm_repo_last_activity(d400_iso) == 0.3
-        assert _norm_repo_last_activity(d1000_iso) == 0.0
+        assert _norm_repo_last_activity(d1000_iso) == 0.1
         assert _norm_repo_last_activity("not-a-timestamp") is None
         assert _norm_repo_last_activity(None) is None
 
     def test_norm_version_match(self):
         assert _norm_version_match(None) is None
         assert _norm_version_match({"matched": True}) == 1.0
+        # Repo has artifacts but no match -> suspicious (account takeover signal)
         assert _norm_version_match({"matched": False}) == 0.0
+        assert _norm_version_match({"matched": False, "has_any_version_artifacts": True}) == 0.0
+        # Repo has NO artifacts at all -> "never tags" -> N/A (weight redistributed)
+        assert _norm_version_match({"matched": False, "has_any_version_artifacts": False}) is None
 
 
 class TestFinalScore:

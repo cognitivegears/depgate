@@ -67,19 +67,31 @@ class GitHubProviderAdapter(ProviderClient):
             repo: Repository name
 
         Returns:
-            List of release dictionaries. Falls back to tags if releases are empty.
+            List of release dictionaries.
         """
-        releases = self.client.get_releases(owner, repo)
-        if releases:
-            return releases
-
-        # Fallback: use tags when releases are unavailable to enable version matching
-        tags = self.client.get_tags(owner, repo)
-        return tags or []
+        return self.client.get_releases(owner, repo) or []
 
     def get_tags(self, owner: str, repo: str) -> List[Dict[str, str]]:
         """Fetch repository tags for version matching."""
         return self.client.get_tags(owner, repo) or []
+
+    def find_release_match(
+        self, owner: str, repo: str, version: str, matcher: Any
+    ) -> Optional[Dict[str, Any]]:
+        """Find release match using provider-optimized lookup strategy."""
+        fn = getattr(self.client, "find_release_match", None)
+        if callable(fn):
+            return fn(owner, repo, version, matcher)
+        return None
+
+    def find_tag_match(
+        self, owner: str, repo: str, version: str, matcher: Any
+    ) -> Optional[Dict[str, Any]]:
+        """Find tag match using provider-optimized lookup strategy."""
+        fn = getattr(self.client, "find_tag_match", None)
+        if callable(fn):
+            return fn(owner, repo, version, matcher)
+        return None
 
     def get_open_prs_count(self, owner: str, repo: str) -> Optional[int]:
         """Get open pull request count for repository."""
@@ -153,19 +165,31 @@ class GitLabProviderAdapter(ProviderClient):
             repo: Project name
 
         Returns:
-            List of release dictionaries. Falls back to tags if releases are empty.
+            List of release dictionaries.
         """
-        releases = self.client.get_releases(owner, repo)
-        if releases:
-            return releases
-
-        # Fallback: use tags when releases are unavailable to enable version matching
-        tags = self.client.get_tags(owner, repo)
-        return tags or []
+        return self.client.get_releases(owner, repo) or []
 
     def get_tags(self, owner: str, repo: str) -> List[Dict[str, str]]:
         """Fetch project tags for version matching."""
         return self.client.get_tags(owner, repo) or []
+
+    def find_release_match(
+        self, owner: str, repo: str, version: str, matcher: Any
+    ) -> Optional[Dict[str, Any]]:
+        """Find release match using provider-optimized lookup strategy."""
+        fn = getattr(self.client, "find_release_match", None)
+        if callable(fn):
+            return fn(owner, repo, version, matcher)
+        return None
+
+    def find_tag_match(
+        self, owner: str, repo: str, version: str, matcher: Any
+    ) -> Optional[Dict[str, Any]]:
+        """Find tag match using provider-optimized lookup strategy."""
+        fn = getattr(self.client, "find_tag_match", None)
+        if callable(fn):
+            return fn(owner, repo, version, matcher)
+        return None
 
     def get_open_prs_count(self, owner: str, repo: str) -> Optional[int]:
         """Get open merge request count for project."""

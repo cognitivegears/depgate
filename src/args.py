@@ -125,6 +125,23 @@ def add_proxy_arguments(parser: argparse.ArgumentParser) -> None:
         default=10 * 1024 * 1024,
     )
 
+    # GitHub feature flags and tunables
+    parser.add_argument(
+        "--github-token",
+        dest="GITHUB_TOKEN",
+        help="GitHub personal access token (or set GITHUB_TOKEN env var)",
+        action="store",
+        type=str,
+    )
+    parser.add_argument(
+        "--github-on-rate-limit",
+        dest="GITHUB_ON_RATE_LIMIT",
+        help="Behavior when GitHub API rate limit is hit (default: warn)",
+        action="store",
+        type=str,
+        choices=["warn", "fail", "retry"],
+    )
+
     # Logging
     parser.add_argument(
         "--log-level",
@@ -503,6 +520,23 @@ def add_scan_arguments(parser: argparse.ArgumentParser) -> None:
         help="Maximum retries for OpenSourceMalware API requests (default: 5)",
         action="store",
         type=int,
+    )
+
+    # GitHub feature flags and tunables
+    parser.add_argument(
+        "--github-token",
+        dest="GITHUB_TOKEN",
+        help="GitHub personal access token (or set GITHUB_TOKEN env var)",
+        action="store",
+        type=str,
+    )
+    parser.add_argument(
+        "--github-on-rate-limit",
+        dest="GITHUB_ON_RATE_LIMIT",
+        help="Behavior when GitHub API rate limit is hit (default: warn)",
+        action="store",
+        type=str,
+        choices=["warn", "fail", "retry"],
     )
 
     # Dependency scanning options

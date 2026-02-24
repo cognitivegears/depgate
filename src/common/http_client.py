@@ -12,6 +12,9 @@ import time
 import json
 from typing import Any, Optional, Dict, Tuple
 
+import threading
+from urllib.parse import urlparse
+
 import requests
 
 from constants import Constants, ExitCodes
@@ -20,6 +23,21 @@ from common.http_rate_middleware import request as middleware_request
 from common.http_errors import RateLimitExhausted, RetryBudgetExceeded
 
 logger = logging.getLogger(__name__)
+
+# Per-hostname connection pooling via requests.Session
+_session_pool: Dict[str, requests.Session] = {}
+_session_pool_lock = threading.Lock()
+
+
+def _get_session(url: str) -> requests.Session:
+    """Return a cached requests.Session for the hostname of *url*."""
+    hostname = urlparse(url).hostname or ""
+    with _session_pool_lock:
+        sess = _session_pool.get(hostname)
+        if sess is None:
+            sess = requests.Session()
+            _session_pool[hostname] = sess
+        return sess
 
 
 def safe_get(url: str, *, context: str, fatal: bool = True, **kwargs: Any) -> requests.Response:
@@ -34,11 +52,13 @@ def safe_get(url: str, *, context: str, fatal: bool = True, **kwargs: Any) -> re
         **kwargs: Passed through to the middleware request.
     """
     try:
+        session = kwargs.pop("session", None) or _get_session(url)
         return middleware_request(
             "GET",
             url,
             timeout=Constants.REQUEST_TIMEOUT,
             context=context,
+            session=session,
             extra_log_fields={"component": "http_client", "action": "GET"},
             **kwargs
         )
@@ -123,6 +143,20 @@ def _is_cache_valid(cache_entry: Tuple[Any, float]) -> bool:
     return time.time() - cached_time < Constants.HTTP_CACHE_TTL_SEC
 
 
+def _get_on_rate_limit_behavior(service: str) -> str:
+    """Return the configured on-rate-limit behavior for a service.
+
+    Args:
+        service: Hostname of the service (e.g., 'api.github.com').
+
+    Returns:
+        One of 'warn', 'fail', or 'retry'.
+    """
+    if service == "api.github.com":
+        return getattr(Constants, "GITHUB_ON_RATE_LIMIT", "warn")
+    return "warn"
+
+
 def robust_get(
     url: str,
     *,
@@ -158,12 +192,14 @@ def robust_get(
         return cached_data
 
     try:
+        session = kwargs.pop("session", None) or _get_session(url)
         response = middleware_request(
             "GET",
             url,
             headers=headers,
             timeout=Constants.REQUEST_TIMEOUT,
             context="robust_get",
+            session=session,
             extra_log_fields={"component": "http_client", "action": "GET"},
             **kwargs
         )
@@ -180,12 +216,24 @@ def robust_get(
 
         return response.status_code, dict(response.headers), response.text
 
-    except (RateLimitExhausted, RetryBudgetExceeded):
-        # Return failure tuple to preserve existing behavior
+    except (RateLimitExhausted, RetryBudgetExceeded) as exc:
+        service = getattr(exc, 'service', 'unknown')
+        logger.warning(
+            "Rate limit exhausted for %s: %s", service, exc
+        )
+        on_rate_limit = _get_on_rate_limit_behavior(service)
+        if on_rate_limit == "fail":
+            logger.error(
+                "Exiting due to rate limit (github.on_rate_limit=fail). "
+                "Set GITHUB_TOKEN or use --github-on-rate-limit=retry to retry with backoff."
+            )
+            sys.exit(ExitCodes.CONNECTION_ERROR.value)
         return 0, {}, "Rate limit exhausted"
     except requests.Timeout:
+        logger.warning("Request timed out for %s", safe_target)
         return 0, {}, "Request timed out"
     except requests.RequestException as exc:
+        logger.warning("Request failed for %s: %s", safe_target, exc)
         return 0, {}, f"Request failed: {exc}"
 
 

@@ -40,6 +40,7 @@ def _sanitize_identifier(identifier: str) -> str:
 HEADERS_JSON = {"Accept": "application/json", "Content-Type": "application/json"}
 TIME_FORMAT_ISO = "%Y-%m-%dT%H:%M:%S.%fZ"
 HEADERS_SIMPLE_JSON = {"Accept": "application/vnd.pypi.simple.v1+json"}
+PYPI_TRUST_SIGNAL_WEIGHTS = (0.8, 0.2)  # provenance, checksums
 
 def _log_http_pre(url: str) -> None:
     """Debug-log outbound HTTP request for PyPI client."""
@@ -131,29 +132,62 @@ def _fetch_simple_index_json(normalized_name: str) -> Optional[Dict[str, Any]]:
     return None
 
 
-def _extract_simple_trust(simple_json: Optional[Dict[str, Any]], version: str) -> tuple[Optional[bool], Optional[bool], Optional[str]]:
-    """Return (registry_signature_present, provenance_present, provenance_url)."""
+def _file_matches_version(filename: str, version: str) -> bool:
+    """Check if a distribution filename corresponds to the given version.
+
+    Matches version in standard PyPI filename patterns:
+      - wheels:  ``{name}-{version}-{tags}.whl``
+      - sdists:  ``{name}-{version}.tar.gz`` / ``.zip``
+    """
+    marker = f"-{version}"
+    # Strip common archive extensions to get the base name
+    base = filename
+    for ext in (".tar.gz", ".tar.bz2", ".tar.xz", ".zip", ".whl", ".egg"):
+        if base.endswith(ext):
+            base = base[: -len(ext)]
+            break
+    # After stripping the extension, the base should contain '-{version}'
+    # followed by end-of-string (sdist) or '-' (wheel build/platform tags).
+    idx = base.find(marker)
+    if idx < 0:
+        return False
+    after = base[idx + len(marker) :]
+    return after == "" or after.startswith("-")
+
+
+def _extract_simple_trust(
+    simple_json: Optional[Dict[str, Any]], version: str
+) -> tuple[Optional[bool], Optional[bool], Optional[str], Optional[bool]]:
+    """Return (provenance_present, provenance_url, checksums_present).
+
+    GPG signatures (``gpg-sig``) are no longer checked because PyPI
+    deprecated GPG signature uploads in May 2023 and the field is absent
+    from current Simple API responses.  ``registry_signature_present``
+    is left as *None* (not applicable) so it does not penalise packages.
+
+    Returns a 4-tuple for call-site compatibility; the first element is
+    always *None* (reserved for future registry-signature work).
+    """
     if not isinstance(simple_json, dict):
-        return None, None, None
+        return None, None, None, None
     files = simple_json.get("files", [])
     if not isinstance(files, list):
-        return None, None, None
+        return None, None, None, None
 
     version_files = []
     for file_entry in files:
         if not isinstance(file_entry, dict):
             continue
-        if str(file_entry.get("version", "")) == str(version):
+        fname = file_entry.get("filename", "")
+        if isinstance(fname, str) and _file_matches_version(fname, version):
             version_files.append(file_entry)
     if not version_files:
-        return None, None, None
+        return None, None, None, None
 
-    has_signature = False
     has_provenance = False
     provenance_url = None
+    has_checksums = False
     for entry in version_files:
-        if bool(entry.get("gpg-sig")):
-            has_signature = True
         prov = entry.get("provenance")
         if prov:
             has_provenance = True
@@ -163,7 +197,11 @@ def _extract_simple_trust(simple_json: Optional[Dict[str, Any]], version: str) -
                 url = prov.get("url")
                 if isinstance(url, str) and url.strip():
                     provenance_url = url.strip()
-    return has_signature, has_provenance, provenance_url
+        hashes = entry.get("hashes")
+        if isinstance(hashes, dict) and hashes:
+            has_checksums = True
+    # First element is None (registry_signature_present — not applicable for PyPI)
+    return None, has_provenance, provenance_url, has_checksums
 
 
 def _extract_legacy_json_signature(releases: Dict[str, Any], version: str) -> Optional[bool]:
@@ -182,81 +220,91 @@ def recv_pkg_info(pkgs, url: str = Constants.REGISTRY_URL_PYPI) -> None:
         url (str, optional): Url for PyPI. Defaults to Constants.REGISTRY_URL_PYPI.
     """
     logging.info("PyPI registry engaged.")
+    metadata_cache: Dict[str, Optional[Dict[str, Any]]] = {}
+    weekly_cache: Dict[str, Optional[int]] = {}
+    simple_cache: Dict[str, Optional[Dict[str, Any]]] = {}
     for x in pkgs:
-        # Sleep to avoid rate limiting
-        time.sleep(0.1)
         name = getattr(x, "pkg_name", "")
         sanitized = _sanitize_identifier(str(name)).strip()
         normalized = canonicalize_name(sanitized)
-        fullurl = url + normalized + "/json"
+        if normalized in metadata_cache:
+            j = metadata_cache[normalized]
+            if j is None:
+                x.exists = False
+                continue
+        else:
+            fullurl = url + normalized + "/json"
 
-        # Pre-call DEBUG log via helper
-        _log_http_pre(fullurl)
+            # Pre-call DEBUG log via helper
+            _log_http_pre(fullurl)
 
-        with Timer() as timer:
-            try:
-                res = pypi_pkg.safe_get(fullurl, context="pypi", params=None, headers=HEADERS_JSON)
-            except SystemExit:
-                # safe_get calls sys.exit on errors, so we need to catch and re-raise as exception
-                logger.error(
-                    "HTTP error",
-                    exc_info=True,
+            with Timer() as timer:
+                try:
+                    res = pypi_pkg.safe_get(fullurl, context="pypi", params=None, headers=HEADERS_JSON)
+                except SystemExit:
+                    # safe_get calls sys.exit on errors, so we need to catch and re-raise as exception
+                    logger.error(
+                        "HTTP error",
+                        exc_info=True,
+                        extra=extra_context(
+                            event="http_error",
+                            outcome="exception",
+                            target=safe_url(fullurl),
+                            package_manager="pypi",
+                        ),
+                    )
+                    raise
+
+            if res.status_code == 404:
+                logger.warning(
+                    "HTTP 404 received; applying fallback",
                     extra=extra_context(
-                        event="http_error",
-                        outcome="exception",
+                        event="http_response",
+                        outcome="not_found_fallback",
+                        status_code=404,
                         target=safe_url(fullurl),
                         package_manager="pypi",
                     ),
                 )
-                raise
-
-        if res.status_code == 404:
-            logger.warning(
-                "HTTP 404 received; applying fallback",
-                extra=extra_context(
-                    event="http_response",
-                    outcome="not_found_fallback",
-                    status_code=404,
-                    target=safe_url(fullurl),
-                    package_manager="pypi",
-                ),
-            )
-            # Package not found
-            x.exists = False
-            continue
-        if res.status_code == 200:
-            if is_debug_enabled(logger):
-                logger.debug(
-                    "HTTP response ok",
+                # Package not found
+                metadata_cache[normalized] = None
+                x.exists = False
+                continue
+            if res.status_code == 200:
+                if is_debug_enabled(logger):
+                    logger.debug(
+                        "HTTP response ok",
+                        extra=extra_context(
+                            event="http_response",
+                            outcome="success",
+                            status_code=res.status_code,
+                            duration_ms=timer.duration_ms(),
+                            package_manager="pypi",
+                        ),
+                    )
+            else:
+                logger.warning(
+                    "HTTP non-2xx handled",
                     extra=extra_context(
                         event="http_response",
-                        outcome="success",
+                        outcome="handled_non_2xx",
                         status_code=res.status_code,
                         duration_ms=timer.duration_ms(),
+                        target=safe_url(fullurl),
                         package_manager="pypi",
                     ),
                 )
-        else:
-            logger.warning(
-                "HTTP non-2xx handled",
-                extra=extra_context(
-                    event="http_response",
-                    outcome="handled_non_2xx",
-                    status_code=res.status_code,
-                    duration_ms=timer.duration_ms(),
-                    target=safe_url(fullurl),
-                    package_manager="pypi",
-                ),
-            )
-            logging.error("Connection error, status code: %s", res.status_code)
-            sys.exit(ExitCodes.CONNECTION_ERROR.value)
+                logging.error("Connection error, status code: %s", res.status_code)
+                sys.exit(ExitCodes.CONNECTION_ERROR.value)
 
-        try:
-            j = json.loads(res.text)
-        except json.JSONDecodeError:
-            logging.warning("Couldn't decode JSON, assuming package missing.")
-            x.exists = False
-            continue
+            try:
+                j = json.loads(res.text)
+            except json.JSONDecodeError:
+                logging.warning("Couldn't decode JSON, assuming package missing.")
+                metadata_cache[normalized] = None
+                x.exists = False
+                continue
+            metadata_cache[normalized] = j
 
         if j.get("info"):
             x.exists = True
@@ -300,31 +348,40 @@ def recv_pkg_info(pkgs, url: str = Constants.REGISTRY_URL_PYPI) -> None:
             _enrich_with_repo(x, x.pkg_name, j["info"], selected_version)
 
             # Fetch weekly download stats (best-effort)
-            x.weekly_downloads = _fetch_weekly_downloads(normalized)
+            if normalized not in weekly_cache:
+                weekly_cache[normalized] = _fetch_weekly_downloads(normalized)
+            x.weekly_downloads = weekly_cache.get(normalized)
 
             # Trust/provenance signals from Simple API (best effort)
-            simple_json = _fetch_simple_index_json(normalized)
-            cur_sig, cur_prov, cur_prov_url = _extract_simple_trust(simple_json, selected_version)
-            prev_sig = prev_prov = None
+            # GPG signatures are deprecated on PyPI (May 2023) and the
+            # ``gpg-sig`` field is absent from current Simple API responses,
+            # so registry_signature_present is left as None (not applicable).
+            if normalized not in simple_cache:
+                simple_cache[normalized] = _fetch_simple_index_json(normalized)
+            simple_json = simple_cache.get(normalized)
+            _cur_sig, cur_prov, cur_prov_url, cur_cksum = _extract_simple_trust(simple_json, selected_version)
+            _prev_sig = prev_prov = prev_cksum = None
             if previous_version:
-                prev_sig, prev_prov, _ = _extract_simple_trust(simple_json, previous_version)
+                _prev_sig, prev_prov, _, prev_cksum = _extract_simple_trust(simple_json, previous_version)
 
-            # Fallback signature source from Warehouse JSON `has_sig`
-            if cur_sig is None:
-                cur_sig = _extract_legacy_json_signature(releases, selected_version)
-            if previous_version and prev_sig is None:
-                prev_sig = _extract_legacy_json_signature(releases, previous_version)
-
-            x.registry_signature_present = cur_sig
-            x.previous_registry_signature_present = prev_sig
+            x.registry_signature_present = None   # GPG deprecated; not applicable
+            x.previous_registry_signature_present = None
             x.provenance_present = cur_prov
             x.previous_provenance_present = prev_prov
             x.provenance_url = cur_prov_url
             x.provenance_source = "pypi_simple_api"
-            x.registry_signature_regressed = regressed(cur_sig, prev_sig)
+            x.checksums_present = cur_cksum
+            x.previous_checksums_present = prev_cksum
+            x.registry_signature_regressed = None  # not applicable
             x.provenance_regressed = regressed(cur_prov, prev_prov)
-            x.trust_score = score_from_boolean_signals([cur_sig, cur_prov])
-            x.previous_trust_score = score_from_boolean_signals([prev_sig, prev_prov])
+            x.trust_score = score_from_boolean_signals(
+                [cur_prov, cur_cksum],
+                weights=PYPI_TRUST_SIGNAL_WEIGHTS,
+            )
+            x.previous_trust_score = score_from_boolean_signals(
+                [prev_prov, prev_cksum],
+                weights=PYPI_TRUST_SIGNAL_WEIGHTS,
+            )
             delta, decreased = score_delta(x.trust_score, x.previous_trust_score)
             x.trust_score_delta = delta
             x.trust_score_decreased = decreased

@@ -28,7 +28,7 @@ def test_json_includes_repo_fields_defaults(tmp_path):
     assert "repo_stars" in rec and rec["repo_stars"] is None
     assert "repo_contributors" in rec and rec["repo_contributors"] is None
     assert "repo_last_activity" in rec and rec["repo_last_activity"] is None
-    assert "repo_present_in_registry" in rec and rec["repo_present_in_registry"] is None
+    assert "repo_present_in_registry" in rec and rec["repo_present_in_registry"] is False
     assert "repo_version_match" in rec and rec["repo_version_match"] is None
 
 
@@ -52,8 +52,9 @@ def test_csv_headers_and_defaults(tmp_path):
     ]
 
     row = rows[1]
-    # Empty string defaults in CSV for missing repo_* values
-    assert row[-5:] == ["", "", "", "", ""]
+    # Empty string defaults in CSV for missing repo_* values;
+    # repo_present_in_registry defaults to False (shown as "False")
+    assert row[-5:] == ["", "", "", "False", ""]
 
 
 def test_csv_with_values(tmp_path):

@@ -36,9 +36,10 @@ class TestNPMWeeklyDownloads:
 
         assert pkg.weekly_downloads == 50000
 
+    @patch('registry.npm.client.npm_pkg.safe_get')
     @patch('registry.npm.client.npm_pkg.safe_post')
-    def test_weekly_downloads_missing(self, mock_post):
-        """Test that missing downloadsCount doesn't break processing."""
+    def test_weekly_downloads_missing(self, mock_post, mock_get):
+        """Test that missing downloadsCount triggers fallback to npm downloads API."""
         pkg = MetaPackage("test-package", "npm")
 
         # Mock npms.io response without downloadsCount
@@ -50,16 +51,21 @@ class TestNPMWeeklyDownloads:
                 "collected": {"metadata": {"date": "2023-01-01T00:00:00.000Z"}}
             }
         })
-
         mock_post.return_value = mock_response
+
+        # Mock npm downloads API fallback returning 404
+        mock_dl_response = Mock()
+        mock_dl_response.status_code = 404
+        mock_get.return_value = mock_dl_response
 
         npm_recv_pkg_info([pkg], should_fetch_details=False)
 
         assert pkg.weekly_downloads is None
 
+    @patch('registry.npm.client.npm_pkg.safe_get')
     @patch('registry.npm.client.npm_pkg.safe_post')
-    def test_weekly_downloads_zero(self, mock_post):
-        """Test that zero downloads are handled correctly."""
+    def test_weekly_downloads_zero(self, mock_post, mock_get):
+        """Test that zero downloads from npms.io are handled correctly."""
         pkg = MetaPackage("test-package", "npm")
 
         mock_response = Mock()
@@ -75,12 +81,49 @@ class TestNPMWeeklyDownloads:
                 }
             }
         })
-
         mock_post.return_value = mock_response
+
+        # Mock npm downloads API fallback also returning 0
+        mock_dl_response = Mock()
+        mock_dl_response.status_code = 200
+        mock_dl_response.text = json.dumps({"downloads": 0})
+        mock_get.return_value = mock_dl_response
 
         npm_recv_pkg_info([pkg], should_fetch_details=False)
 
         assert pkg.weekly_downloads == 0
+
+    @patch('registry.npm.client.npm_pkg.safe_get')
+    @patch('registry.npm.client.npm_pkg.safe_post')
+    def test_weekly_downloads_fallback_success(self, mock_post, mock_get):
+        """Test that npm downloads API fallback populates weekly_downloads."""
+        pkg = MetaPackage("test-package", "npm")
+
+        # Mock npms.io response with 0 downloads (like @types packages)
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.text = json.dumps({
+            "test-package": {
+                "score": {"final": 0.0},
+                "collected": {"metadata": {"date": "2023-01-01T00:00:00.000Z"}},
+                "evaluation": {
+                    "popularity": {
+                        "downloadsCount": 0
+                    }
+                }
+            }
+        })
+        mock_post.return_value = mock_response
+
+        # Mock npm downloads API fallback with real data
+        mock_dl_response = Mock()
+        mock_dl_response.status_code = 200
+        mock_dl_response.text = json.dumps({"downloads": 50000000})
+        mock_get.return_value = mock_dl_response
+
+        npm_recv_pkg_info([pkg], should_fetch_details=False)
+
+        assert pkg.weekly_downloads == 50000000
 
 
 class TestPyPIWeeklyDownloads:

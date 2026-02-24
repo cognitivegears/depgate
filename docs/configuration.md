@@ -85,6 +85,12 @@ opensourcemalware:
   max_retries: 5
   rate_limit_retry_delay_sec: 1.0
 
+# GitHub API behavior
+github:
+  on_rate_limit: "warn"                    # "warn", "fail", or "retry"
+  proactive_throttle_max_delay_sec: 0.05   # Max per-request proactive throttle delay
+  # skip_paginated_fallback: true          # Auto: true without token, false with token
+
 # Dependency scanning options
 scan:
   direct_only: false        # Only scan direct dependencies from manifests, even when lockfiles exist
@@ -139,6 +145,21 @@ registry:
   nuget_v3_base_url: "https://api.nuget.org/v3/index.json"
   nuget_v2_base_url: "https://www.nuget.org/api/v2/"
 ```
+
+### GitHub Settings
+
+Configure GitHub API behavior:
+
+```yaml
+github:
+  on_rate_limit: "warn"                    # "warn", "fail", or "retry"
+  proactive_throttle_max_delay_sec: 0.05   # Max per-request proactive throttle delay (seconds)
+  # skip_paginated_fallback: true          # Auto: true without token, false with token
+```
+
+- **`proactive_throttle_max_delay_sec`**: Caps the proactive rate-limit throttle delay per GitHub API call. The proactive throttle distributes remaining API budget evenly across the reset window. With a token (5,000 req/hr), the uncapped delay is ~0.7s per call, which adds up significantly. The default cap of 0.05s avoids excessive sleeping while still providing some spread. Reactive 429 handling is unaffected. Default: `0.05`.
+
+- **`skip_paginated_fallback`**: When `true`, version matching against GitHub releases/tags only tries exact tag lookups (`v{version}` and `{version}`). If neither matches, the result is "unmatched" without scanning paginated lists. This saves many API calls for packages with non-standard tag naming. The `repo_version_match` score component (weight 0.20) may show `false` for a few additional packages. Default: auto — `true` when no `GITHUB_TOKEN` is set (60 req/hr budget is too tight for pagination), `false` when a token is available (5,000 req/hr).
 
 ### Provider Settings
 
@@ -240,6 +261,12 @@ scan:
 - `DEPGATE_OSM_CACHE_TTL_SEC` - Cache TTL in seconds
 - `DEPGATE_OSM_AUTH_METHOD` - "header" or "query"
 - `DEPGATE_OSM_MAX_RETRIES` - Maximum retries
+
+### GitHub
+
+- `DEPGATE_GITHUB_ON_RATE_LIMIT` - Rate limit behavior: "warn", "fail", or "retry"
+- `DEPGATE_GITHUB_PROACTIVE_THROTTLE_MAX_DELAY_SEC` - Max proactive throttle delay (float seconds)
+- `DEPGATE_GITHUB_SKIP_PAGINATED_FALLBACK` - Skip paginated tag/release search (true/false)
 
 ### Repository Providers
 

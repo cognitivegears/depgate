@@ -4,7 +4,7 @@ from __future__ import annotations
 import pytest
 from unittest.mock import patch, Mock
 
-from repository.rtd import infer_rtd_slug, resolve_repo_from_rtd
+from repository.rtd import infer_rtd_slug, resolve_repo_from_rtd, _rtd_repo_cache
 
 
 class TestInferRTDSlug:
@@ -47,6 +47,10 @@ class TestInferRTDSlug:
 
 class TestResolveRepoFromRTD:
     """Test cases for repository resolution from RTD."""
+
+    def setup_method(self):
+        """Clear RTD cache between tests to avoid cross-test leakage."""
+        _rtd_repo_cache.clear()
 
     @patch('repository.rtd.get_json')
     def test_successful_resolution_detail_endpoint(self, mock_get_json):

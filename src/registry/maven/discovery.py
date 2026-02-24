@@ -18,6 +18,11 @@ logger = logging.getLogger(__name__)
 _metadata_cache: Dict[str, ET.Element] = {}
 _metadata_cache_lock = threading.Lock()
 
+# Cache successful POM fetches during a run to avoid duplicate GETs for
+# the same coordinates across SCM traversal, URL fallback, and license parsing.
+_pom_cache: Dict[str, str] = {}
+_pom_cache_lock = threading.Lock()
+
 
 def _fetch_metadata_root(group: str, artifact: str) -> Optional[ET.Element]:
     """Fetch and cache parsed maven-metadata.xml for a group:artifact."""
@@ -226,6 +231,12 @@ def _fetch_pom(group: str, artifact: str, version: str) -> Optional[str]:
     Returns:
         POM XML content as string or None if fetch failed
     """
+    cache_key = f"{group}:{artifact}:{version}"
+    with _pom_cache_lock:
+        cached = _pom_cache.get(cache_key)
+    if isinstance(cached, str):
+        return cached
+
     pom_url = _artifact_pom_url(group, artifact, version)
     if is_debug_enabled(logger):
         logger.debug("Fetching POM file", extra=extra_context(
@@ -236,12 +247,15 @@ def _fetch_pom(group: str, artifact: str, version: str) -> Optional[str]:
     try:
         response = safe_get(pom_url, context="maven", fatal=False)
         if response.status_code == 200:
+            body = response.text
+            with _pom_cache_lock:
+                _pom_cache[cache_key] = body
             if is_debug_enabled(logger):
                 logger.debug("POM fetch successful", extra=extra_context(
                     event="function_exit", component="discovery", action="fetch_pom",
                     outcome="success", package_manager="maven"
                 ))
-            return response.text
+            return body
         if is_debug_enabled(logger):
             logger.debug("POM fetch failed", extra=extra_context(
                 event="function_exit", component="discovery", action="fetch_pom",

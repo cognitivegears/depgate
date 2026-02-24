@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Iterable, Optional, Tuple
+from typing import Iterable, Optional, Tuple, Sequence
 
 
 def epoch_ms_from_iso8601(value: Optional[str]) -> Optional[int]:
@@ -35,21 +35,47 @@ def age_days_from_epoch_ms(timestamp_ms: Optional[int]) -> Optional[int]:
         return None
 
 
-def score_from_boolean_signals(signals: Iterable[Optional[bool]]) -> Optional[float]:
+def score_from_boolean_signals(
+    signals: Iterable[Optional[bool]],
+    weights: Optional[Sequence[float]] = None,
+) -> Optional[float]:
     """Compute a normalized score from tri-state boolean signals.
 
     - True -> 1.0
     - False -> 0.0
     - None -> ignored
+
+    When ``weights`` are provided, compute a weighted average over
+    available (non-None) signals.
     """
-    values = []
-    for signal in signals:
+    signal_list = list(signals)
+    if not signal_list:
+        return None
+
+    if weights is None:
+        weight_list = [1.0] * len(signal_list)
+    else:
+        try:
+            weight_list = [float(w) for w in weights]
+        except (ValueError, TypeError):
+            weight_list = [1.0] * len(signal_list)
+        if len(weight_list) != len(signal_list):
+            weight_list = [1.0] * len(signal_list)
+
+    weighted_sum = 0.0
+    total_weight = 0.0
+    for signal, weight in zip(signal_list, weight_list):
         if signal is None:
             continue
-        values.append(1.0 if bool(signal) else 0.0)
-    if not values:
+        w = max(0.0, float(weight))
+        if w <= 0.0:
+            continue
+        weighted_sum += (1.0 if bool(signal) else 0.0) * w
+        total_weight += w
+
+    if total_weight <= 0.0:
         return None
-    return float(sum(values) / len(values))
+    return float(weighted_sum / total_weight)
 
 
 def regressed(current: Optional[bool], previous: Optional[bool]) -> Optional[bool]:

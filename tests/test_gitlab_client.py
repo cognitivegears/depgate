@@ -32,12 +32,13 @@ class TestGitLabClient:
         """Test headers generation without token."""
         client = GitLabClient()
         headers = client._get_headers()
-        assert headers == {}
+        assert headers == {'Accept': 'application/json'}
 
     def test_get_headers_with_token(self):
         """Test headers generation with token."""
         client = GitLabClient(token="test-token")
         headers = client._get_headers()
+        assert headers['Accept'] == "application/json"
         assert headers['Private-Token'] == "test-token"
 
     @patch('repository.gitlab.get_json')
@@ -59,7 +60,7 @@ class TestGitLabClient:
 
         mock_get_json.assert_called_once_with(
             'https://gitlab.com/api/v4/projects/owner%2Frepo',
-            headers={}
+            headers={'Accept': 'application/json'}
         )
 
     @patch('repository.gitlab.get_json')
@@ -154,6 +155,12 @@ class TestGitLabClient:
         headers = {}
         result = client._get_total_pages(headers)
         assert result is None
+
+    def test_candidate_tag_labels_prefers_v_prefix(self):
+        """Non-v versions should try v-prefixed label first."""
+        client = GitLabClient()
+        labels = client._candidate_tag_labels("1.2.3")
+        assert labels == ["v1.2.3", "1.2.3"]
 
     @patch('repository.gitlab.get_json')
     def test_pagination_stops_at_last_page(self, mock_get_json):
