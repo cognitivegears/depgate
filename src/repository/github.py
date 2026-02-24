@@ -196,6 +196,7 @@ class GitHubClient:
             "match_type": None,
             "artifact": None,
             "tag_or_release": None,
+            "has_artifacts": False,
         }
 
     def find_tag_match(
@@ -227,6 +228,7 @@ class GitHubClient:
             "match_type": None,
             "artifact": None,
             "tag_or_release": None,
+            "has_artifacts": False,
         }
 
     def get_contributors_count(self, owner: str, repo: str) -> Optional[int]:
@@ -413,8 +415,18 @@ class GitHubClient:
     def _find_first_match_in_paginated(
         self, url: str, version: str, matcher: Any
     ) -> Optional[Dict[str, Any]]:
-        """Scan paginated endpoint page-by-page and stop at first match."""
+        """Scan paginated endpoint page-by-page and stop at first match.
+
+        Returns:
+            A dict with 'matched': True on match, or a dict with
+            'matched': False and 'has_artifacts': bool when no match found,
+            or None on API error before any data was received.
+        """
         current_url = f"{url}?per_page={Constants.REPO_API_PER_PAGE}"
+        saw_any_items = False
+        # Collect a sample of artifact labels for monorepo detection.
+        _MAX_LABEL_SAMPLE = 20
+        artifact_label_sample: list = []
 
         while current_url:
             status, headers, data = get_json(current_url, headers=self._get_headers())
@@ -434,6 +446,15 @@ class GitHubClient:
                 break
 
             if isinstance(data, list):
+                if data:
+                    saw_any_items = True
+                    if len(artifact_label_sample) < _MAX_LABEL_SAMPLE:
+                        for item in data:
+                            label = item.get('tag_name') or item.get('name') or ''
+                            if label:
+                                artifact_label_sample.append(str(label))
+                            if len(artifact_label_sample) >= _MAX_LABEL_SAMPLE:
+                                break
                 result = matcher.find_match(version, data)
                 if result and isinstance(result, dict) and result.get("matched", False):
                     return result
@@ -441,7 +462,14 @@ class GitHubClient:
             link_header = self._get_header_value(headers, 'link')
             current_url = self._get_next_page_url(link_header)
 
-        return None
+        return {
+            'matched': False,
+            'match_type': None,
+            'artifact': None,
+            'tag_or_release': None,
+            'has_artifacts': saw_any_items,
+            'artifact_labels': artifact_label_sample,
+        }
 
     def _resolve_skip_paginated(self, override: Optional[bool]) -> bool:
         """Resolve skip_paginated_fallback: explicit > config > auto (skip when no token)."""

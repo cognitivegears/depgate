@@ -194,7 +194,7 @@ def _norm_repo_last_activity(iso_ts):
         return 0.6
     if days <= 730:
         return 0.3
-    return 0.0
+    return 0.1
 
 def _norm_bool(flag):
     """Normalize boolean to [0,1]; None -> None (missing)."""
@@ -203,11 +203,25 @@ def _norm_bool(flag):
     return 1.0 if bool(flag) else 0.0
 
 def _norm_version_match(vm):
-    """Normalize version match dict to [0,1]. True match => 1.0; else 0.0; None => missing."""
+    """Normalize version match dict to [0,1].
+
+    True match => 1.0.
+    No match but repo has releases/tags for other versions => 0.0 (suspicious).
+    No match and repo has NO releases/tags at all => None (treat as N/A,
+    weight is redistributed — the repo simply never creates tags).
+    None => missing.
+    """
     if vm is None:
         return None
     try:
-        return 1.0 if bool(vm.get('matched', False)) else 0.0
+        if bool(vm.get('matched', False)):
+            return 1.0
+        # If the repo has no releases or tags at all, this signal is not
+        # meaningful — the project simply doesn't use tags.  Treat as N/A
+        # so the weight is redistributed to other signals.
+        if not vm.get('has_any_version_artifacts', True):
+            return None
+        return 0.0
     except (AttributeError, TypeError):
         return None
 

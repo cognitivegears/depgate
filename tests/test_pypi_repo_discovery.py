@@ -291,12 +291,10 @@ class TestEnrichWithRepo:
             assert mp.repo_resolved is True
             assert mp.repo_exists is True
             assert mp.repo_stars == 1000
-            assert mp.repo_version_match == {
-                'matched': False,
-                'match_type': None,
-                'artifact': None,
-                'tag_or_release': None
-            }
+            assert mp.repo_version_match['matched'] is False
+            assert mp.repo_version_match['match_type'] is None
+            assert mp.repo_version_match['artifact'] is None
+            assert mp.repo_version_match['tag_or_release'] is None
 
             # Verify that matcher was called with empty string (not None)
             mock_matcher.find_match.assert_called_once_with('', mock_client.get_releases.return_value)

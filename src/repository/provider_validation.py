@@ -5,6 +5,7 @@ instances with repository data from any supported provider.
 """
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING
 from .version_match import VersionMatcher
 
@@ -33,6 +34,54 @@ def _simplify_match_result(res):
         simplified["artifact"] = {"name": res.get("tag_or_release", "")}
         return simplified
     return res
+
+
+_BARE_VERSION_RE = re.compile(r'^v?\d+(?:\.\d+){1,3}(?:[-+][0-9A-Za-z.\-]+)?$')
+
+
+def _is_monorepo_mismatch(pkg_name: str, release_result, tag_result) -> bool:
+    """Detect when a repo's releases/tags are for different packages (monorepo).
+
+    Returns True when the repo has artifacts but none appear to be versions
+    for the given package — i.e., all tags/releases are scoped to other
+    package names within the monorepo.
+
+    A tag is considered "for this package" if it is either:
+    - A bare version like ``v1.2.3`` (no package prefix), OR
+    - Prefixed with the package name, e.g. ``@types/node@1.2.3``
+    """
+    # Collect artifact labels from both sources
+    labels: list = []
+    for result in (release_result, tag_result):
+        if isinstance(result, dict):
+            labels.extend(result.get('artifact_labels', []))
+
+    if not labels:
+        return False
+
+    # Derive acceptable prefixes from the package name.
+    # For "@types/node" we accept labels starting with "@types/node@" or "node@".
+    # For "lodash" we accept labels starting with "lodash@".
+    prefixes = []
+    if pkg_name:
+        prefixes.append(pkg_name + '@')
+        # Unscoped suffix: @scope/name -> name
+        if '/' in pkg_name:
+            unscoped = pkg_name.rsplit('/', 1)[1]
+            if unscoped:
+                prefixes.append(unscoped + '@')
+
+    for label in labels:
+        # Bare version tags (no package prefix) are compatible with any package
+        if _BARE_VERSION_RE.match(label):
+            return False
+        # Tag matches this package's name prefix
+        for pfx in prefixes:
+            if label.startswith(pfx):
+                return False
+
+    # All sampled tags are scoped to other packages — monorepo mismatch
+    return True
 
 
 def _safe_get_releases(provider, owner: str, repo: str):
@@ -211,6 +260,52 @@ class ProviderValidationService:  # pylint: disable=too-few-public-methods
                     'artifact': None,
                     'tag_or_release': None
                 }
+
+            # When not matched, propagate whether the repo has any releases/tags at all.
+            # This distinguishes "repo never uses tags" (not suspicious) from
+            # "repo has tags for other versions but not this one" (suspicious).
+            if not final_result.get('matched', False):
+                has_releases = (
+                    (isinstance(release_result, dict) and release_result.get('has_artifacts', False))
+                    or bool(locals().get('rel_artifacts'))
+                )
+                has_tags = (
+                    (isinstance(tag_result, dict) and tag_result.get('has_artifacts', False))
+                    or bool(locals().get('tag_artifacts'))
+                )
+                has_any = has_releases or has_tags
+                final_result['has_any_version_artifacts'] = has_any
+
+                # Monorepo detection: if the repo has tags/releases but they
+                # are all scoped to different package names, this is a monorepo
+                # where the current package isn't individually tagged.
+                # Treat like "never tags" (has_any_version_artifacts = False)
+                # so the version match weight is redistributed.
+                if has_any:
+                    # Ensure artifact labels are available for monorepo detection.
+                    # The optimized path populates artifact_labels in the result;
+                    # for the non-optimized path, extract labels from local artifacts.
+                    _max_sample = 20
+                    for _src_result, _src_local in (
+                        (release_result, 'rel_artifacts'),
+                        (tag_result, 'tag_artifacts'),
+                    ):
+                        if (
+                            isinstance(_src_result, dict)
+                            and 'artifact_labels' not in _src_result
+                        ):
+                            _local_arts = locals().get(_src_local, []) or []
+                            _labels = []
+                            for _art in _local_arts[:_max_sample]:
+                                _lbl = _art.get('tag_name') or _art.get('name') or ''
+                                if _lbl:
+                                    _labels.append(str(_lbl))
+                            _src_result['artifact_labels'] = _labels
+
+                    pkg_name = getattr(mp, 'pkg_name', '') or ''
+                    if _is_monorepo_mismatch(pkg_name, release_result, tag_result):
+                        final_result['has_any_version_artifacts'] = False
+
             mp.repo_version_match = final_result
         except Exception:  # pylint: disable=broad-exception-caught
             # If an exception occurs after setting repo_exists = True, we must ensure

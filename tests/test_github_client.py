@@ -11,6 +11,7 @@ from repository.version_match import VersionMatcher
 class TestGitHubClient:
     """Test cases for GitHubClient class."""
 
+    @patch.dict('os.environ', {}, clear=True)
     def test_initialization_default(self):
         """Test client initialization with defaults."""
         client = GitHubClient()
@@ -29,6 +30,7 @@ class TestGitHubClient:
             client = GitHubClient()
             assert client.token == "env-token"
 
+    @patch.dict('os.environ', {}, clear=True)
     def test_get_headers_without_token(self):
         """Test headers generation without token."""
         client = GitHubClient()
@@ -42,6 +44,7 @@ class TestGitHubClient:
         headers = client._get_headers()
         assert headers['Authorization'] == "token test-token"
 
+    @patch.dict('os.environ', {}, clear=True)
     @patch('repository.github.get_json')
     def test_get_repo_success(self, mock_get_json):
         """Test successful repository metadata retrieval."""

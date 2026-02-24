@@ -151,6 +151,54 @@ def get_package_details(pkg, url: str) -> Optional[Dict[str, Any]]:
     return package_info
 
 
+NPM_DOWNLOADS_BATCH_SIZE = 128
+NPM_DOWNLOADS_BASE_URL = "https://api.npmjs.org/downloads/point/last-week"
+
+
+def _fetch_missing_downloads(pkgs) -> None:
+    """Fetch weekly downloads from the npm registry downloads API for packages
+    where npms.io returned no download data (None or 0).
+
+    Uses the scoped-package endpoint:
+        GET https://api.npmjs.org/downloads/point/last-week/<pkg>
+
+    This is a best-effort fallback; failures are silently ignored.
+    """
+    need_downloads = [
+        p for p in pkgs
+        if getattr(p, 'exists', False) is True
+        and (getattr(p, 'weekly_downloads', None) or 0) == 0
+    ]
+    if not need_downloads:
+        return
+
+    logger.info(
+        "Fetching download counts for %s packages missing npms.io data",
+        len(need_downloads),
+    )
+
+    for pkg in need_downloads:
+        encoded_name = quote(str(pkg.pkg_name), safe='@')
+        dl_url = f"{NPM_DOWNLOADS_BASE_URL}/{encoded_name}"
+        try:
+            res = npm_pkg.safe_get(
+                dl_url, context="npm-downloads", fatal=False,
+            )
+        except Exception:  # pylint: disable=broad-exception-caught
+            continue
+
+        if res.status_code != 200:
+            continue
+
+        try:
+            data = json.loads(res.text)
+            downloads = data.get("downloads")
+            if downloads is not None and int(downloads) > 0:
+                pkg.weekly_downloads = int(downloads)
+        except (json.JSONDecodeError, ValueError, TypeError):
+            continue
+
+
 def recv_pkg_info(
     pkgs,
     should_fetch_details: bool = False,
@@ -289,3 +337,7 @@ def recv_pkg_info(
             # Preserve existence set by details fetch if already True
             if getattr(i, "exists", None) is not True:
                 i.exists = False
+
+    # Fallback: fetch weekly downloads from the npm registry downloads API
+    # for packages where npms.io returned no download data.
+    _fetch_missing_downloads(pkgs)
